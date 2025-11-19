@@ -1,0 +1,282 @@
+// Prisma Schema for LaunchPro - Digital Ads Campaign Management (Multi-Account Support)
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// ENUMS
+// ============================================
+
+enum Platform {
+  TONIC
+  META
+  TIKTOK
+}
+
+enum CampaignStatus {
+  DRAFT           // Initial creation, not yet launched
+  GENERATING_AI   // AI is generating content
+  READY_TO_LAUNCH // AI content ready, waiting for launch
+  LAUNCHING       // In process of launching to platforms
+  ACTIVE          // Successfully launched and active
+  PAUSED          // Paused by user
+  COMPLETED       // Campaign finished
+  FAILED          // Failed during launch
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+}
+
+enum CampaignType {
+  CBO  // Campaign Budget Optimization
+  ABO  // Ad Set Budget Optimization
+}
+
+enum AccountType {
+  TONIC
+  META
+  TIKTOK
+}
+
+// ============================================
+// ACCOUNT MANAGEMENT
+// ============================================
+
+model Account {
+  id          String      @id @default(cuid())
+  name        String      // e.g., "TikTok TG-JM", "Meta B1 - Capital Quick"
+  accountType AccountType
+
+  // Tonic accounts
+  tonicConsumerKey    String? // For Tonic accounts
+  tonicConsumerSecret String? // For Tonic accounts
+  tonicJwtToken       String? @db.Text // Cached JWT token
+  tonicTokenExpiry    DateTime? // Token expiration
+
+  // Tonic capabilities cache (to avoid repeated API calls)
+  tonicSupportsRSOC   Boolean? // Does this account support RSOC campaigns?
+  tonicSupportsDisplay Boolean? // Does this account support Display campaigns?
+  tonicRSOCDomains    Json? // Available RSOC domains with languages
+  tonicCapabilitiesLastChecked DateTime? // When were capabilities last checked
+
+  // Meta accounts
+  metaAdAccountId String? // e.g., "act_641975565566309"
+  metaPortfolio   String? // e.g., "Capital Quick LLC"
+
+  // TikTok accounts
+  tiktokAdvertiserId String? // e.g., "7476563770333167633"
+
+  // Linked Tonic Account (for Meta/TikTok accounts)
+  linkedTonicAccountId String?
+  linkedTonicAccount   Account?  @relation("LinkedTonicAccount", fields: [linkedTonicAccountId], references: [id])
+  linkedAccounts       Account[] @relation("LinkedTonicAccount")
+
+  // Relationships
+  campaignsAsTonic CampaignPlatform[] @relation("TonicAccount")
+  campaignsAsMeta  CampaignPlatform[] @relation("MetaAccount")
+  campaignsAsTikTok CampaignPlatform[] @relation("TikTokAccount")
+
+  // Status
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([accountType, name])
+  @@index([accountType])
+  @@index([isActive])
+  @@index([linkedTonicAccountId])
+}
+
+// ============================================
+// MAIN MODELS
+// ============================================
+
+model Campaign {
+  id                String             @id @default(cuid())
+  name              String
+  status            CampaignStatus     @default(DRAFT)
+  campaignType      CampaignType
+
+  // Tonic Configuration
+  offerId           String
+  offer             Offer              @relation(fields: [offerId], references: [id])
+  country           String
+  language          String
+
+  // AI Content
+  copyMaster        String?
+  communicationAngle String?
+  keywords          String[]           @default([])
+
+  // Platform associations
+  platforms         CampaignPlatform[]
+
+  // AI-generated content
+  aiContent         AIContent[]
+
+  // Media assets
+  media             Media[]
+
+  // Tonic campaign data
+  tonicCampaignId   String?            @unique
+  tonicArticleId    String?
+  tonicTrackingLink String?
+
+  // Metadata
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  launchedAt        DateTime?
+
+  @@index([status])
+  @@index([offerId])
+}
+
+model Offer {
+  id          String     @id @default(cuid())
+  tonicId     String     @unique
+  name        String
+  vertical    String
+  description String?
+
+  campaigns   Campaign[]
+
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@index([tonicId])
+}
+
+model CampaignPlatform {
+  id                 String   @id @default(cuid())
+  campaignId         String
+  campaign           Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  platform           Platform
+
+  // Account references
+  tonicAccountId     String?
+  tonicAccount       Account? @relation("TonicAccount", fields: [tonicAccountId], references: [id])
+
+  metaAccountId      String?
+  metaAccount        Account? @relation("MetaAccount", fields: [metaAccountId], references: [id])
+
+  tiktokAccountId    String?
+  tiktokAccount      Account? @relation("TikTokAccount", fields: [tiktokAccountId], references: [id])
+
+  // Campaign Settings
+  performanceGoal    String?
+  pixelId            String?
+  destinationPage    String?
+  budget             Float?
+  startDate          DateTime?
+  uploadMultimedia   Boolean  @default(true)
+  generateWithAI     Boolean  @default(true)
+
+  // Platform-specific IDs after launch
+  metaCampaignId     String?
+  metaAdSetId        String?
+  metaAdId           String?
+
+  tiktokCampaignId   String?
+  tiktokAdGroupId    String?
+  tiktokAdId         String?
+
+  // Status
+  status             CampaignStatus @default(DRAFT)
+
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([campaignId, platform])
+  @@index([campaignId])
+  @@index([platform])
+  @@index([tonicAccountId])
+  @@index([metaAccountId])
+  @@index([tiktokAccountId])
+}
+
+model AIContent {
+  id               String     @id @default(cuid())
+  campaignId       String
+  campaign         Campaign   @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  contentType      String
+  content          Json
+  model            String
+  prompt           String     @db.Text
+  tokensUsed       Int?
+
+  createdAt        DateTime   @default(now())
+
+  @@index([campaignId])
+  @@index([contentType])
+}
+
+model Media {
+  id               String     @id @default(cuid())
+  campaignId       String
+  campaign         Campaign   @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  type             MediaType
+
+  generatedByAI    Boolean    @default(false)
+  aiModel          String?
+  aiPrompt         String?    @db.Text
+
+  url              String
+  gcsPath          String?
+  fileName         String
+  fileSize         Int?
+  mimeType         String
+
+  width            Int?
+  height           Int?
+  duration         Float?
+
+  usedInMeta       Boolean    @default(false)
+  usedInTiktok     Boolean    @default(false)
+  metaHash         String?
+  tiktokVideoId    String?
+
+  createdAt        DateTime   @default(now())
+
+  @@index([campaignId])
+  @@index([type])
+}
+
+// ============================================
+// GLOBAL SETTINGS
+// ============================================
+
+model GlobalSettings {
+  id                      String   @id @default(cuid())
+
+  // AI APIs
+  anthropicApiKey         String?  @db.Text
+
+  // Google Cloud (Vertex AI)
+  gcpProjectId            String?
+  gcpServiceAccountKey    String?  @db.Text
+  gcpStorageBucket        String?
+  gcpLocation             String?  @default("us-central1")
+
+  // Shared Meta credentials
+  metaAppId               String?
+  metaAppSecret           String?  @db.Text
+  metaAccessToken         String?  @db.Text
+
+  // Shared TikTok credentials
+  tiktokAccessToken       String?  @db.Text
+
+  updatedAt               DateTime @updatedAt
+
+  @@map("global_settings")
+}
