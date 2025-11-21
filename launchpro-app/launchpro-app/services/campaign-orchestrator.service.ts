@@ -9,6 +9,17 @@ import { waitForTrackingLink, formatPollingTime } from '@/lib/tracking-link-poll
 import { CampaignStatus, Platform, CampaignType, MediaType } from '@prisma/client';
 import { Storage } from '@google-cloud/storage';
 
+// Meta Pixel Mapping (Account ID -> Pixel ID)
+const META_PIXEL_MAPPING: Record<string, string> = {
+  'act_641975565566309': '878273167774607', // B1
+  'act_677352071396973': '878273167774607', // A1
+  'act_3070045536479246': '878273167774607', // J2 (Placeholder - update if different)
+  'act_614906531545813': '878273167774607', // L2 (Placeholder)
+  'act_1780161402845930': '878273167774607', // M2 (Placeholder)
+  'act_1165341668311653': '878273167774607', // S2 (Placeholder)
+  // Add others as needed. Defaulting to the one seen in logs for now.
+};
+
 /**
  * Campaign Orchestrator Service
  *
@@ -1000,6 +1011,18 @@ class CampaignOrchestratorService {
   private async launchToMeta(campaign: any, platformConfig: any, aiContent: any) {
     logger.info('meta', 'Creating Meta campaign...', { campaignName: campaign.name });
 
+    // Fetch the Meta Account to get the correct Ad Account ID
+    const metaAccount = await prisma.account.findUnique({
+      where: { id: platformConfig.accountId },
+    });
+
+    if (!metaAccount || !metaAccount.metaAdAccountId) {
+      throw new Error(`Meta account not found or missing Ad Account ID for config ID: ${platformConfig.accountId}`);
+    }
+
+    const adAccountId = metaAccount.metaAdAccountId;
+    logger.info('meta', `Using Meta Ad Account: ${metaAccount.name} (${adAccountId})`);
+
     // Fetch ALL media for this campaign (manual uploads or AI-generated)
     const allMedia = await prisma.media.findMany({
       where: { campaignId: campaign.id },
@@ -1051,9 +1074,13 @@ class CampaignOrchestratorService {
       special_ad_categories: [], // Add if needed for housing/credit/employment
       daily_budget: budgetInCents, // CBO: Set budget at campaign level
       bid_strategy: 'LOWEST_COST_WITHOUT_CAP', // Explicitly set to Lowest Cost to avoid "bid_amount required" error
-    });
+    }, adAccountId);
 
     logger.success('meta', `✅ Meta campaign created with ID: ${metaCampaign.id} (CBO mode - budget at campaign level)`);
+
+    // Get Pixel ID for this account
+    const pixelId = META_PIXEL_MAPPING[adAccountId] || '878273167774607'; // Fallback to default if not found
+    logger.info('meta', `Using Pixel ID: ${pixelId} for Account: ${adAccountId}`);
 
     // Create Ad Set (according to Meta Ads API)
     // CBO MODE: NO budget, NO bid_strategy at AdSet level
@@ -1063,7 +1090,7 @@ class CampaignOrchestratorService {
     const adSet = await metaService.createAdSet({
       campaign_id: metaCampaign.id,
       name: `${campaign.name} - AdSet`,
-      optimization_goal: 'LEAD_GENERATION', // For OUTCOME_LEADS objective
+      optimization_goal: 'OFFSITE_CONVERSIONS', // Correct goal for Website Leads (Pixel)
       billing_event: 'IMPRESSIONS', // Standard for lead gen
       // NO bid_strategy in CBO mode - Meta handles this at campaign level
       // NO bid_amount - Not needed in CBO mode
@@ -1075,7 +1102,11 @@ class CampaignOrchestratorService {
         },
       },
       status: 'PAUSED',
-    });
+      promoted_object: {
+        pixel_id: pixelId,
+        custom_event_type: 'LEAD',
+      },
+    }, adAccountId);
 
     logger.success('meta', `Meta ad set created with ID: ${adSet.id}`);
 
@@ -1092,7 +1123,7 @@ class CampaignOrchestratorService {
       const response = await axios.get(video.url, { responseType: 'arraybuffer' });
       const videoBuffer = Buffer.from(response.data);
 
-      videoId = await metaService.uploadVideo(videoBuffer, video.fileName);
+      videoId = await metaService.uploadVideo(videoBuffer, video.fileName, adAccountId);
 
       // Update media record
       await prisma.media.update({
@@ -1110,7 +1141,7 @@ class CampaignOrchestratorService {
       const response = await axios.get(image.url, { responseType: 'arraybuffer' });
       const imageBuffer = Buffer.from(response.data);
 
-      imageHash = await metaService.uploadImage(imageBuffer, image.fileName);
+      imageHash = await metaService.uploadImage(imageBuffer, image.fileName, adAccountId);
 
       // Update media record
       await prisma.media.update({
@@ -1125,20 +1156,23 @@ class CampaignOrchestratorService {
     }
 
     // Create Ad Creative (according to Meta Ads API)
+    // Use the Page ID from the Account settings
+    if (!metaAccount.metaPageId) {
+      throw new Error(`Meta Page ID not found for account ${metaAccount.name}. Please configure it in the Account settings.`);
+    }
+
     const creative = await metaService.createAdCreative({
       name: `${campaign.name} - Creative`,
       object_story_spec: {
-        page_id: process.env.META_PAGE_ID || 'YOUR_PAGE_ID', // TODO: Get from Account settings
+        page_id: metaAccount.metaPageId,
         ...(useVideo ? {
           video_data: {
             video_id: videoId!,
-            message: adCopy.primaryText,
             title: adCopy.headline,
+            message: adCopy.primaryText,
             call_to_action: {
-              type: adCopy.callToAction,
-              value: {
-                link: campaign.tonicTrackingLink || 'https://example.com',
-              },
+              type: 'LEARN_MORE',
+              value: { link: campaign.tonicTrackingLink || 'https://example.com' },
             },
           },
         } : {
@@ -1147,14 +1181,15 @@ class CampaignOrchestratorService {
             message: adCopy.primaryText,
             name: adCopy.headline,
             description: adCopy.description,
-            image_hash: imageHash,
+            image_hash: imageHash!,
             call_to_action: {
-              type: adCopy.callToAction,
+              type: 'LEARN_MORE',
+              value: { link: campaign.tonicTrackingLink || 'https://example.com' },
             },
           },
         }),
       },
-    });
+    }, adAccountId);
 
     logger.success('meta', `Meta creative created with ID: ${creative.id}`);
 
@@ -1162,21 +1197,17 @@ class CampaignOrchestratorService {
     const ad = await metaService.createAd({
       name: `${campaign.name} - Ad`,
       adset_id: adSet.id,
-      creative: {
-        creative_id: creative.id,
-      },
-      status: 'PAUSED', // Start paused for review
-    });
+      creative: { creative_id: creative.id },
+      status: 'PAUSED',
+    }, adAccountId);
 
     logger.success('meta', `Meta ad created with ID: ${ad.id}`);
 
-    // Update database
-    await prisma.campaignPlatform.update({
+    // Update campaign-platform status
+    await prisma.campaignPlatform.updateMany({
       where: {
-        campaignId_platform: {
-          campaignId: campaign.id,
-          platform: Platform.META,
-        },
+        campaignId: campaign.id,
+        platform: Platform.META,
       },
       data: {
         metaCampaignId: metaCampaign.id,
@@ -1186,7 +1217,7 @@ class CampaignOrchestratorService {
       },
     });
 
-    logger.success('meta', 'Meta campaign launched successfully', {
+    logger.success('meta', `Meta campaign launched successfully`, {
       campaignId: metaCampaign.id,
       adSetId: adSet.id,
       adId: ad.id,
@@ -1253,7 +1284,7 @@ class CampaignOrchestratorService {
       budget: parseInt(platformConfig.budget) * 100, // Convert to cents (TikTok requirement)
     });
 
-    logger.success('tiktok', `TikTok campaign created with ID: ${tiktokCampaign.campaign_id}`);
+    logger.success('tiktok', `TikTok campaign created with ID: ${tiktokCampaign.campaign_id} `);
 
     // Create Ad Group (according to TikTok Ads API)
     const adGroup = await tiktokService.createAdGroup({
@@ -1270,7 +1301,7 @@ class CampaignOrchestratorService {
       location_ids: [campaign.country], // Use campaign country
     });
 
-    logger.success('tiktok', `TikTok ad group created with ID: ${adGroup.adgroup_id}`);
+    logger.success('tiktok', `TikTok ad group created with ID: ${adGroup.adgroup_id} `);
 
     // Upload media to TikTok
     let videoId: string | undefined;
@@ -1279,7 +1310,7 @@ class CampaignOrchestratorService {
     if (useVideo) {
       // UPLOAD VIDEO
       const video = videos[0]; // Use first video
-      logger.info('tiktok', `Uploading video to TikTok: ${video.fileName}`);
+      logger.info('tiktok', `Uploading video to TikTok: ${video.fileName} `);
 
       // TikTok supports upload by URL (easier with signed URLs)
       const uploadResult = await tiktokService.uploadVideo({
@@ -1305,7 +1336,7 @@ class CampaignOrchestratorService {
     } else {
       // UPLOAD IMAGE
       const image = images[0]; // Use first image
-      logger.info('tiktok', `Uploading image to TikTok: ${image.fileName}`);
+      logger.info('tiktok', `Uploading image to TikTok: ${image.fileName} `);
 
       const axios = require('axios');
       const response = await axios.get(image.url, { responseType: 'arraybuffer' });
@@ -1346,7 +1377,7 @@ class CampaignOrchestratorService {
       identity_type: 'CUSTOMIZED_USER',
     });
 
-    logger.success('tiktok', `TikTok ad created with ID: ${ad.ad_id}`);
+    logger.success('tiktok', `TikTok ad created with ID: ${ad.ad_id} `);
 
     // Update database
     await prisma.campaignPlatform.update({
@@ -1411,7 +1442,7 @@ class CampaignOrchestratorService {
 
       // Validate that Tonic campaign was created (tracking link is optional - will use fallback if missing)
       if (!campaign.tonicCampaignId) {
-        throw new Error(`Campaign ${campaignId} does not have Tonic campaign ID. Please create the campaign first.`);
+        throw new Error(`Campaign ${campaignId} does not have Tonic campaign ID.Please create the campaign first.`);
       }
 
       // Warn if tracking link is missing (but don't fail - ads will use fallback URL)
@@ -1422,7 +1453,7 @@ class CampaignOrchestratorService {
         });
       }
 
-      logger.info('system', `Found campaign: ${campaign.name}`, {
+      logger.info('system', `Found campaign: ${campaign.name} `, {
         tonicCampaignId: campaign.tonicCampaignId,
         tonicTrackingLink: campaign.tonicTrackingLink || undefined,
         platformCount: campaign.platforms.length,
@@ -1467,12 +1498,12 @@ class CampaignOrchestratorService {
             platformResults.push(result);
           }
         } catch (error: any) {
-          logger.error('system', `Error launching to ${platformConfig.platform}: ${error.message}`, {
+          logger.error('system', `Error launching to ${platformConfig.platform}: ${error.message} `, {
             platform: platformConfig.platform,
             error: error.message,
             stack: error.stack,
           });
-          errors.push(`${platformConfig.platform}: ${error.message}`);
+          errors.push(`${platformConfig.platform}: ${error.message} `);
           platformResults.push({
             platform: platformConfig.platform,
             success: false,
@@ -1492,7 +1523,7 @@ class CampaignOrchestratorService {
         },
       });
 
-      logger.success('system', `Campaign launch complete! Status: ${allSuccessful ? 'ACTIVE' : 'FAILED'}`, {
+      logger.success('system', `Campaign launch complete! Status: ${allSuccessful ? 'ACTIVE' : 'FAILED'} `, {
         campaignId,
         platforms: platformResults.map(p => ({ platform: p.platform, success: p.success })),
       });
@@ -1507,7 +1538,7 @@ class CampaignOrchestratorService {
         errors: errors.length > 0 ? errors : undefined,
       };
     } catch (error: any) {
-      logger.error('system', `Failed to launch campaign to platforms: ${error.message}`, {
+      logger.error('system', `Failed to launch campaign to platforms: ${error.message} `, {
         campaignId,
         error: error.message,
         stack: error.stack,
@@ -1519,7 +1550,7 @@ class CampaignOrchestratorService {
         data: { status: CampaignStatus.FAILED },
       });
 
-      throw new Error(`Failed to launch campaign to platforms: ${error.message}`);
+      throw new Error(`Failed to launch campaign to platforms: ${error.message} `);
     }
   }
 }

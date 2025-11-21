@@ -69,6 +69,7 @@ model Account {
   // Meta accounts
   metaAdAccountId String? // e.g., "act_641975565566309"
   metaPortfolio   String? // e.g., "Capital Quick LLC"
+  metaPageId      String? // e.g., "1039541308325786"
 
   // TikTok accounts
   tiktokAdvertiserId String? // e.g., "7476563770333167633"

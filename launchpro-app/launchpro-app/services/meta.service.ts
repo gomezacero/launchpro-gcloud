@@ -37,6 +37,10 @@ export interface MetaAdSetParams {
   end_time?: string; // ISO 8601 format
   targeting?: MetaTargeting;
   status?: 'ACTIVE' | 'PAUSED';
+  promoted_object?: {
+    pixel_id: string;
+    custom_event_type: string; // e.g., 'LEAD'
+  };
 }
 
 export interface MetaTargeting {
@@ -134,7 +138,8 @@ class MetaService {
    * CBO (Campaign Budget Optimization): Include daily_budget or lifetime_budget at campaign level
    * ABO (Ad Set Budget Optimization): Omit budget here, set at AdSet level
    */
-  async createCampaign(params: MetaCampaignParams) {
+  async createCampaign(params: MetaCampaignParams, adAccountId?: string) {
+    const accountId = adAccountId || this.adAccountId;
     const payload: any = {
       name: params.name,
       objective: params.objective,
@@ -153,6 +158,7 @@ class MetaService {
 
     const isCBO = params.daily_budget || params.lifetime_budget;
     console.log('[META] Creating Campaign:', {
+      accountId,
       name: payload.name,
       objective: payload.objective,
       mode: isCBO ? 'CBO (Campaign Budget Optimization)' : 'ABO (Ad Set Budget Optimization)',
@@ -161,7 +167,7 @@ class MetaService {
     });
 
     try {
-      const response = await this.client.post(`/${this.adAccountId}/campaigns`, payload);
+      const response = await this.client.post(`/${accountId}/campaigns`, payload);
       console.log('[META] ✅ Campaign created successfully:', {
         id: response.data.id,
         name: payload.name,
@@ -170,6 +176,7 @@ class MetaService {
     } catch (error: any) {
       const metaError = error.response?.data?.error || {};
       console.error('[META] ❌ Campaign creation failed:', {
+        accountId,
         message: metaError.message || error.message,
         type: metaError.type,
         code: metaError.code,
@@ -205,8 +212,9 @@ class MetaService {
   /**
    * Get all campaigns for the ad account
    */
-  async getCampaigns(limit: number = 100) {
-    const response = await this.client.get(`/${this.adAccountId}/campaigns`, {
+  async getCampaigns(limit: number = 100, adAccountId?: string) {
+    const accountId = adAccountId || this.adAccountId;
+    const response = await this.client.get(`/${accountId}/campaigns`, {
       params: {
         fields: 'id,name,objective,status,created_time,daily_budget,lifetime_budget',
         limit,
@@ -227,14 +235,15 @@ class MetaService {
    * - CBO (Campaign Budget Optimization): Budget at campaign level, NO budget/bid_strategy at AdSet level
    * - ABO (Ad Set Budget Optimization): Budget at AdSet level, MUST include bid_strategy
    */
-  async createAdSet(params: MetaAdSetParams) {
-    // Build base payload
+  async createAdSet(params: MetaAdSetParams, adAccountId?: string) {
+    const accountId = adAccountId || this.adAccountId;
     const payload: any = {
       campaign_id: params.campaign_id,
       name: params.name,
       optimization_goal: params.optimization_goal,
       billing_event: params.billing_event,
       status: params.status || 'PAUSED',
+      promoted_object: params.promoted_object,
     };
 
     // Detect budget mode: CBO vs ABO
@@ -242,6 +251,7 @@ class MetaService {
     const isCBO = !hasBudget; // CBO = no budget at AdSet level
 
     console.log('[META] Creating AdSet:', {
+      accountId,
       mode: isCBO ? 'CBO (Campaign Budget Optimization)' : 'ABO (Ad Set Budget Optimization)',
       campaign_id: params.campaign_id,
       name: params.name,
@@ -271,25 +281,22 @@ class MetaService {
       if ((bidStrategy === 'COST_CAP' || bidStrategy === 'LOWEST_COST_WITH_BID_CAP') && params.bid_amount !== undefined) {
         payload.bid_amount = params.bid_amount;
       }
-
       console.log('[META] ABO Mode: Budget at AdSet level with bid_strategy:', bidStrategy);
     }
 
-    // Optional parameters (both CBO and ABO)
-    if (params.start_time) {
-      payload.start_time = params.start_time;
-    }
-    if (params.end_time) {
-      payload.end_time = params.end_time;
-    }
+    // Add timing
+    if (params.start_time) payload.start_time = params.start_time;
+    if (params.end_time) payload.end_time = params.end_time;
+
+    // Add targeting
     if (params.targeting) {
-      payload.targeting = JSON.stringify(params.targeting);
+      payload.targeting = params.targeting;
     }
 
     console.log('[META] AdSet Payload:', JSON.stringify(payload, null, 2));
 
     try {
-      const response = await this.client.post(`/${this.adAccountId}/adsets`, payload);
+      const response = await this.client.post(`/${accountId}/adsets`, payload);
       console.log('[META] ✅ AdSet created successfully:', {
         id: response.data.id,
         name: payload.name,
@@ -297,9 +304,9 @@ class MetaService {
       });
       return response.data;
     } catch (error: any) {
-      // Extract detailed error message from Meta API response
       const metaError = error.response?.data?.error || {};
       console.error('[META] ❌ AdSet creation failed:', {
+        accountId,
         message: metaError.message || error.message,
         type: metaError.type,
         code: metaError.code,
@@ -309,15 +316,9 @@ class MetaService {
         error_user_title: metaError.error_user_title,
         fullError: error.response?.data,
         payload,
-        hint: isCBO
-          ? 'In CBO mode, budget should be at campaign level only. Do not pass daily_budget or bid_strategy to AdSet.'
-          : 'In ABO mode, budget at AdSet level requires bid_strategy. Consider using LOWEST_COST_WITH_BID_CAP or COST_CAP.',
+        hint: isCBO ? 'In CBO mode, budget should be at campaign level only. Do not pass daily_budget or bid_strategy to AdSet.' : 'In ABO mode, ensure bid_strategy is set correctly.'
       });
-
-      // Re-throw with more context
-      throw new Error(
-        `Meta AdSet creation failed: ${metaError.message || error.message} (code: ${metaError.code || 'unknown'}, subcode: ${metaError.error_subcode || 'unknown'}, mode: ${isCBO ? 'CBO' : 'ABO'})`
-      );
+      throw error;
     }
   }
 
@@ -327,8 +328,7 @@ class MetaService {
   async getAdSet(adSetId: string) {
     const response = await this.client.get(`/${adSetId}`, {
       params: {
-        fields:
-          'id,name,campaign_id,optimization_goal,billing_event,daily_budget,lifetime_budget,targeting,status,start_time,end_time',
+        fields: 'id,name,optimization_goal,billing_event,status,daily_budget,lifetime_budget,targeting',
       },
     });
 
@@ -350,7 +350,8 @@ class MetaService {
   /**
    * Upload an image and get hash for ad creative
    */
-  async uploadImage(imagePath: string | Buffer, filename?: string): Promise<string> {
+  async uploadImage(imagePath: string | Buffer, filename?: string, adAccountId?: string): Promise<string> {
+    const accountId = adAccountId || this.adAccountId;
     const formData = new FormData();
 
     if (Buffer.isBuffer(imagePath)) {
@@ -360,7 +361,7 @@ class MetaService {
     }
 
     const response = await axios.post(
-      `https://graph.facebook.com/${env.META_API_VERSION}/${this.adAccountId}/adimages`,
+      `https://graph.facebook.com/${env.META_API_VERSION}/${accountId}/adimages`,
       formData,
       {
         headers: {
@@ -380,7 +381,8 @@ class MetaService {
   /**
    * Upload a video
    */
-  async uploadVideo(videoPath: string | Buffer, filename?: string): Promise<string> {
+  async uploadVideo(videoPath: string | Buffer, filename?: string, adAccountId?: string): Promise<string> {
+    const accountId = adAccountId || this.adAccountId;
     const formData = new FormData();
 
     if (Buffer.isBuffer(videoPath)) {
@@ -390,7 +392,7 @@ class MetaService {
     }
 
     const response = await axios.post(
-      `https://graph.facebook.com/${env.META_API_VERSION}/${this.adAccountId}/advideos`,
+      `https://graph.facebook.com/${env.META_API_VERSION}/${accountId}/advideos`,
       formData,
       {
         headers: {
@@ -408,9 +410,26 @@ class MetaService {
   /**
    * Create an ad creative
    */
-  async createAdCreative(params: MetaAdCreativeParams) {
-    const response = await this.client.post(`/${this.adAccountId}/adcreatives`, params);
-    return response.data;
+  async createAdCreative(params: MetaAdCreativeParams, adAccountId?: string) {
+    const accountId = adAccountId || this.adAccountId;
+    try {
+      const response = await this.client.post(`/${accountId}/adcreatives`, params);
+      return response.data;
+    } catch (error: any) {
+      const metaError = error.response?.data?.error || {};
+      console.error('[META] ❌ AdCreative creation failed:', {
+        accountId,
+        message: metaError.message || error.message,
+        type: metaError.type,
+        code: metaError.code,
+        error_subcode: metaError.error_subcode,
+        fbtrace_id: metaError.fbtrace_id,
+        error_user_msg: metaError.error_user_msg,
+        fullError: error.response?.data,
+        payload: params
+      });
+      throw error;
+    }
   }
 
   /**
@@ -433,16 +452,42 @@ class MetaService {
   /**
    * Create an ad
    */
-  async createAd(params: MetaAdParams) {
-    const response = await this.client.post(`/${this.adAccountId}/ads`, {
-      name: params.name,
-      adset_id: params.adset_id,
-      creative: params.creative,
-      status: params.status || 'PAUSED',
-      tracking_specs: params.tracking_specs,
-    });
+  async createAd(params: MetaAdParams, adAccountId?: string) {
+    const accountId = adAccountId || this.adAccountId;
+    try {
+      const payload: any = {
+        name: params.name,
+        adset_id: params.adset_id,
+        creative: params.creative,
+        status: params.status || 'PAUSED',
+      };
 
-    return response.data;
+      if (params.tracking_specs) {
+        payload.tracking_specs = params.tracking_specs;
+      }
+
+      const response = await this.client.post(`/${accountId}/ads`, payload);
+      return response.data;
+    } catch (error: any) {
+      const metaError = error.response?.data?.error || {};
+      console.error('[META] ❌ Ad creation failed:', {
+        accountId,
+        message: metaError.message || error.message,
+        type: metaError.type,
+        code: metaError.code,
+        error_subcode: metaError.error_subcode,
+        fbtrace_id: metaError.fbtrace_id,
+        error_user_msg: metaError.error_user_msg,
+        fullError: error.response?.data,
+        payload: {
+          name: params.name,
+          adset_id: params.adset_id,
+          creative: params.creative,
+          status: params.status,
+        }
+      });
+      throw error;
+    }
   }
 
   /**
@@ -486,8 +531,9 @@ class MetaService {
   /**
    * Create custom conversion
    */
-  async createCustomConversion(pixelId: string, name: string, rule: any) {
-    const response = await this.client.post(`/${this.adAccountId}/customconversions`, {
+  async createCustomConversion(pixelId: string, name: string, rule: any, adAccountId?: string) {
+    const accountId = adAccountId || this.adAccountId;
+    const response = await this.client.post(`/${accountId}/customconversions`, {
       pixel_id: pixelId,
       name,
       rule,
@@ -534,8 +580,9 @@ class MetaService {
   /**
    * Get targeting suggestions based on interests
    */
-  async getTargetingSuggestions(interests: string[]) {
-    const response = await this.client.get(`/${this.adAccountId}/targetingsuggestions`, {
+  async getTargetingSuggestions(interests: string[], adAccountId?: string) {
+    const accountId = adAccountId || this.adAccountId;
+    const response = await this.client.get(`/${accountId}/targetingsuggestions`, {
       params: {
         interest_list: JSON.stringify(interests),
       },
