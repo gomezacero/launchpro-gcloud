@@ -73,6 +73,7 @@ export interface CreateCampaignParams {
     budget: number; // in dollars
     startDate: Date;
     generateWithAI: boolean; // Generate images/videos with AI?
+    specialAdCategories?: string[];
   }[];
 
   // Manual keywords (optional, will be AI-generated if not provided)
@@ -240,13 +241,14 @@ class CampaignOrchestratorService {
           platforms: {
             create: params.platforms.map((p) => ({
               platform: p.platform,
-              tonicAccountId: params.tonicAccountId,
-              metaAccountId: p.platform === Platform.META ? p.accountId : null,
-              tiktokAccountId: p.platform === Platform.TIKTOK ? p.accountId : null,
+              tonicAccount: params.tonicAccountId ? { connect: { id: params.tonicAccountId } } : undefined,
+              metaAccount: p.platform === Platform.META && p.accountId ? { connect: { id: p.accountId } } : undefined,
+              tiktokAccount: p.platform === Platform.TIKTOK && p.accountId ? { connect: { id: p.accountId } } : undefined,
               performanceGoal: p.performanceGoal,
               budget: p.budget,
               startDate: p.startDate,
               generateWithAI: p.generateWithAI,
+              specialAdCategories: p.specialAdCategories || [],
               status: CampaignStatus.DRAFT,
             })),
           },
@@ -393,7 +395,7 @@ class CampaignOrchestratorService {
             domain: rsocDomain,
             content_generation_phrases: articleContent.contentGenerationPhrases,
             headline: articleContent.headline,
-            teaser: articleContent.teaser,
+            teaser: '', // User requested teaser to be empty (auto-completes)
           };
 
           logger.info('tonic', '📤 Article request payload:', articleRequestPayload);
@@ -542,6 +544,31 @@ class CampaignOrchestratorService {
           trackingLink,
           attempts: trackingLinkResult.attemptsCount,
         });
+
+        // CRITICAL: User requires "Direct Link" (site=direct).
+        // The standard tracking link (e.g., 12345.track.com) is NOT the direct link.
+        // We must fetch the campaign list to get the 'direct_link' field.
+        try {
+          logger.info('tonic', '🔍 Fetching campaign list to get "Direct Link"...');
+          const campaignList = await tonicService.getCampaignList(credentials, 'active');
+
+          // Find our campaign in the list
+          // Note: Tonic IDs might be numbers or strings
+          const tonicCampaign = campaignList.find((c: any) => c.id == tonicCampaignId);
+
+          if (tonicCampaign && tonicCampaign.direct_link) {
+            trackingLink = tonicCampaign.direct_link;
+            logger.success('tonic', `✅ Found Direct Link: ${trackingLink}`);
+          } else {
+            logger.warn('tonic', '⚠️  Direct Link not found in campaign list. Using regular tracking link.', {
+              foundCampaign: !!tonicCampaign,
+              hasDirectLink: !!tonicCampaign?.direct_link
+            });
+          }
+        } catch (error: any) {
+          logger.warn('tonic', `⚠️  Failed to fetch campaign list for Direct Link: ${error.message}. Using regular tracking link.`);
+        }
+
       } else {
         // TIMEOUT or ERROR - use placeholder
         logger.warn('tonic', `⚠️  Tracking link not available after ${trackingLinkResult.elapsedSeconds}s. Using placeholder.`, {
@@ -1002,6 +1029,46 @@ class CampaignOrchestratorService {
   }
 
   /**
+   * Format Tonic Link with required parameters
+   * 
+   * Requirements:
+   * - Use "Direct Link" (site=direct)
+   * - Append parameters: network, site, adtitle, ad_id, dpco
+   */
+  private formatTonicLink(baseLink: string, platform: 'META' | 'TIKTOK', copyMaster: string): string {
+    if (!baseLink) return '';
+
+    // Check if it's already a direct link (usually contains 'articles' or 'dest=')
+    // If not, we might be using the regular tracking link, but we'll still apply params
+
+    const url = new URL(baseLink);
+
+    // 1. network
+    url.searchParams.set('network', platform === 'META' ? 'facebook' : 'tiktok');
+
+    // 2. site (always 'direct' as requested)
+    url.searchParams.set('site', 'direct');
+
+    // 3. adtitle (Copy Master)
+    if (copyMaster) {
+      // Truncate if too long (URL safety)
+      const safeTitle = copyMaster.substring(0, 100);
+      url.searchParams.set('adtitle', safeTitle);
+    }
+
+    // 4. ad_id (Platform Macro)
+    // Meta: {{ad.id}}
+    // TikTok: __AID__ (Ad ID)
+    const adIdMacro = platform === 'META' ? '{{ad.id}}' : '__AID__';
+    url.searchParams.set('ad_id', adIdMacro);
+
+    // 5. dpco (Always 1)
+    url.searchParams.set('dpco', '1');
+
+    return url.toString();
+  }
+
+  /**
    * Launch campaign to Meta (Facebook/Instagram)
    *
    * Supports both images and videos according to Meta Ads API documentation:
@@ -1069,9 +1136,9 @@ class CampaignOrchestratorService {
     // ALWAYS use CBO mode: Budget at campaign level for better optimization
     const metaCampaign = await metaService.createCampaign({
       name: campaign.name,
-      objective: 'OUTCOME_LEADS', // Required for lead generation campaigns
+      objective: 'OUTCOME_SALES', // Required for Purchase conversion event
       status: 'PAUSED',
-      special_ad_categories: [], // Add if needed for housing/credit/employment
+      special_ad_categories: platformConfig.specialAdCategories || [], // Pass special categories from UI
       daily_budget: budgetInCents, // CBO: Set budget at campaign level
       bid_strategy: 'LOWEST_COST_WITHOUT_CAP', // Explicitly set to Lowest Cost to avoid "bid_amount required" error
     }, adAccountId);
@@ -1082,11 +1149,67 @@ class CampaignOrchestratorService {
     const pixelId = META_PIXEL_MAPPING[adAccountId] || '878273167774607'; // Fallback to default if not found
     logger.info('meta', `Using Pixel ID: ${pixelId} for Account: ${adAccountId}`);
 
+    // Generate targeting suggestions from AI
+    logger.info('meta', 'Generating AI targeting suggestions...');
+    const targetingSuggestions = await aiService.generateTargetingSuggestions({
+      offerName: campaign.offer.name,
+      copyMaster: aiContent.copyMaster,
+      platform: 'META',
+    });
+
+    logger.info('meta', 'AI Targeting Suggestions:', targetingSuggestions);
+
+    // Process Interests (Search for IDs)
+    const targetInterests: Array<{ id: string; name: string }> = [];
+    if (targetingSuggestions.interests) {
+      for (const interest of targetingSuggestions.interests) {
+        try {
+          const searchResults = await metaService.searchTargetingInterests(interest);
+          if (searchResults.data && searchResults.data.length > 0) {
+            // Use the first match
+            const match = searchResults.data[0];
+            targetInterests.push({ id: match.id, name: match.name });
+          }
+        } catch (err) {
+          logger.warn('meta', `Failed to search interest "${interest}"`, { error: err });
+        }
+      }
+    }
+
+    // Process Behaviors (Search for IDs)
+    const targetBehaviors: Array<{ id: string; name: string }> = [];
+    if (targetingSuggestions.behaviors) {
+      for (const behavior of targetingSuggestions.behaviors) {
+        try {
+          const searchResults = await metaService.searchTargetingBehaviors(behavior);
+          if (searchResults.data && searchResults.data.length > 0) {
+            // Use the first match
+            const match = searchResults.data[0];
+            targetBehaviors.push({ id: match.id, name: match.name });
+          }
+        } catch (err) {
+          logger.warn('meta', `Failed to search behavior "${behavior}"`, { error: err });
+        }
+      }
+    }
+
+    // Process Age
+    let ageMin = 18;
+    let ageMax = 65;
+    if (targetingSuggestions.ageGroups && targetingSuggestions.ageGroups.length > 0) {
+      // Parse first group (e.g., "25-45" or "18+")
+      const firstGroup = targetingSuggestions.ageGroups[0];
+      const parts = firstGroup.match(/(\d+)/g);
+      if (parts && parts.length > 0) {
+        ageMin = parseInt(parts[0]);
+        if (parts.length > 1) {
+          ageMax = parseInt(parts[1]);
+        }
+      }
+    }
+
     // Create Ad Set (according to Meta Ads API)
     // CBO MODE: NO budget, NO bid_strategy at AdSet level
-    // - Campaign handles budget optimization across all ad sets
-    // - Meta automatically determines optimal bids
-    // - Bidding strategy is inherited from campaign-level optimization
     const adSet = await metaService.createAdSet({
       campaign_id: metaCampaign.id,
       name: `${campaign.name} - AdSet`,
@@ -1100,11 +1223,16 @@ class CampaignOrchestratorService {
         geo_locations: {
           countries: [campaign.country], // Use campaign country
         },
+        age_min: ageMin,
+        age_max: ageMax,
+        interests: targetInterests.length > 0 ? targetInterests : undefined,
+        behaviors: targetBehaviors.length > 0 ? targetBehaviors : undefined,
+        publisher_platforms: ['facebook', 'instagram', 'messenger'], // Explicitly set platforms
       },
       status: 'PAUSED',
       promoted_object: {
         pixel_id: pixelId,
-        custom_event_type: 'LEAD',
+        custom_event_type: 'PURCHASE',
       },
     }, adAccountId);
 
@@ -1161,10 +1289,34 @@ class CampaignOrchestratorService {
       throw new Error(`Meta Page ID not found for account ${metaAccount.name}. Please configure it in the Account settings.`);
     }
 
+    // Fetch Instagram Account ID (if connected)
+    let instagramActorId = undefined;
+    try {
+      const instagramAccount = await metaService.getInstagramAccount(metaAccount.metaPageId);
+      if (instagramAccount && instagramAccount.instagram_business_account) {
+        instagramActorId = instagramAccount.instagram_business_account.id;
+        logger.info('meta', `Found Instagram Business Account: ${instagramAccount.instagram_business_account.username} (${instagramActorId})`);
+      } else {
+        logger.info('meta', `No Instagram Business Account connected to Page ${metaAccount.metaPageId}. Using Page as identity.`);
+      }
+    } catch (error: any) {
+      logger.warn('meta', `Failed to fetch Instagram account: ${error.message}. Using Page as identity.`);
+    }
+
+    // FORMAT TONIC LINK
+    const finalLink = this.formatTonicLink(
+      campaign.tonicTrackingLink || 'https://example.com',
+      'META',
+      aiContent.copyMaster
+    );
+
+    logger.info('meta', `Using formatted Tonic link: ${finalLink}`);
+
     const creative = await metaService.createAdCreative({
       name: `${campaign.name} - Creative`,
       object_story_spec: {
         page_id: metaAccount.metaPageId,
+        instagram_actor_id: instagramActorId, // Pass Instagram ID if available
         ...(useVideo ? {
           video_data: {
             video_id: videoId!,
@@ -1172,19 +1324,19 @@ class CampaignOrchestratorService {
             message: adCopy.primaryText,
             call_to_action: {
               type: 'LEARN_MORE',
-              value: { link: campaign.tonicTrackingLink || 'https://example.com' },
+              value: { link: finalLink },
             },
           },
         } : {
           link_data: {
-            link: campaign.tonicTrackingLink || 'https://example.com',
+            link: finalLink,
             message: adCopy.primaryText,
             name: adCopy.headline,
             description: adCopy.description,
             image_hash: imageHash!,
             call_to_action: {
               type: 'LEARN_MORE',
-              value: { link: campaign.tonicTrackingLink || 'https://example.com' },
+              value: { link: finalLink },
             },
           },
         }),
@@ -1286,6 +1438,40 @@ class CampaignOrchestratorService {
 
     logger.success('tiktok', `TikTok campaign created with ID: ${tiktokCampaign.campaign_id} `);
 
+    // Generate targeting suggestions from AI
+    logger.info('tiktok', 'Generating AI targeting suggestions...');
+    const targetingSuggestions = await aiService.generateTargetingSuggestions({
+      offerName: campaign.offer.name,
+      copyMaster: aiContent.copyMaster,
+      platform: 'TIKTOK',
+    });
+
+    // Map Age Groups to TikTok Enums
+    // TikTok Age Groups: AGE_13_17, AGE_18_24, AGE_25_34, AGE_35_44, AGE_45_54, AGE_55_64, AGE_65_PLUS
+    const tiktokAgeGroups: string[] = [];
+
+    if (targetingSuggestions.ageGroups && targetingSuggestions.ageGroups.length > 0) {
+      // Parse first group (e.g., "25-45" or "18+")
+      const firstGroup = targetingSuggestions.ageGroups[0];
+      const parts = firstGroup.match(/(\d+)/g);
+
+      if (parts && parts.length > 0) {
+        const ageMin = parseInt(parts[0]);
+        const ageMax = parts.length > 1 ? parseInt(parts[1]) : 100;
+
+        if (ageMin <= 17) tiktokAgeGroups.push('AGE_13_17');
+        if (ageMin <= 24 && ageMax >= 18) tiktokAgeGroups.push('AGE_18_24');
+        if (ageMin <= 34 && ageMax >= 25) tiktokAgeGroups.push('AGE_25_34');
+        if (ageMin <= 44 && ageMax >= 35) tiktokAgeGroups.push('AGE_35_44');
+        if (ageMin <= 54 && ageMax >= 45) tiktokAgeGroups.push('AGE_45_54');
+        if (ageMin <= 64 && ageMax >= 55) tiktokAgeGroups.push('AGE_55_64');
+        if (ageMax >= 65) tiktokAgeGroups.push('AGE_65_PLUS');
+      }
+    }
+
+    // Note: Interest mapping for TikTok requires Category IDs which are complex to map without fuzzy search.
+    // We are skipping interest mapping for now and relying on broad targeting + pixel optimization.
+
     // Create Ad Group (according to TikTok Ads API)
     const adGroup = await tiktokService.createAdGroup({
       advertiser_id: tiktokService['advertiserId'],
@@ -1299,6 +1485,7 @@ class CampaignOrchestratorService {
       billing_event: 'OCPM', // Optimized CPM for lead gen
       schedule_start_time: new Date(platformConfig.startDate).toISOString(),
       location_ids: [campaign.country], // Use campaign country
+      age_groups: tiktokAgeGroups.length > 0 ? tiktokAgeGroups : undefined,
     });
 
     logger.success('tiktok', `TikTok ad group created with ID: ${adGroup.adgroup_id} `);
@@ -1362,6 +1549,15 @@ class CampaignOrchestratorService {
       throw new Error('No TikTok identity found. Please set up a TikTok account first.');
     }
 
+    // FORMAT TONIC LINK
+    const finalLink = this.formatTonicLink(
+      campaign.tonicTrackingLink || 'https://example.com',
+      'TIKTOK',
+      aiContent.copyMaster
+    );
+
+    logger.info('tiktok', `Using formatted Tonic link: ${finalLink}`);
+
     // Create Ad (according to TikTok Ads API)
     const ad = await tiktokService.createAd({
       advertiser_id: tiktokService['advertiserId'],
@@ -1370,7 +1566,7 @@ class CampaignOrchestratorService {
       ad_format: useVideo ? 'SINGLE_VIDEO' : 'SINGLE_IMAGE',
       ad_text: adCopy.primaryText,
       call_to_action: adCopy.callToAction || 'LEARN_MORE',
-      landing_page_url: campaign.tonicTrackingLink || 'https://example.com',
+      landing_page_url: finalLink,
       display_name: campaign.offer.name,
       ...(useVideo ? { video_id: videoId } : { image_ids: imageIds }),
       identity_id: identityId,

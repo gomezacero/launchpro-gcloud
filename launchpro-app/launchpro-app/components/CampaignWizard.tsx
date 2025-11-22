@@ -35,6 +35,7 @@ interface PlatformConfig {
   generateWithAI: boolean;
   uploadedImages?: UploadedFile[];
   uploadedVideos?: UploadedFile[];
+  specialAdCategories?: string[];
 }
 
 interface UploadedFile {
@@ -89,6 +90,39 @@ export default function CampaignWizard() {
       loadCountries();
     }
   }, [formData.offerId]);
+
+  // Auto-select language based on country
+  useEffect(() => {
+    if (!formData.country) return;
+
+    const countryLanguageMap: Record<string, string> = {
+      'CO': 'es', // Colombia
+      'MX': 'es', // Mexico
+      'ES': 'es', // Spain
+      'AR': 'es', // Argentina
+      'CL': 'es', // Chile
+      'PE': 'es', // Peru
+      'EC': 'es', // Ecuador
+      'VE': 'es', // Venezuela
+      'GT': 'es', // Guatemala
+      'CR': 'es', // Costa Rica
+      'US': 'en', // United States
+      'GB': 'en', // United Kingdom
+      'CA': 'en', // Canada
+      'AU': 'en', // Australia
+      'DE': 'de', // Germany
+      'AT': 'de', // Austria
+      'CH': 'de', // Switzerland
+      'FR': 'fr', // France
+      'BR': 'pt', // Brazil
+      'PT': 'pt', // Portugal
+    };
+
+    const defaultLang = countryLanguageMap[formData.country];
+    if (defaultLang) {
+      handleInputChange('language', defaultLang);
+    }
+  }, [formData.country]);
 
   const loadOffers = async () => {
     try {
@@ -152,6 +186,7 @@ export default function CampaignWizard() {
       budget: '100',
       startDate: new Date().toISOString().split('T')[0],
       generateWithAI: true,
+      specialAdCategories: [],
     };
     setFormData((prev) => ({
       ...prev,
@@ -202,8 +237,7 @@ export default function CampaignWizard() {
         const maxSize = mediaType === 'IMAGE' ? 30 * 1024 * 1024 : 500 * 1024 * 1024;
         if (file.size > maxSize) {
           setError(
-            `File ${file.name} is too large. Max size: ${
-              mediaType === 'IMAGE' ? '30MB' : '500MB'
+            `File ${file.name} is too large. Max size: ${mediaType === 'IMAGE' ? '30MB' : '500MB'
             }`
           );
           continue;
@@ -413,19 +447,17 @@ export default function CampaignWizard() {
                 className={`flex items-center ${s < 3 ? 'flex-1' : ''}`}
               >
                 <div
-                  className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${
-                    step >= s
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-200 text-gray-500'
-                  }`}
+                  className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${step >= s
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-200 text-gray-500'
+                    }`}
                 >
                   {s}
                 </div>
                 {s < 3 && (
                   <div
-                    className={`flex-1 h-1 mx-2 ${
-                      step > s ? 'bg-blue-600' : 'bg-gray-200'
-                    }`}
+                    className={`flex-1 h-1 mx-2 ${step > s ? 'bg-blue-600' : 'bg-gray-200'
+                      }`}
                   />
                 )}
               </div>
@@ -698,6 +730,32 @@ export default function CampaignWizard() {
                       </select>
                     </div>
 
+                    {platform.platform === 'META' && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Special Ad Categories
+                        </label>
+                        <select
+                          multiple
+                          value={platform.specialAdCategories || []}
+                          onChange={(e) => {
+                            const options = Array.from(e.target.selectedOptions, option => option.value);
+                            updatePlatform(index, 'specialAdCategories', options);
+                          }}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 h-32"
+                        >
+                          <option value="NONE">NONE</option>
+                          <option value="HOUSING">HOUSING</option>
+                          <option value="CREDIT">CREDIT</option>
+                          <option value="EMPLOYMENT">EMPLOYMENT</option>
+                          <option value="ISSUES_ELECTIONS_POLITICS">ISSUES_ELECTIONS_POLITICS</option>
+                        </select>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Hold Ctrl (Windows) or Cmd (Mac) to select multiple options. Select NONE if no categories apply.
+                        </p>
+                      </div>
+                    )}
+
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         Daily Budget (USD)
@@ -966,7 +1024,7 @@ export default function CampaignWizard() {
                       !formData.country)) ||
                   (step === 2 &&
                     (formData.platforms.length === 0 ||
-                     formData.platforms.some((p) => !p.accountId)))
+                      formData.platforms.some((p) => !p.accountId)))
                 }
                 className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
@@ -1011,6 +1069,6 @@ export default function CampaignWizard() {
           </div>
         </div>
       </div>
-    </div>
+    </div >
   );
 }

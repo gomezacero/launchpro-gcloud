@@ -180,6 +180,7 @@ model CampaignPlatform {
   startDate          DateTime?
   uploadMultimedia   Boolean  @default(true)
   generateWithAI     Boolean  @default(true)
+  specialAdCategories String[] @default([])
 
   // Platform-specific IDs after launch
   metaCampaignId     String?
