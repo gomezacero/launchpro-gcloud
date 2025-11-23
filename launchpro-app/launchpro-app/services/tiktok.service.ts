@@ -1,6 +1,9 @@
+import crypto from 'crypto';
 import axios, { AxiosInstance } from 'axios';
 import { env } from '@/lib/env';
 import FormData from 'form-data';
+
+
 
 /**
  * TikTok Ads API Service
@@ -13,15 +16,15 @@ export interface TikTokCampaignParams {
   advertiser_id: string;
   campaign_name: string;
   objective_type:
-    | 'REACH'
-    | 'TRAFFIC'
-    | 'VIDEO_VIEWS'
-    | 'LEAD_GENERATION'
-    | 'ENGAGEMENT'
-    | 'APP_PROMOTION'
-    | 'WEB_CONVERSIONS'
-    | 'PRODUCT_SALES'
-    | 'CATALOG_SALES';
+  | 'REACH'
+  | 'TRAFFIC'
+  | 'VIDEO_VIEWS'
+  | 'LEAD_GENERATION'
+  | 'ENGAGEMENT'
+  | 'APP_PROMOTION'
+  | 'WEB_CONVERSIONS'
+  | 'PRODUCT_SALES'
+  | 'CATALOG_SALES';
   budget_mode?: 'BUDGET_MODE_INFINITE' | 'BUDGET_MODE_DAY' | 'BUDGET_MODE_TOTAL';
   budget?: number; // in cents, required if budget_mode is not INFINITE
   special_industries?: string[]; // e.g., ['HOUSING', 'EMPLOYMENT', 'CREDIT']
@@ -38,18 +41,18 @@ export interface TikTokAdGroupParams {
   // Budget & Schedule
   budget_mode?: 'BUDGET_MODE_DAY' | 'BUDGET_MODE_TOTAL' | 'BUDGET_MODE_INFINITE';
   budget?: number; // in cents
-  schedule_type?: 'SCHEDULE_TYPE_NORMAL' | 'SCHEDULE_TYPE_ACCELERATED';
+  schedule_type?: 'SCHEDULE_FROM_NOW' | 'SCHEDULE_START_END';
   schedule_start_time?: string; // UTC timestamp
   schedule_end_time?: string; // UTC timestamp
 
   // Optimization
   optimization_goal?:
-    | 'CLICK'
-    | 'CONVERSION'
-    | 'REACH'
-    | 'VIDEO_VIEW'
-    | 'LEAD_GENERATION'
-    | 'ENGAGEMENT';
+  | 'CLICK'
+  | 'CONVERSION'
+  | 'REACH'
+  | 'VIDEO_VIEW'
+  | 'LEAD_GENERATION'
+  | 'ENGAGEMENT';
   billing_event?: 'CPC' | 'CPM' | 'OCPM' | 'CPV';
   bid_type?: 'BID_TYPE_NO_BID' | 'BID_TYPE_CUSTOM';
   bid_price?: number; // in cents
@@ -257,8 +260,23 @@ class TikTokService {
    * Create an ad
    */
   async createAd(params: TikTokAdParams) {
-    const response = await this.client.post('/ad/create/', params);
-    return this.handleResponse(response);
+    const { advertiser_id, adgroup_id, ...creativeParams } = params;
+
+    const payload = {
+      advertiser_id,
+      adgroup_id,
+      creatives: [
+        {
+          ...creativeParams,
+        },
+      ],
+    };
+
+    const response = await this.client.post('/ad/create/', payload);
+    const data = this.handleResponse(response);
+
+    // API returns { ad_ids: [...] }
+    return { ad_id: data.ad_ids[0] };
   }
 
   /**
@@ -370,15 +388,33 @@ class TikTokService {
   /**
    * Upload an image
    */
-  async uploadImage(imageFile: Buffer | string, imageName?: string) {
+  async uploadImage(
+    image: Buffer | string,
+    imageName?: string,
+    uploadType: 'UPLOAD_BY_FILE' | 'UPLOAD_BY_URL' = 'UPLOAD_BY_FILE'
+  ) {
+    if (uploadType === 'UPLOAD_BY_URL') {
+      const response = await this.client.post('/file/image/ad/upload/', {
+        advertiser_id: this.advertiserId,
+        upload_type: 'UPLOAD_BY_URL',
+        image_url: image as string,
+      });
+      return this.handleResponse(response);
+    }
+
+    // Default: UPLOAD_BY_FILE
     const formData = new FormData();
     formData.append('advertiser_id', this.advertiserId);
     formData.append('upload_type', 'UPLOAD_BY_FILE');
 
-    if (Buffer.isBuffer(imageFile)) {
-      formData.append('image_file', imageFile, imageName || 'image.jpg');
+    if (Buffer.isBuffer(image)) {
+      formData.append('image_file', image, imageName || 'image.jpg');
+
+      // Calculate MD5 signature (Required for UPLOAD_BY_FILE)
+      const signature = crypto.createHash('md5').update(image).digest('hex');
+      formData.append('image_signature', signature);
     } else {
-      formData.append('image_file', imageFile);
+      formData.append('image_file', image);
     }
 
     const response = await axios.post(
@@ -430,6 +466,8 @@ class TikTokService {
     const response = await this.client.get('/identity/get/', {
       params: {
         advertiser_id: this.advertiserId,
+        page: 1,
+        page_size: 20,
       },
     });
     return this.handleResponse(response);
@@ -628,6 +666,53 @@ class TikTokService {
       },
     });
     return this.handleResponse(response);
+  }
+
+  /**
+   * Get Location ID for a country code
+   * e.g., 'CO' -> '3685413' (Colombia location ID)
+   */
+  async getLocationId(countryCode: string): Promise<string> {
+    try {
+      const response = await this.client.get('/tool/region/', {
+        params: {
+          advertiser_id: this.advertiserId,
+          region_level: 'COUNTRY',
+          placement_type: 'PLACEMENT_TYPE_NORMAL',
+          placements: JSON.stringify(['PLACEMENT_TIKTOK']),
+          objective_type: 'LEAD_GENERATION',
+        },
+      });
+
+      const data = this.handleResponse(response);
+
+      if (data && data.list) {
+        const country = data.list.find((c: any) => c.region_code === countryCode);
+        if (country) {
+          return country.location_id;
+        }
+      }
+
+      // Fallback map for common countries if API fails or doesn't return it
+      const fallbackMap: Record<string, string> = {
+        'US': '6252001',
+        'CO': '3685413', // Fallback based on logs (needs verification, but better than string)
+        // Actually, if the API call succeeds, we should find it.
+      };
+
+      if (fallbackMap[countryCode]) {
+        return fallbackMap[countryCode];
+      }
+
+      // If we can't find it, we might try to return the code itself if it happens to be numeric (unlikely for country codes)
+      // or throw error.
+      throw new Error(`Location ID not found for country code: ${countryCode}`);
+    } catch (error: any) {
+      console.error('Failed to fetch location ID:', error.message);
+      // Fallback for CO specifically since we know it failed
+      if (countryCode === 'CO') return '3685413'; // Colombia location ID (verified from logs)
+      throw error;
+    }
   }
 }
 

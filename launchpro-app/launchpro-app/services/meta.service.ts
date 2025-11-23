@@ -59,6 +59,7 @@ export interface MetaTargeting {
   publisher_platforms?: ('facebook' | 'instagram' | 'audience_network' | 'messenger')[];
   facebook_positions?: string[];
   instagram_positions?: string[];
+  locales?: number[]; // e.g., [6] for Spanish
 }
 
 export interface MetaAdCreativeParams {

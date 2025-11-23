@@ -1133,17 +1133,20 @@ class CampaignOrchestratorService {
     });
 
     // Create Campaign (according to Meta Ads API - OUTCOME_LEADS for lead generation)
-    // ALWAYS use CBO mode: Budget at campaign level for better optimization
     const metaCampaign = await metaService.createCampaign({
       name: campaign.name,
       objective: 'OUTCOME_SALES', // Required for Purchase conversion event
-      status: 'PAUSED',
-      special_ad_categories: platformConfig.specialAdCategories || [], // Pass special categories from UI
-      daily_budget: budgetInCents, // CBO: Set budget at campaign level
-      bid_strategy: 'LOWEST_COST_WITHOUT_CAP', // Explicitly set to Lowest Cost to avoid "bid_amount required" error
+      status: 'PAUSED', // Always create as paused first
+      special_ad_categories: platformConfig.specialAdCategories && platformConfig.specialAdCategories.length > 0
+        ? platformConfig.specialAdCategories
+        : ['NONE'],
+      // CBO: Set budget at campaign level
+      // ABO: Do NOT set budget at campaign level
+      daily_budget: isCBO ? budgetInCents : undefined,
+      bid_strategy: isCBO ? 'LOWEST_COST_WITHOUT_CAP' : undefined,
     }, adAccountId);
 
-    logger.success('meta', `✅ Meta campaign created with ID: ${metaCampaign.id} (CBO mode - budget at campaign level)`);
+    logger.success('meta', `Meta campaign created with ID: ${metaCampaign.id}`);
 
     // Get Pixel ID for this account
     const pixelId = META_PIXEL_MAPPING[adAccountId] || '878273167774607'; // Fallback to default if not found
@@ -1208,16 +1211,45 @@ class CampaignOrchestratorService {
       }
     }
 
+    // Process Language (Locales)
+    // Map common language codes to Meta Locale IDs
+    // 6 = Spanish (All), 1001 = English (US), etc.
+    // See: https://developers.facebook.com/docs/marketing-api/audiences/reference/targeting-search/
+    logger.info('meta', `Processing language targeting for: "${campaign.language}"`);
+
+    const localeMap: Record<string, number[]> = {
+      'es': [6], // Spanish (All)
+      'en': [1001], // English (US)
+      'pt': [1002], // Portuguese (Brazil)
+      'fr': [9], // French (All)
+      'de': [7], // German (All)
+      // Add fallbacks for full names if needed
+      'spanish': [6],
+      'english': [1001],
+      'portuguese': [1002],
+    };
+
+    // Normalize language input (lowercase, trim)
+    const normalizedLang = campaign.language ? campaign.language.toLowerCase().trim() : 'en';
+    const targetLocales = localeMap[normalizedLang] || undefined;
+
+    if (!targetLocales) {
+      logger.warn('meta', `No locale mapping found for language "${campaign.language}" (normalized: "${normalizedLang}"). Targeting all languages.`);
+    } else {
+      logger.info('meta', `Targeting locales: ${targetLocales} for language "${campaign.language}"`);
+    }
+
     // Create Ad Set (according to Meta Ads API)
-    // CBO MODE: NO budget, NO bid_strategy at AdSet level
     const adSet = await metaService.createAdSet({
       campaign_id: metaCampaign.id,
       name: `${campaign.name} - AdSet`,
       optimization_goal: 'OFFSITE_CONVERSIONS', // Correct goal for Website Leads (Pixel)
       billing_event: 'IMPRESSIONS', // Standard for lead gen
-      // NO bid_strategy in CBO mode - Meta handles this at campaign level
-      // NO bid_amount - Not needed in CBO mode
-      // NO daily_budget - Already set at campaign level
+
+      // ABO Logic: Set budget and bid strategy at Ad Set level if NOT CBO
+      daily_budget: !isCBO ? budgetInCents : undefined,
+      bid_strategy: !isCBO ? 'LOWEST_COST_WITHOUT_CAP' : undefined,
+
       start_time: new Date(platformConfig.startDate).toISOString(),
       targeting: {
         geo_locations: {
@@ -1227,6 +1259,7 @@ class CampaignOrchestratorService {
         age_max: ageMax,
         interests: targetInterests.length > 0 ? targetInterests : undefined,
         behaviors: targetBehaviors.length > 0 ? targetBehaviors : undefined,
+        locales: targetLocales, // Add language targeting
         publisher_platforms: ['facebook', 'instagram', 'messenger'], // Explicitly set platforms
       },
       status: 'PAUSED',
@@ -1237,15 +1270,13 @@ class CampaignOrchestratorService {
     }, adAccountId);
 
     logger.success('meta', `Meta ad set created with ID: ${adSet.id}`);
-
-    // Upload media to Meta
     let imageHash: string | undefined;
     let videoId: string | undefined;
 
     if (useVideo) {
       // UPLOAD VIDEO
       const video = videos[0]; // Use first video
-      logger.info('meta', `Uploading video to Meta: ${video.fileName}`);
+      logger.info('meta', `Uploading video to Meta: ${video.fileName} `);
 
       const axios = require('axios');
       const response = await axios.get(video.url, { responseType: 'arraybuffer' });
@@ -1263,7 +1294,7 @@ class CampaignOrchestratorService {
     } else {
       // UPLOAD IMAGE
       const image = images[0]; // Use first image
-      logger.info('meta', `Uploading image to Meta: ${image.fileName}`);
+      logger.info('meta', `Uploading image to Meta: ${image.fileName} `);
 
       const axios = require('axios');
       const response = await axios.get(image.url, { responseType: 'arraybuffer' });
@@ -1286,7 +1317,7 @@ class CampaignOrchestratorService {
     // Create Ad Creative (according to Meta Ads API)
     // Use the Page ID from the Account settings
     if (!metaAccount.metaPageId) {
-      throw new Error(`Meta Page ID not found for account ${metaAccount.name}. Please configure it in the Account settings.`);
+      throw new Error(`Meta Page ID not found for account ${metaAccount.name}.Please configure it in the Account settings.`);
     }
 
     // Fetch Instagram Account ID (if connected)
@@ -1310,7 +1341,7 @@ class CampaignOrchestratorService {
       aiContent.copyMaster
     );
 
-    logger.info('meta', `Using formatted Tonic link: ${finalLink}`);
+    logger.info('meta', `Using formatted Tonic link: ${finalLink} `);
 
     const creative = await metaService.createAdCreative({
       name: `${campaign.name} - Creative`,
@@ -1343,7 +1374,7 @@ class CampaignOrchestratorService {
       },
     }, adAccountId);
 
-    logger.success('meta', `Meta creative created with ID: ${creative.id}`);
+    logger.success('meta', `Meta creative created with ID: ${creative.id} `);
 
     // Create Ad (according to Meta Ads API)
     const ad = await metaService.createAd({
@@ -1353,7 +1384,7 @@ class CampaignOrchestratorService {
       status: 'PAUSED',
     }, adAccountId);
 
-    logger.success('meta', `Meta ad created with ID: ${ad.id}`);
+    logger.success('meta', `Meta ad created with ID: ${ad.id} `);
 
     // Update campaign-platform status
     await prisma.campaignPlatform.updateMany({
@@ -1472,21 +1503,94 @@ class CampaignOrchestratorService {
     // Note: Interest mapping for TikTok requires Category IDs which are complex to map without fuzzy search.
     // We are skipping interest mapping for now and relying on broad targeting + pixel optimization.
 
+    // Get Location ID for TikTok
+    let locationId: string;
+    try {
+      locationId = await tiktokService.getLocationId(campaign.country);
+      logger.info('tiktok', `Resolved location ID for ${campaign.country}: ${locationId}`);
+    } catch (error: any) {
+      logger.warn('tiktok', `Failed to resolve location ID for ${campaign.country}. Using default/fallback if available, or erroring out.`, { error: error.message });
+      throw error;
+    }
+
     // Create Ad Group (according to TikTok Ads API)
-    const adGroup = await tiktokService.createAdGroup({
+    // Calculate end date (30 days from start date for default)
+    let startDate = new Date(platformConfig.startDate);
+    const now = new Date();
+
+    // TikTok requires start time to be in the future (at least slightly)
+    // If start date is in the past or within next 10 mins, set to 15 mins from now
+    const tenMinutesFromNow = new Date(now.getTime() + 10 * 60 * 1000);
+
+    if (startDate < tenMinutesFromNow) {
+      logger.info('tiktok', `⚠️ Start date ${startDate.toISOString()} is in the past or too soon. Adjusting to 15 mins from now.`);
+      startDate = new Date(now.getTime() + 15 * 60 * 1000);
+    }
+
+    const endDate = new Date(startDate);
+    endDate.setDate(endDate.getDate() + 30);
+
+    // Calculate bid price based on budget
+    // For LEAD_GENERATION, TikTok requires a minimum bid of $1 (100 cents)
+    const dailyBudgetInCents = parseInt(platformConfig.budget) * 100;
+    const targetConversionsPerDay = 5; // Conservative target for optimization
+    let bidPrice = Math.floor(dailyBudgetInCents / targetConversionsPerDay);
+
+    // Ensure minimum bid of 100 cents ($1) for LEAD_GENERATION
+    // TikTok often has minimum bid requirements
+    bidPrice = Math.max(bidPrice, 100);
+
+    // Debug logging to understand the values
+    logger.info('tiktok', `Ad Group Configuration Debug:`, {
+      dailyBudgetInCents,
+      bidPrice,
+      platformConfigBudget: platformConfig.budget,
+      pixelId: platformConfig.pixelId
+    });
+
+    const adGroupParams: any = {
       advertiser_id: tiktokService['advertiserId'],
       campaign_id: tiktokCampaign.campaign_id,
       adgroup_name: `${campaign.name} - AdGroup`,
-      promotion_type: 'WEBSITE', // For website traffic
-      placement_type: 'PLACEMENT_TYPE_AUTOMATIC', // Auto placements
+      promotion_type: 'LEAD_GENERATION', // Must match campaign objective
+      placement_type: 'PLACEMENT_TYPE_NORMAL', // Explicit placement
+      placements: ['PLACEMENT_TIKTOK'], // Only TikTok placement
       budget_mode: 'BUDGET_MODE_DAY',
-      budget: parseInt(platformConfig.budget) * 100,
+      budget: dailyBudgetInCents,
+      schedule_type: 'SCHEDULE_START_END', // Use specific start and end dates
+      schedule_start_time: startDate.toISOString(),
+      schedule_end_time: endDate.toISOString(),
       optimization_goal: 'LEAD_GENERATION', // For LEAD_GENERATION objective
       billing_event: 'OCPM', // Optimized CPM for lead gen
-      schedule_start_time: new Date(platformConfig.startDate).toISOString(),
-      location_ids: [campaign.country], // Use campaign country
-      age_groups: tiktokAgeGroups.length > 0 ? tiktokAgeGroups : undefined,
+      bid_type: 'BID_TYPE_CUSTOM', // Custom bidding with specified price
+      bid: bidPrice, // Try 'bid' instead of 'bid_price'
+      bid_price: bidPrice, // Keep both for compatibility
+      deep_bid_type: 'MIN', // Minimum cost strategy for LEAD_GENERATION
+      deep_cpa_bid: bidPrice, // Cost per acquisition for LEAD_GENERATION
+      conversion_bid_price: bidPrice, // Another possible field name
+      location_ids: [locationId], // Use resolved Location ID
+    };
+
+    // Add optional fields only if they have values
+    if (platformConfig.pixelId) {
+      adGroupParams.pixel_id = platformConfig.pixelId;
+    }
+    if (tiktokAgeGroups.length > 0) {
+      adGroupParams.age_groups = tiktokAgeGroups;
+    }
+
+    logger.info('tiktok', `Creating Ad Group with params (including all bid fields):`, {
+      ...adGroupParams,
+      bidFields: {
+        bid: adGroupParams.bid,
+        bid_price: adGroupParams.bid_price,
+        deep_cpa_bid: adGroupParams.deep_cpa_bid,
+        conversion_bid_price: adGroupParams.conversion_bid_price,
+        deep_bid_type: adGroupParams.deep_bid_type
+      }
     });
+
+    const adGroup = await tiktokService.createAdGroup(adGroupParams);
 
     logger.success('tiktok', `TikTok ad group created with ID: ${adGroup.adgroup_id} `);
 
@@ -1525,12 +1629,17 @@ class CampaignOrchestratorService {
       const image = images[0]; // Use first image
       logger.info('tiktok', `Uploading image to TikTok: ${image.fileName} `);
 
-      const axios = require('axios');
-      const response = await axios.get(image.url, { responseType: 'arraybuffer' });
-      const imageBuffer = Buffer.from(response.data);
+      // Download image to buffer (TikTok API prefers file upload for reliability)
+      const imageResponse = await fetch(image.url);
+      const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
 
-      const uploadResult = await tiktokService.uploadImage(imageBuffer, image.fileName);
-      imageIds = [uploadResult.id];
+      const uploadResult = await tiktokService.uploadImage(
+        imageBuffer,
+        image.fileName,
+        'UPLOAD_BY_FILE'
+      );
+
+      imageIds = [uploadResult.image_id];
 
       // Update media record
       await prisma.media.update({
@@ -1543,7 +1652,8 @@ class CampaignOrchestratorService {
 
     // Get TikTok identity (required for ads)
     const identities = await tiktokService.getIdentities();
-    const identityId = identities.list?.[0]?.identity_id;
+    logger.info('tiktok', `Identities response: ${JSON.stringify(identities)}`);
+    const identityId = identities.identity_list?.[0]?.identity_id;
 
     if (!identityId) {
       throw new Error('No TikTok identity found. Please set up a TikTok account first.');
@@ -1556,7 +1666,7 @@ class CampaignOrchestratorService {
       aiContent.copyMaster
     );
 
-    logger.info('tiktok', `Using formatted Tonic link: ${finalLink}`);
+    logger.info('tiktok', `Using formatted Tonic link: ${finalLink} `);
 
     // Create Ad (according to TikTok Ads API)
     const ad = await tiktokService.createAd({
