@@ -127,11 +127,56 @@ class TikTokService {
    */
   private handleResponse(response: any) {
     if (response.data.code !== 0) {
+      // Enhanced error logging
+      const errorDetails = {
+        code: response.data.code,
+        message: response.data.message,
+        request_id: response.data.request_id,
+        data: response.data.data
+      };
+
+      console.error('[TikTok API Error]', JSON.stringify(errorDetails, null, 2));
+
       throw new Error(
-        `TikTok API Error [${response.data.code}]: ${response.data.message}`
+        `TikTok API Error [${response.data.code}]: ${response.data.message} (Request ID: ${response.data.request_id || 'N/A'})`
       );
     }
     return response.data.data;
+  }
+
+  /**
+   * Retry wrapper for API calls with exponential backoff
+   */
+  private async retryWithBackoff<T>(
+    fn: () => Promise<T>,
+    maxRetries: number = 3,
+    delayMs: number = 1000
+  ): Promise<T> {
+    let lastError: any;
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        return await fn();
+      } catch (error: any) {
+        lastError = error;
+
+        // Don't retry on client errors (4xx) except rate limiting (429)
+        if (error.response && error.response.status >= 400 && error.response.status < 500 && error.response.status !== 429) {
+          throw error;
+        }
+
+        // Log retry attempt
+        console.warn(`[TikTok API] Retry attempt ${attempt + 1}/${maxRetries} after error:`, error.message);
+
+        // Wait before retrying (exponential backoff)
+        if (attempt < maxRetries - 1) {
+          const delay = delayMs * Math.pow(2, attempt);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+
+    throw lastError;
   }
 
   // ============================================
@@ -142,8 +187,10 @@ class TikTokService {
    * Create a new campaign
    */
   async createCampaign(params: TikTokCampaignParams) {
-    const response = await this.client.post('/campaign/create/', params);
-    return this.handleResponse(response);
+    return this.retryWithBackoff(async () => {
+      const response = await this.client.post('/campaign/create/', params);
+      return this.handleResponse(response);
+    });
   }
 
   /**
@@ -208,8 +255,10 @@ class TikTokService {
    * Create an ad group within a campaign
    */
   async createAdGroup(params: TikTokAdGroupParams) {
-    const response = await this.client.post('/adgroup/create/', params);
-    return this.handleResponse(response);
+    return this.retryWithBackoff(async () => {
+      const response = await this.client.post('/adgroup/create/', params);
+      return this.handleResponse(response);
+    });
   }
 
   /**
@@ -260,23 +309,25 @@ class TikTokService {
    * Create an ad
    */
   async createAd(params: TikTokAdParams) {
-    const { advertiser_id, adgroup_id, ...creativeParams } = params;
+    return this.retryWithBackoff(async () => {
+      const { advertiser_id, adgroup_id, ...creativeParams } = params;
 
-    const payload = {
-      advertiser_id,
-      adgroup_id,
-      creatives: [
-        {
-          ...creativeParams,
-        },
-      ],
-    };
+      const payload = {
+        advertiser_id,
+        adgroup_id,
+        creatives: [
+          {
+            ...creativeParams,
+          },
+        ],
+      };
 
-    const response = await this.client.post('/ad/create/', payload);
-    const data = this.handleResponse(response);
+      const response = await this.client.post('/ad/create/', payload);
+      const data = this.handleResponse(response);
 
-    // API returns { ad_ids: [...] }
-    return { ad_id: data.ad_ids[0] };
+      // API returns { ad_ids: [...] }
+      return { ad_id: data.ad_ids[0] };
+    });
   }
 
   /**

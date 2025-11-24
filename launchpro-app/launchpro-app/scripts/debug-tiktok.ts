@@ -1,5 +1,5 @@
 
-import { TikTokService } from '../services/tiktok.service';
+import { tiktokService } from '../services/tiktok.service';
 import * as dotenv from 'dotenv';
 
 dotenv.config();
@@ -17,7 +17,7 @@ async function debugTikTok() {
         return;
     }
 
-    const tiktokService = new TikTokService();
+    // tiktokService is already exported as a singleton, no need to instantiate
 
     try {
         console.log('\n1. Testing User Info...');

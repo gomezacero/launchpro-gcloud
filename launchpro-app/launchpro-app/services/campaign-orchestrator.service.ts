@@ -1548,18 +1548,20 @@ class CampaignOrchestratorService {
       pixelId: platformConfig.pixelId
     });
 
+    // Create Ad Group parameters object
     const adGroupParams: any = {
       advertiser_id: tiktokService['advertiserId'],
       campaign_id: tiktokCampaign.campaign_id,
-      adgroup_name: `${campaign.name} - AdGroup`,
-      promotion_type: 'LEAD_GENERATION', // Must match campaign objective
-      placement_type: 'PLACEMENT_TYPE_NORMAL', // Explicit placement
-      placements: ['PLACEMENT_TIKTOK'], // Only TikTok placement
+      adgroup_name: `${campaign.name} - Ad Group`,
+      promotion_type: 'LEAD_GENERATION',
+      // IMPORTANT: Placements field is required by TikTok API
+      // Available placements: PLACEMENT_TIKTOK (main app), PLACEMENT_PANGLE (partner network), etc.
+      placements: ['PLACEMENT_TIKTOK'], // Using TikTok main app placement only
+      schedule_type: 'SCHEDULE_START_END',
+      schedule_start_time: startDate.toISOString().replace('T', ' ').split('.')[0],
+      schedule_end_time: endDate.toISOString().replace('T', ' ').split('.')[0],
       budget_mode: 'BUDGET_MODE_DAY',
       budget: dailyBudgetInCents,
-      schedule_type: 'SCHEDULE_START_END', // Use specific start and end dates
-      schedule_start_time: startDate.toISOString(),
-      schedule_end_time: endDate.toISOString(),
       optimization_goal: 'LEAD_GENERATION', // For LEAD_GENERATION objective
       billing_event: 'OCPM', // Optimized CPM for lead gen
       bid_type: 'BID_TYPE_CUSTOM', // Custom bidding with specified price
@@ -1571,150 +1573,190 @@ class CampaignOrchestratorService {
       location_ids: [locationId], // Use resolved Location ID
     };
 
-    // Add optional fields only if they have values
-    if (platformConfig.pixelId) {
-      adGroupParams.pixel_id = platformConfig.pixelId;
-    }
-    if (tiktokAgeGroups.length > 0) {
-      adGroupParams.age_groups = tiktokAgeGroups;
-    }
+  // Add optional fields only if they have values
+  if(platformConfig.pixelId) {
+    adGroupParams.pixel_id = platformConfig.pixelId;
+  }
+  if(tiktokAgeGroups.length > 0) {
+  adGroupParams.age_groups = tiktokAgeGroups;
+}
 
-    logger.info('tiktok', `Creating Ad Group with params (including all bid fields):`, {
-      ...adGroupParams,
-      bidFields: {
-        bid: adGroupParams.bid,
-        bid_price: adGroupParams.bid_price,
-        deep_cpa_bid: adGroupParams.deep_cpa_bid,
-        conversion_bid_price: adGroupParams.conversion_bid_price,
-        deep_bid_type: adGroupParams.deep_bid_type
-      }
-    });
+logger.info('tiktok', `Creating Ad Group with params (including all bid fields):`, {
+  ...adGroupParams,
+  bidFields: {
+    bid: adGroupParams.bid,
+    bid_price: adGroupParams.bid_price,
+    deep_cpa_bid: adGroupParams.deep_cpa_bid,
+    conversion_bid_price: adGroupParams.conversion_bid_price,
+    deep_bid_type: adGroupParams.deep_bid_type
+  }
+});
 
-    const adGroup = await tiktokService.createAdGroup(adGroupParams);
+const adGroup = await tiktokService.createAdGroup(adGroupParams);
 
-    logger.success('tiktok', `TikTok ad group created with ID: ${adGroup.adgroup_id} `);
+logger.success('tiktok', `TikTok ad group created with ID: ${adGroup.adgroup_id} `);
 
-    // Upload media to TikTok
-    let videoId: string | undefined;
-    let imageIds: string[] = [];
+// Upload media to TikTok
+let videoId: string | undefined;
+let imageIds: string[] = [];
 
-    if (useVideo) {
-      // UPLOAD VIDEO
-      const video = videos[0]; // Use first video
-      logger.info('tiktok', `Uploading video to TikTok: ${video.fileName} `);
+if (useVideo) {
+  // UPLOAD VIDEO
+  const video = videos[0]; // Use first video
+  logger.info('tiktok', `Uploading video to TikTok: ${video.fileName} `);
 
-      // TikTok supports upload by URL (easier with signed URLs)
-      const uploadResult = await tiktokService.uploadVideo({
-        advertiser_id: tiktokService['advertiserId'],
-        upload_type: 'UPLOAD_BY_URL',
-        video_url: video.url,
-        auto_bind_enabled: true,
-        auto_fix_enabled: true,
-      });
+  // TikTok supports upload by URL (easier with signed URLs)
+  const uploadResult = await tiktokService.uploadVideo({
+    advertiser_id: tiktokService['advertiserId'],
+    upload_type: 'UPLOAD_BY_URL',
+    video_url: video.url,
+    auto_bind_enabled: true,
+    auto_fix_enabled: true,
+  });
 
-      videoId = uploadResult.video_id;
+  videoId = uploadResult.video_id;
 
-      // Update media record
-      await prisma.media.update({
-        where: { id: video.id },
-        data: {
-          usedInTiktok: true,
-          tiktokVideoId: videoId,
-        },
-      });
+  // Update media record
+  await prisma.media.update({
+    where: { id: video.id },
+    data: {
+      usedInTiktok: true,
+      tiktokVideoId: videoId,
+    },
+  });
 
-      logger.success('tiktok', `Video uploaded successfully to TikTok`, { videoId });
-    } else {
-      // UPLOAD IMAGE
-      const image = images[0]; // Use first image
-      logger.info('tiktok', `Uploading image to TikTok: ${image.fileName} `);
+  logger.success('tiktok', `Video uploaded successfully to TikTok`, { videoId });
+} else {
+  // UPLOAD IMAGE
+  const image = images[0]; // Use first image
+  logger.info('tiktok', `Uploading image to TikTok: ${image.fileName} `);
 
-      // Download image to buffer (TikTok API prefers file upload for reliability)
+  try {
+    // Try UPLOAD_BY_URL first (more reliable for TikTok)
+    logger.info('tiktok', `Attempting to upload image via URL: ${image.url}`);
+
+    const uploadResult = await tiktokService.uploadImage(
+      image.url,
+      image.fileName,
+      'UPLOAD_BY_URL'
+    );
+
+    imageIds = [uploadResult.image_id];
+    logger.success('tiktok', `Image uploaded successfully via URL to TikTok`, { imageId: imageIds[0] });
+
+  } catch (urlError: any) {
+    logger.warn('tiktok', `Failed to upload image via URL: ${urlError.message}. Trying file upload with resizing...`);
+
+    // Fallback: Download, process and upload as file
+    try {
+      // Import sharp at the top of the file (we'll add this import)
+      const sharp = require('sharp');
+
+      // Download image to buffer
       const imageResponse = await fetch(image.url);
-      const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
+      const originalBuffer = Buffer.from(await imageResponse.arrayBuffer());
+
+      // Resize image to TikTok-compatible dimensions (1200x1200 for square, maintains aspect ratio)
+      // TikTok accepts: 1200x1200 (square), 1080x1920 (9:16), 1920x1080 (16:9)
+      logger.info('tiktok', `Resizing image to TikTok-compatible dimensions...`);
+
+      const processedBuffer = await sharp(originalBuffer)
+        .resize(1200, 1200, {
+          fit: 'cover', // This will crop to fill the exact dimensions
+          position: 'center'
+        })
+        .jpeg({ quality: 90 }) // Convert to JPEG with good quality
+        .toBuffer();
+
+      logger.info('tiktok', `Image resized successfully. Uploading processed image...`);
 
       const uploadResult = await tiktokService.uploadImage(
-        imageBuffer,
-        image.fileName,
+        processedBuffer,
+        image.fileName.replace(/\.[^/.]+$/, '.jpg'), // Ensure .jpg extension
         'UPLOAD_BY_FILE'
       );
 
       imageIds = [uploadResult.image_id];
+      logger.success('tiktok', `Image uploaded successfully via file upload to TikTok`, { imageId: imageIds[0] });
 
-      // Update media record
-      await prisma.media.update({
-        where: { id: image.id },
-        data: { usedInTiktok: true },
-      });
-
-      logger.success('tiktok', `Image uploaded successfully to TikTok`, { imageId: imageIds[0] });
+    } catch (fileError: any) {
+      logger.error('tiktok', `Failed to upload image even after resizing: ${fileError.message}`);
+      throw new Error(`TikTok image upload failed: ${fileError.message}. Original error: ${urlError.message}`);
     }
+  }
 
-    // Get TikTok identity (required for ads)
-    const identities = await tiktokService.getIdentities();
-    logger.info('tiktok', `Identities response: ${JSON.stringify(identities)}`);
-    const identityId = identities.identity_list?.[0]?.identity_id;
+  // Update media record
+  await prisma.media.update({
+    where: { id: image.id },
+    data: { usedInTiktok: true },
+  });
+}
 
-    if (!identityId) {
-      throw new Error('No TikTok identity found. Please set up a TikTok account first.');
-    }
+// Get TikTok identity (required for ads)
+const identities = await tiktokService.getIdentities();
+logger.info('tiktok', `Identities response: ${JSON.stringify(identities)}`);
+const identityId = identities.identity_list?.[0]?.identity_id;
 
-    // FORMAT TONIC LINK
-    const finalLink = this.formatTonicLink(
-      campaign.tonicTrackingLink || 'https://example.com',
-      'TIKTOK',
-      aiContent.copyMaster
-    );
+if (!identityId) {
+  throw new Error('No TikTok identity found. Please set up a TikTok account first.');
+}
 
-    logger.info('tiktok', `Using formatted Tonic link: ${finalLink} `);
+// FORMAT TONIC LINK
+const finalLink = this.formatTonicLink(
+  campaign.tonicTrackingLink || 'https://example.com',
+  'TIKTOK',
+  aiContent.copyMaster
+);
 
-    // Create Ad (according to TikTok Ads API)
-    const ad = await tiktokService.createAd({
-      advertiser_id: tiktokService['advertiserId'],
-      adgroup_id: adGroup.adgroup_id,
-      ad_name: `${campaign.name} - Ad`,
-      ad_format: useVideo ? 'SINGLE_VIDEO' : 'SINGLE_IMAGE',
-      ad_text: adCopy.primaryText,
-      call_to_action: adCopy.callToAction || 'LEARN_MORE',
-      landing_page_url: finalLink,
-      display_name: campaign.offer.name,
-      ...(useVideo ? { video_id: videoId } : { image_ids: imageIds }),
-      identity_id: identityId,
-      identity_type: 'CUSTOMIZED_USER',
-    });
+logger.info('tiktok', `Using formatted Tonic link: ${finalLink} `);
 
-    logger.success('tiktok', `TikTok ad created with ID: ${ad.ad_id} `);
+// Create Ad (according to TikTok Ads API)
+const ad = await tiktokService.createAd({
+  advertiser_id: tiktokService['advertiserId'],
+  adgroup_id: adGroup.adgroup_id,
+  ad_name: `${campaign.name} - Ad`,
+  ad_format: useVideo ? 'SINGLE_VIDEO' : 'SINGLE_IMAGE',
+  ad_text: adCopy.primaryText,
+  call_to_action: adCopy.callToAction || 'LEARN_MORE',
+  landing_page_url: finalLink,
+  display_name: campaign.offer.name,
+  ...(useVideo ? { video_id: videoId } : { image_ids: imageIds }),
+  identity_id: identityId,
+  identity_type: 'CUSTOMIZED_USER',
+});
 
-    // Update database
-    await prisma.campaignPlatform.update({
-      where: {
-        campaignId_platform: {
-          campaignId: campaign.id,
-          platform: Platform.TIKTOK,
-        },
-      },
-      data: {
-        tiktokCampaignId: tiktokCampaign.campaign_id,
-        tiktokAdGroupId: adGroup.adgroup_id,
-        tiktokAdId: ad.ad_id,
-        status: CampaignStatus.ACTIVE,
-      },
-    });
+logger.success('tiktok', `TikTok ad created with ID: ${ad.ad_id} `);
 
-    logger.success('tiktok', 'TikTok campaign launched successfully', {
-      campaignId: tiktokCampaign.campaign_id,
-      adGroupId: adGroup.adgroup_id,
-      adId: ad.ad_id,
-      adFormat,
-    });
-
-    return {
+// Update database
+await prisma.campaignPlatform.update({
+  where: {
+    campaignId_platform: {
+      campaignId: campaign.id,
       platform: Platform.TIKTOK,
-      success: true,
-      campaignId: tiktokCampaign.campaign_id,
-      adGroupId: adGroup.adgroup_id,
-      adId: ad.ad_id,
-    };
+    },
+  },
+  data: {
+    tiktokCampaignId: tiktokCampaign.campaign_id,
+    tiktokAdGroupId: adGroup.adgroup_id,
+    tiktokAdId: ad.ad_id,
+    status: CampaignStatus.ACTIVE,
+  },
+});
+
+logger.success('tiktok', 'TikTok campaign launched successfully', {
+  campaignId: tiktokCampaign.campaign_id,
+  adGroupId: adGroup.adgroup_id,
+  adId: ad.ad_id,
+  adFormat,
+});
+
+return {
+  platform: Platform.TIKTOK,
+  success: true,
+  campaignId: tiktokCampaign.campaign_id,
+  adGroupId: adGroup.adgroup_id,
+  adId: ad.ad_id,
+};
   }
 
   /**
@@ -1726,138 +1768,138 @@ class CampaignOrchestratorService {
    * - Media files uploaded (if required)
    * - Platform configurations set
    */
-  async launchExistingCampaignToPlatforms(campaignId: string): Promise<LaunchResult> {
-    const errors: string[] = [];
+  async launchExistingCampaignToPlatforms(campaignId: string): Promise < LaunchResult > {
+  const errors: string[] = [];
 
-    try {
-      logger.info('system', `Launching existing campaign ${campaignId} to platforms...`);
+  try {
+    logger.info('system', `Launching existing campaign ${campaignId} to platforms...`);
 
-      // Fetch campaign with all related data
-      const campaign = await prisma.campaign.findUnique({
-        where: { id: campaignId },
-        include: {
-          offer: true,
-          platforms: true,
-          media: true,
-        },
-      });
+    // Fetch campaign with all related data
+    const campaign = await prisma.campaign.findUnique({
+      where: { id: campaignId },
+      include: {
+        offer: true,
+        platforms: true,
+        media: true,
+      },
+    });
 
-      if (!campaign) {
-        throw new Error(`Campaign ${campaignId} not found`);
-      }
+    if(!campaign) {
+      throw new Error(`Campaign ${campaignId} not found`);
+    }
 
       // Validate that Tonic campaign was created (tracking link is optional - will use fallback if missing)
-      if (!campaign.tonicCampaignId) {
-        throw new Error(`Campaign ${campaignId} does not have Tonic campaign ID.Please create the campaign first.`);
-      }
+      if(!campaign.tonicCampaignId) {
+  throw new Error(`Campaign ${campaignId} does not have Tonic campaign ID.Please create the campaign first.`);
+}
 
-      // Warn if tracking link is missing (but don't fail - ads will use fallback URL)
-      if (!campaign.tonicTrackingLink || campaign.tonicTrackingLink.includes('tonic-placeholder')) {
-        logger.warn('system', '⚠️  Tracking link is missing or placeholder. Ads will use fallback URL.', {
-          tonicCampaignId: campaign.tonicCampaignId,
-          trackingLink: campaign.tonicTrackingLink,
-        });
-      }
+// Warn if tracking link is missing (but don't fail - ads will use fallback URL)
+if (!campaign.tonicTrackingLink || campaign.tonicTrackingLink.includes('tonic-placeholder')) {
+  logger.warn('system', '⚠️  Tracking link is missing or placeholder. Ads will use fallback URL.', {
+    tonicCampaignId: campaign.tonicCampaignId,
+    trackingLink: campaign.tonicTrackingLink,
+  });
+}
 
-      logger.info('system', `Found campaign: ${campaign.name} `, {
-        tonicCampaignId: campaign.tonicCampaignId,
-        tonicTrackingLink: campaign.tonicTrackingLink || undefined,
-        platformCount: campaign.platforms.length,
-        mediaCount: campaign.media.length,
-      });
+logger.info('system', `Found campaign: ${campaign.name} `, {
+  tonicCampaignId: campaign.tonicCampaignId,
+  tonicTrackingLink: campaign.tonicTrackingLink || undefined,
+  platformCount: campaign.platforms.length,
+  mediaCount: campaign.media.length,
+});
 
-      // Prepare AI content structure (keywords and copy master are already in campaign)
-      const aiContentResult = {
-        copyMaster: campaign.copyMaster || '',
-        keywords: campaign.keywords || [],
-        article: campaign.tonicArticleId ? { headlineId: campaign.tonicArticleId } : undefined,
-      };
+// Prepare AI content structure (keywords and copy master are already in campaign)
+const aiContentResult = {
+  copyMaster: campaign.copyMaster || '',
+  keywords: campaign.keywords || [],
+  article: campaign.tonicArticleId ? { headlineId: campaign.tonicArticleId } : undefined,
+};
 
-      // Update status to LAUNCHING
-      await prisma.campaign.update({
-        where: { id: campaignId },
-        data: { status: CampaignStatus.LAUNCHING },
-      });
+// Update status to LAUNCHING
+await prisma.campaign.update({
+  where: { id: campaignId },
+  data: { status: CampaignStatus.LAUNCHING },
+});
 
-      // Launch to each platform
-      const platformResults = [];
+// Launch to each platform
+const platformResults = [];
 
-      for (const platformConfig of campaign.platforms) {
-        try {
-          logger.info('system', `Launching to ${platformConfig.platform}...`);
+for (const platformConfig of campaign.platforms) {
+  try {
+    logger.info('system', `Launching to ${platformConfig.platform}...`);
 
-          // Convert database platform config to the format expected by launch methods
-          const platformParams = {
-            platform: platformConfig.platform,
-            accountId: platformConfig.metaAccountId || platformConfig.tiktokAccountId || '',
-            performanceGoal: platformConfig.performanceGoal,
-            budget: platformConfig.budget,
-            startDate: platformConfig.startDate,
-            generateWithAI: platformConfig.generateWithAI,
-          };
+    // Convert database platform config to the format expected by launch methods
+    const platformParams = {
+      platform: platformConfig.platform,
+      accountId: platformConfig.metaAccountId || platformConfig.tiktokAccountId || '',
+      performanceGoal: platformConfig.performanceGoal,
+      budget: platformConfig.budget,
+      startDate: platformConfig.startDate,
+      generateWithAI: platformConfig.generateWithAI,
+    };
 
-          if (platformConfig.platform === Platform.META) {
-            const result = await this.launchToMeta(campaign, platformParams, aiContentResult);
-            platformResults.push(result);
-          } else if (platformConfig.platform === Platform.TIKTOK) {
-            const result = await this.launchToTikTok(campaign, platformParams, aiContentResult);
-            platformResults.push(result);
-          }
-        } catch (error: any) {
-          logger.error('system', `Error launching to ${platformConfig.platform}: ${error.message} `, {
-            platform: platformConfig.platform,
-            error: error.message,
-            stack: error.stack,
-          });
-          errors.push(`${platformConfig.platform}: ${error.message} `);
-          platformResults.push({
-            platform: platformConfig.platform,
-            success: false,
-            error: error.message,
-          });
-        }
-      }
-
-      // Update final status
-      const allSuccessful = platformResults.every((r) => r.success);
-
-      await prisma.campaign.update({
-        where: { id: campaignId },
-        data: {
-          status: allSuccessful ? CampaignStatus.ACTIVE : CampaignStatus.FAILED,
-          launchedAt: new Date(),
-        },
-      });
-
-      logger.success('system', `Campaign launch complete! Status: ${allSuccessful ? 'ACTIVE' : 'FAILED'} `, {
-        campaignId,
-        platforms: platformResults.map(p => ({ platform: p.platform, success: p.success })),
-      });
-
-      return {
-        success: allSuccessful,
-        campaignId,
-        tonicCampaignId: campaign.tonicCampaignId,
-        tonicTrackingLink: campaign.tonicTrackingLink || undefined,
-        platforms: platformResults,
-        aiContent: aiContentResult,
-        errors: errors.length > 0 ? errors : undefined,
-      };
-    } catch (error: any) {
-      logger.error('system', `Failed to launch campaign to platforms: ${error.message} `, {
-        campaignId,
-        error: error.message,
-        stack: error.stack,
-      });
-
-      // Update campaign status to FAILED
-      await prisma.campaign.update({
-        where: { id: campaignId },
-        data: { status: CampaignStatus.FAILED },
-      });
-
-      throw new Error(`Failed to launch campaign to platforms: ${error.message} `);
+    if (platformConfig.platform === Platform.META) {
+      const result = await this.launchToMeta(campaign, platformParams, aiContentResult);
+      platformResults.push(result);
+    } else if (platformConfig.platform === Platform.TIKTOK) {
+      const result = await this.launchToTikTok(campaign, platformParams, aiContentResult);
+      platformResults.push(result);
     }
+  } catch (error: any) {
+    logger.error('system', `Error launching to ${platformConfig.platform}: ${error.message} `, {
+      platform: platformConfig.platform,
+      error: error.message,
+      stack: error.stack,
+    });
+    errors.push(`${platformConfig.platform}: ${error.message} `);
+    platformResults.push({
+      platform: platformConfig.platform,
+      success: false,
+      error: error.message,
+    });
+  }
+}
+
+// Update final status
+const allSuccessful = platformResults.every((r) => r.success);
+
+await prisma.campaign.update({
+  where: { id: campaignId },
+  data: {
+    status: allSuccessful ? CampaignStatus.ACTIVE : CampaignStatus.FAILED,
+    launchedAt: new Date(),
+  },
+});
+
+logger.success('system', `Campaign launch complete! Status: ${allSuccessful ? 'ACTIVE' : 'FAILED'} `, {
+  campaignId,
+  platforms: platformResults.map(p => ({ platform: p.platform, success: p.success })),
+});
+
+return {
+  success: allSuccessful,
+  campaignId,
+  tonicCampaignId: campaign.tonicCampaignId,
+  tonicTrackingLink: campaign.tonicTrackingLink || undefined,
+  platforms: platformResults,
+  aiContent: aiContentResult,
+  errors: errors.length > 0 ? errors : undefined,
+};
+    } catch (error: any) {
+  logger.error('system', `Failed to launch campaign to platforms: ${error.message} `, {
+    campaignId,
+    error: error.message,
+    stack: error.stack,
+  });
+
+  // Update campaign status to FAILED
+  await prisma.campaign.update({
+    where: { id: campaignId },
+    data: { status: CampaignStatus.FAILED },
+  });
+
+  throw new Error(`Failed to launch campaign to platforms: ${error.message} `);
+}
   }
 }
 
