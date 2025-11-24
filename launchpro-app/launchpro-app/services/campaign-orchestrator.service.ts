@@ -1629,60 +1629,80 @@ if (useVideo) {
 } else {
   // UPLOAD IMAGE
   const image = images[0]; // Use first image
-  logger.info('tiktok', `Uploading image to TikTok: ${image.fileName} `);
+  logger.info('tiktok', `Processing image for TikTok: ${image.fileName} `);
 
+  // ALWAYS process the image first to ensure TikTok compatibility
   try {
-    // Try UPLOAD_BY_URL first (more reliable for TikTok)
-    logger.info('tiktok', `Attempting to upload image via URL: ${image.url}`);
+    const sharp = require('sharp');
 
-    const uploadResult = await tiktokService.uploadImage(
-      image.url,
-      image.fileName,
-      'UPLOAD_BY_URL'
-    );
+    // Download image to buffer
+    logger.info('tiktok', `Downloading and processing image for TikTok compliance...`);
+    const imageResponse = await fetch(image.url);
+    const originalBuffer = Buffer.from(await imageResponse.arrayBuffer());
 
-    imageIds = [uploadResult.image_id];
-    logger.success('tiktok', `Image uploaded successfully via URL to TikTok`, { imageId: imageIds[0] });
+    // Get image metadata to check dimensions
+    const metadata = await sharp(originalBuffer).metadata();
+    logger.info('tiktok', `Original image dimensions: ${metadata.width}x${metadata.height}`);
 
-  } catch (urlError: any) {
-    logger.warn('tiktok', `Failed to upload image via URL: ${urlError.message}. Trying file upload with resizing...`);
+    // TikTok requires specific dimensions for ads
+    // For SINGLE_IMAGE ads: 1200x1200 (1:1), 1080x1920 (9:16), or 1920x1080 (16:9)
+    // We'll use 1200x1200 as default for maximum compatibility
+    const targetWidth = 1200;
+    const targetHeight = 1200;
 
-    // Fallback: Download, process and upload as file
-    try {
-      // Import sharp at the top of the file (we'll add this import)
-      const sharp = require('sharp');
+    // Check if image needs resizing
+    const needsResize = metadata.width !== targetWidth || metadata.height !== targetHeight;
 
-      // Download image to buffer
-      const imageResponse = await fetch(image.url);
-      const originalBuffer = Buffer.from(await imageResponse.arrayBuffer());
+    let finalBuffer: Buffer;
+    let finalFileName: string;
 
-      // Resize image to TikTok-compatible dimensions (1200x1200 for square, maintains aspect ratio)
-      // TikTok accepts: 1200x1200 (square), 1080x1920 (9:16), 1920x1080 (16:9)
-      logger.info('tiktok', `Resizing image to TikTok-compatible dimensions...`);
+    if (needsResize) {
+      logger.info('tiktok', `Resizing image from ${metadata.width}x${metadata.height} to ${targetWidth}x${targetHeight} for TikTok compliance...`);
 
-      const processedBuffer = await sharp(originalBuffer)
-        .resize(1200, 1200, {
+      finalBuffer = await sharp(originalBuffer)
+        .resize(targetWidth, targetHeight, {
           fit: 'cover', // This will crop to fill the exact dimensions
           position: 'center'
         })
-        .jpeg({ quality: 90 }) // Convert to JPEG with good quality
+        .jpeg({
+          quality: 95, // High quality
+          mozjpeg: true // Better compression
+        })
         .toBuffer();
 
-      logger.info('tiktok', `Image resized successfully. Uploading processed image...`);
-
-      const uploadResult = await tiktokService.uploadImage(
-        processedBuffer,
-        image.fileName.replace(/\.[^/.]+$/, '.jpg'), // Ensure .jpg extension
-        'UPLOAD_BY_FILE'
-      );
-
-      imageIds = [uploadResult.image_id];
-      logger.success('tiktok', `Image uploaded successfully via file upload to TikTok`, { imageId: imageIds[0] });
-
-    } catch (fileError: any) {
-      logger.error('tiktok', `Failed to upload image even after resizing: ${fileError.message}`);
-      throw new Error(`TikTok image upload failed: ${fileError.message}. Original error: ${urlError.message}`);
+      finalFileName = image.fileName.replace(/\.[^/.]+$/, '_tiktok.jpg');
+      logger.success('tiktok', `Image resized successfully to ${targetWidth}x${targetHeight}`);
+    } else {
+      logger.info('tiktok', `Image dimensions are already TikTok-compatible (${metadata.width}x${metadata.height})`);
+      // Still convert to JPEG to ensure format compatibility
+      finalBuffer = await sharp(originalBuffer)
+        .jpeg({
+          quality: 95,
+          mozjpeg: true
+        })
+        .toBuffer();
+      finalFileName = image.fileName.replace(/\.[^/.]+$/, '.jpg');
     }
+
+    // Upload the processed image
+    logger.info('tiktok', `Uploading processed image to TikTok...`);
+
+    const uploadResult = await tiktokService.uploadImage(
+      finalBuffer,
+      finalFileName,
+      'UPLOAD_BY_FILE'
+    );
+
+    imageIds = [uploadResult.image_id];
+    logger.success('tiktok', `Image uploaded successfully to TikTok`, {
+      imageId: imageIds[0],
+      finalDimensions: `${targetWidth}x${targetHeight}`,
+      fileName: finalFileName
+    });
+
+  } catch (error: any) {
+    logger.error('tiktok', `Failed to process/upload image: ${error.message}`);
+    throw new Error(`TikTok image processing failed: ${error.message}`);
   }
 
   // Update media record
