@@ -74,6 +74,61 @@ export async function GET(request: NextRequest) {
         orderBy: { name: 'asc' },
       });
 
+      // Add health status validation for each account
+      const addHealthStatus = (account: any, type: AccountType) => {
+        const issues: string[] = [];
+        let status: 'healthy' | 'warning' | 'error' = 'healthy';
+
+        switch (type) {
+          case AccountType.TONIC:
+            if (!account.tonicApiKey) {
+              issues.push('Missing API key');
+              status = 'error';
+            }
+            if (!account.tonicAccountId) {
+              issues.push('Missing account ID');
+              status = status === 'error' ? 'error' : 'warning';
+            }
+            break;
+
+          case AccountType.META:
+            if (!account.metaAdAccountId) {
+              issues.push('Missing ad account ID');
+              status = 'error';
+            }
+            if (!account.metaAccessToken) {
+              issues.push('Missing access token');
+              status = 'error';
+            }
+            if (!account.metaPixelId) {
+              issues.push('Missing pixel ID');
+              status = status === 'error' ? 'error' : 'warning';
+            }
+            break;
+
+          case AccountType.TIKTOK:
+            if (!account.tiktokAdvertiserId) {
+              issues.push('Missing advertiser ID');
+              status = 'error';
+            }
+            if (!account.tiktokAccessToken) {
+              issues.push('Missing access token');
+              status = 'error';
+            }
+            if (!account.tiktokPixelId) {
+              issues.push('Missing pixel ID (can be auto-fetched)');
+              status = status === 'error' ? 'error' : 'warning';
+            }
+            break;
+        }
+
+        return { ...account, status, issues };
+      };
+
+      const tonicWithStatus = tonicAccounts.map(acc => addHealthStatus(acc, AccountType.TONIC));
+      const metaWithStatus = metaAccounts.map(acc => addHealthStatus(acc, AccountType.META));
+      const tiktokWithStatus = tiktokAccounts.map(acc => addHealthStatus(acc, AccountType.TIKTOK));
+
       // Group Meta accounts by portfolio
       const metaByPortfolio = metaAccounts.reduce((acc, account) => {
         const portfolio = account.metaPortfolio || 'Other';
@@ -87,12 +142,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         success: true,
         data: {
-          tonic: tonicAccounts,
+          tonic: tonicWithStatus,
           meta: {
-            all: metaAccounts,
+            all: metaWithStatus,
             byPortfolio: metaByPortfolio,
           },
-          tiktok: tiktokAccounts,
+          tiktok: tiktokWithStatus,
         },
       });
     }

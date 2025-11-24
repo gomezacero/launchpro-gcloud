@@ -10,7 +10,11 @@
       "Bash(nul)",
       "Bash(findstr:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(npx ts-node:*)",
+      "Bash(npx tsx:*)",
+      "Bash(node -r dotenv/config node_modules/.bin/tsx:*)",
+      "Bash(test:*)"
     ],
     "deny": [],
     "ask": []

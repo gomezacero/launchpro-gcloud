@@ -130,6 +130,26 @@ class MetaService {
     });
   }
 
+  /**
+   * Get an authenticated Axios client
+   * Uses the provided access token or falls back to the default one
+   */
+  private getClient(accessToken?: string): AxiosInstance {
+    if (!accessToken) {
+      return this.client;
+    }
+
+    return axios.create({
+      baseURL: `https://graph.facebook.com/${env.META_API_VERSION}`,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      params: {
+        access_token: accessToken,
+      },
+    });
+  }
+
   // ============================================
   // CAMPAIGNS
   // ============================================
@@ -140,7 +160,7 @@ class MetaService {
    * CBO (Campaign Budget Optimization): Include daily_budget or lifetime_budget at campaign level
    * ABO (Ad Set Budget Optimization): Omit budget here, set at AdSet level
    */
-  async createCampaign(params: MetaCampaignParams, adAccountId?: string) {
+  async createCampaign(params: MetaCampaignParams, adAccountId?: string, accessToken?: string) {
     const accountId = adAccountId || this.adAccountId;
     const payload: any = {
       name: params.name,
@@ -169,7 +189,8 @@ class MetaService {
     });
 
     try {
-      const response = await this.client.post(`/${accountId}/campaigns`, payload);
+      const client = this.getClient(accessToken);
+      const response = await client.post(`/${accountId}/campaigns`, payload);
       console.log('[META] ✅ Campaign created successfully:', {
         id: response.data.id,
         name: payload.name,
@@ -237,7 +258,7 @@ class MetaService {
    * - CBO (Campaign Budget Optimization): Budget at campaign level, NO budget/bid_strategy at AdSet level
    * - ABO (Ad Set Budget Optimization): Budget at AdSet level, MUST include bid_strategy
    */
-  async createAdSet(params: MetaAdSetParams, adAccountId?: string) {
+  async createAdSet(params: MetaAdSetParams, adAccountId?: string, accessToken?: string) {
     const accountId = adAccountId || this.adAccountId;
     const payload: any = {
       campaign_id: params.campaign_id,
@@ -313,7 +334,8 @@ class MetaService {
     console.log('[META] AdSet Payload:', JSON.stringify(payload, null, 2));
 
     try {
-      const response = await this.client.post(`/${accountId}/adsets`, payload);
+      const client = this.getClient(accessToken);
+      const response = await client.post(`/${accountId}/adsets`, payload);
       console.log('[META] ✅ AdSet created successfully:', {
         id: response.data.id,
         name: payload.name,
@@ -367,7 +389,7 @@ class MetaService {
   /**
    * Upload an image and get hash for ad creative
    */
-  async uploadImage(imagePath: string | Buffer, filename?: string, adAccountId?: string): Promise<string> {
+  async uploadImage(imagePath: string | Buffer, filename?: string, adAccountId?: string, accessToken?: string): Promise<string> {
     const accountId = adAccountId || this.adAccountId;
     const formData = new FormData();
 
@@ -385,7 +407,7 @@ class MetaService {
           ...formData.getHeaders(),
         },
         params: {
-          access_token: env.META_ACCESS_TOKEN,
+          access_token: accessToken || env.META_ACCESS_TOKEN,
         },
       }
     );
@@ -398,7 +420,7 @@ class MetaService {
   /**
    * Upload a video
    */
-  async uploadVideo(videoPath: string | Buffer, filename?: string, adAccountId?: string): Promise<string> {
+  async uploadVideo(videoPath: string | Buffer, filename?: string, adAccountId?: string, accessToken?: string): Promise<string> {
     const accountId = adAccountId || this.adAccountId;
     const formData = new FormData();
 
@@ -416,7 +438,7 @@ class MetaService {
           ...formData.getHeaders(),
         },
         params: {
-          access_token: env.META_ACCESS_TOKEN,
+          access_token: accessToken || env.META_ACCESS_TOKEN,
         },
       }
     );
@@ -427,10 +449,11 @@ class MetaService {
   /**
    * Create an ad creative
    */
-  async createAdCreative(params: MetaAdCreativeParams, adAccountId?: string) {
+  async createAdCreative(params: MetaAdCreativeParams, adAccountId?: string, accessToken?: string) {
     const accountId = adAccountId || this.adAccountId;
     try {
-      const response = await this.client.post(`/${accountId}/adcreatives`, params);
+      const client = this.getClient(accessToken);
+      const response = await client.post(`/${accountId}/adcreatives`, params);
       return response.data;
     } catch (error: any) {
       const metaError = error.response?.data?.error || {};
@@ -469,7 +492,7 @@ class MetaService {
   /**
    * Create an ad
    */
-  async createAd(params: MetaAdParams, adAccountId?: string) {
+  async createAd(params: MetaAdParams, adAccountId?: string, accessToken?: string) {
     const accountId = adAccountId || this.adAccountId;
     try {
       const payload: any = {
@@ -483,7 +506,8 @@ class MetaService {
         payload.tracking_specs = params.tracking_specs;
       }
 
-      const response = await this.client.post(`/${accountId}/ads`, payload);
+      const client = this.getClient(accessToken);
+      const response = await client.post(`/${accountId}/ads`, payload);
       return response.data;
     } catch (error: any) {
       const metaError = error.response?.data?.error || {};

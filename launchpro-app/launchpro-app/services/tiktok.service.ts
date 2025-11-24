@@ -104,6 +104,7 @@ export interface TikTokVideoUploadParams {
   flaw_detect?: boolean; // Auto-detect video issues
   auto_fix_enabled?: boolean; // Auto-fix video issues
   auto_bind_enabled?: boolean; // Auto-bind to ad account
+  file_name?: string; // Optional file name for UPLOAD_BY_URL
 }
 
 class TikTokService {
@@ -117,6 +118,24 @@ class TikTokService {
       baseURL: 'https://business-api.tiktok.com/open_api/v1.3',
       headers: {
         'Access-Token': env.TIKTOK_ACCESS_TOKEN,
+        'Content-Type': 'application/json',
+      },
+    });
+  }
+
+  /**
+   * Get an authenticated Axios client
+   * Uses the provided access token or falls back to the default one
+   */
+  private getClient(accessToken?: string): AxiosInstance {
+    if (!accessToken) {
+      return this.client;
+    }
+
+    return axios.create({
+      baseURL: 'https://business-api.tiktok.com/open_api/v1.3',
+      headers: {
+        'Access-Token': accessToken,
         'Content-Type': 'application/json',
       },
     });
@@ -186,9 +205,10 @@ class TikTokService {
   /**
    * Create a new campaign
    */
-  async createCampaign(params: TikTokCampaignParams) {
+  async createCampaign(params: TikTokCampaignParams, accessToken?: string) {
     return this.retryWithBackoff(async () => {
-      const response = await this.client.post('/campaign/create/', params);
+      const client = this.getClient(accessToken);
+      const response = await client.post('/campaign/create/', params);
       return this.handleResponse(response);
     });
   }
@@ -254,9 +274,10 @@ class TikTokService {
   /**
    * Create an ad group within a campaign
    */
-  async createAdGroup(params: TikTokAdGroupParams) {
+  async createAdGroup(params: TikTokAdGroupParams, accessToken?: string) {
     return this.retryWithBackoff(async () => {
-      const response = await this.client.post('/adgroup/create/', params);
+      const client = this.getClient(accessToken);
+      const response = await client.post('/adgroup/create/', params);
       return this.handleResponse(response);
     });
   }
@@ -308,7 +329,7 @@ class TikTokService {
   /**
    * Create an ad
    */
-  async createAd(params: TikTokAdParams) {
+  async createAd(params: TikTokAdParams, accessToken?: string) {
     return this.retryWithBackoff(async () => {
       const { advertiser_id, adgroup_id, ...creativeParams } = params;
 
@@ -322,7 +343,8 @@ class TikTokService {
         ],
       };
 
-      const response = await this.client.post('/ad/create/', payload);
+      const client = this.getClient(accessToken);
+      const response = await client.post('/ad/create/', payload);
       const data = this.handleResponse(response);
 
       // API returns { ad_ids: [...] }
@@ -374,7 +396,7 @@ class TikTokService {
   /**
    * Upload a video
    */
-  async uploadVideo(params: TikTokVideoUploadParams) {
+  async uploadVideo(params: TikTokVideoUploadParams, accessToken?: string) {
     if (params.upload_type === 'UPLOAD_BY_FILE' && params.video_file) {
       const formData = new FormData();
       formData.append('advertiser_id', params.advertiser_id);
@@ -399,7 +421,7 @@ class TikTokService {
         formData,
         {
           headers: {
-            'Access-Token': env.TIKTOK_ACCESS_TOKEN,
+            'Access-Token': accessToken || env.TIKTOK_ACCESS_TOKEN,
             ...formData.getHeaders(),
           },
         }
@@ -407,11 +429,29 @@ class TikTokService {
 
       return this.handleResponse(response);
     } else if (params.upload_type === 'UPLOAD_BY_URL' && params.video_url) {
-      const response = await this.client.post('/file/video/ad/upload/', {
+      let finalUrl = params.video_url;
+
+      // Handle Google Drive URLs
+      if (finalUrl.includes('drive.google.com')) {
+        const match = finalUrl.match(/\/d\/([a-zA-Z0-9-_]+)/) ||
+          finalUrl.match(/[?&]id=([a-zA-Z0-9-_]+)/);
+        if (match) {
+          finalUrl = `https://drive.google.com/uc?export=download&id=${match[1]}`;
+        }
+      }
+
+      const payload: any = {
         advertiser_id: params.advertiser_id,
         upload_type: params.upload_type,
-        video_url: params.video_url,
-      });
+        video_url: finalUrl,
+      };
+
+      if (params.file_name) {
+        payload.file_name = params.file_name;
+      }
+
+      const client = this.getClient(accessToken);
+      const response = await client.post('/file/video/ad/upload/', payload);
 
       return this.handleResponse(response);
     }
@@ -456,48 +496,100 @@ class TikTokService {
   }
 
   /**
-   * Upload an image
+   * Upload an image to TikTok Ads
+   *
+   * CRITICAL: TikTok's UPLOAD_BY_URL is more reliable than downloading and re-uploading.
+   * This matches the working Google Sheets implementation.
+   *
+   * @param image - Buffer for direct upload, or URL string for URL-based upload
+   * @param imageName - Optional filename
+   * @param uploadType - UPLOAD_BY_URL (recommended) or UPLOAD_BY_FILE
+   * @param accessToken - Optional access token override
    */
   async uploadImage(
     image: Buffer | string,
     imageName?: string,
-    uploadType: 'UPLOAD_BY_FILE' | 'UPLOAD_BY_URL' = 'UPLOAD_BY_FILE'
+    uploadType: 'UPLOAD_BY_FILE' | 'UPLOAD_BY_URL' = 'UPLOAD_BY_URL',
+    accessToken?: string
   ) {
-    if (uploadType === 'UPLOAD_BY_URL') {
-      const response = await this.client.post('/file/image/ad/upload/', {
+    // UPLOAD_BY_URL: Let TikTok download the image directly (RECOMMENDED)
+    if (uploadType === 'UPLOAD_BY_URL' && typeof image === 'string') {
+      console.log(`[TikTok] Uploading image via URL: ${image}`);
+
+      // Handle Google Drive URLs - convert to direct download format
+      let finalUrl = image;
+      if (finalUrl.includes('drive.google.com')) {
+        const match = finalUrl.match(/\/d\/([a-zA-Z0-9-_]+)/) ||
+          finalUrl.match(/[?&]id=([a-zA-Z0-9-_]+)/);
+        if (match) {
+          finalUrl = `https://drive.google.com/uc?export=download&id=${match[1]}`;
+          console.log(`[TikTok] Converted Google Drive URL to direct download: ${finalUrl}`);
+        }
+      }
+
+      // Prepare payload for URL upload
+      const payload: any = {
         advertiser_id: this.advertiserId,
         upload_type: 'UPLOAD_BY_URL',
-        image_url: image as string,
-      });
+        image_url: finalUrl,
+      };
+
+      // Add filename if provided
+      if (imageName) {
+        payload.file_name = imageName;
+      }
+
+      const client = this.getClient(accessToken);
+      const response = await client.post('/file/image/ad/upload/', payload);
+
+      console.log(`[TikTok] Image uploaded successfully via URL`);
       return this.handleResponse(response);
     }
 
-    // Default: UPLOAD_BY_FILE
+    // UPLOAD_BY_FILE: Upload image buffer directly
+    if (!Buffer.isBuffer(image)) {
+      throw new Error('[TikTok] UPLOAD_BY_FILE requires a Buffer, but received a string. Use UPLOAD_BY_URL instead.');
+    }
+
+    console.log(`[TikTok] Uploading image as file buffer. Size: ${image.length} bytes`);
+
+    // Validate image size (TikTok recommendation: 50KB - 500KB, max: 100MB)
+    const sizeMB = image.length / (1024 * 1024);
+    if (sizeMB > 100) {
+      throw new Error(`[TikTok] Image size (${sizeMB.toFixed(2)}MB) exceeds TikTok's 100MB limit`);
+    }
+    if (sizeMB < 0.05) {
+      console.warn(`[TikTok] Warning: Image size (${(image.length / 1024).toFixed(2)}KB) is very small. Recommended minimum: 50KB`);
+    }
+
     const formData = new FormData();
     formData.append('advertiser_id', this.advertiserId);
     formData.append('upload_type', 'UPLOAD_BY_FILE');
 
-    if (Buffer.isBuffer(image)) {
-      formData.append('image_file', image, imageName || 'image.jpg');
+    // Ensure filename has extension
+    let fileName = imageName || 'image.jpg';
+    if (!fileName.includes('.')) fileName += '.jpg';
 
-      // Calculate MD5 signature (Required for UPLOAD_BY_FILE)
-      const signature = crypto.createHash('md5').update(image).digest('hex');
-      formData.append('image_signature', signature);
-    } else {
-      formData.append('image_file', image);
-    }
+    formData.append('image_file', image, fileName);
+
+    // Calculate MD5 signature (Required for UPLOAD_BY_FILE)
+    const signature = crypto.createHash('md5').update(image).digest('hex');
+    formData.append('image_signature', signature);
+
+    console.log(`[TikTok] Uploading file: ${fileName}, MD5: ${signature}`);
 
     const response = await axios.post(
       'https://business-api.tiktok.com/open_api/v1.3/file/image/ad/upload/',
       formData,
       {
         headers: {
-          'Access-Token': env.TIKTOK_ACCESS_TOKEN,
+          'Access-Token': accessToken || env.TIKTOK_ACCESS_TOKEN,
           ...formData.getHeaders(),
         },
       }
     );
 
+    console.log(`[TikTok] Image uploaded successfully as file`);
     return this.handleResponse(response);
   }
 
@@ -532,10 +624,13 @@ class TikTokService {
   /**
    * Get available TikTok identities for ad account
    */
-  async getIdentities() {
-    const response = await this.client.get('/identity/get/', {
+  async getIdentities(advertiserId?: string, accessToken?: string) {
+    const client = this.getClient(accessToken);
+    const targetAdvertiserId = advertiserId || this.advertiserId;
+
+    const response = await client.get('/identity/get/', {
       params: {
-        advertiser_id: this.advertiserId,
+        advertiser_id: targetAdvertiserId,
         page: 1,
         page_size: 20,
       },
@@ -550,8 +645,9 @@ class TikTokService {
   /**
    * Get pixel information
    */
-  async getPixel(pixelId: string) {
-    const response = await this.client.get('/pixel/get/', {
+  async getPixel(pixelId: string, accessToken?: string) {
+    const client = this.getClient(accessToken);
+    const response = await client.get('/pixel/get/', {
       params: {
         advertiser_id: this.advertiserId,
         pixel_id: pixelId,
@@ -561,10 +657,40 @@ class TikTokService {
   }
 
   /**
+   * List all pixels for an advertiser
+   * This is critical for auto-fetching pixel IDs when they're not configured
+   */
+  async listPixels(advertiserId?: string, accessToken?: string) {
+    const client = this.getClient(accessToken);
+    const targetAdvertiserId = advertiserId || this.advertiserId;
+
+    try {
+      console.log(`[TikTok] Fetching pixels for advertiser: ${targetAdvertiserId}`);
+
+      const response = await client.get('/pixel/list/', {
+        params: {
+          advertiser_id: targetAdvertiserId,
+          page: 1,
+          page_size: 100,
+        },
+      });
+
+      const data = this.handleResponse(response);
+      console.log(`[TikTok] Found ${data?.list?.length || 0} pixel(s) for advertiser ${targetAdvertiserId}`);
+
+      return data?.list || [];
+    } catch (error: any) {
+      console.error(`[TikTok] Failed to list pixels for advertiser ${targetAdvertiserId}:`, error.message);
+      throw error;
+    }
+  }
+
+  /**
    * Create pixel
    */
-  async createPixel(pixelName: string) {
-    const response = await this.client.post('/pixel/create/', {
+  async createPixel(pixelName: string, accessToken?: string) {
+    const client = this.getClient(accessToken);
+    const response = await client.post('/pixel/create/', {
       advertiser_id: this.advertiserId,
       pixel_name: pixelName,
     });

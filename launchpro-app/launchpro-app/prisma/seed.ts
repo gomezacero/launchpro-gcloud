@@ -10,19 +10,23 @@ async function main() {
   // ============================================
   console.log('📝 Creating global settings...');
 
+  const globalSettingsData = {
+    anthropicApiKey: process.env.ANTHROPIC_API_KEY || '',
+    gcpProjectId: process.env.GCP_PROJECT_ID || '',
+    gcpStorageBucket: process.env.GCP_STORAGE_BUCKET || '',
+    gcpLocation: process.env.GCP_LOCATION || 'us-central1',
+    metaAppId: '1335292061146086',
+    metaAppSecret: '40f2e75146149b8eed8f1485824e2d11',
+    metaAccessToken: 'EAASZBcOj52ZBYBPCOdF9TaIBXAFLjIJSkFJIUi0lDVsZCylYZB5b723r5sk9KzOU8aTJ81Us2f8PZCz9LnZA58VoVf3zpFsaoVEKBzdZAZB5bCZC7SmMvZBU1GzZB9MG5zOC42c6Gw5APZBXy338uaxWvFMAzzZASDoZBCMnqMMTZC6G9U7JWwxCe7ObNBr9iCf41aI',
+    tiktokAccessToken: 'c395c4e5628f728dd794bb4950d9339da06a3886', // App token with full permissions
+  };
+
   await prisma.globalSettings.upsert({
     where: { id: 'global-settings' },
-    update: {},
+    update: globalSettingsData, // ALWAYS update with latest values
     create: {
       id: 'global-settings',
-      anthropicApiKey: process.env.ANTHROPIC_API_KEY || '',
-      gcpProjectId: process.env.GCP_PROJECT_ID || '',
-      gcpStorageBucket: process.env.GCP_STORAGE_BUCKET || '',
-      gcpLocation: process.env.GCP_LOCATION || 'us-central1',
-      metaAppId: '1335292061146086',
-      metaAppSecret: '40f2e75146149b8eed8f1485824e2d11',
-      metaAccessToken: 'EAASZBcOj52ZBYBPCOdF9TaIBXAFLjIJSkFJIUi0lDVsZCylYZB5b723r5sk9KzOU8aTJ81Us2f8PZCz9LnZA58VoVf3zpFsaoVEKBzdZAZB5bCZC7SmMvZBU1GzZB9MG5zOC42c6Gw5APZBXy338uaxWvFMAzzZASDoZBCMnqMMTZC6G9U7JWwxCe7ObNBr9iCf41aI',
-      tiktokAccessToken: '9f175d1fa83d0d85ba18ace5e84c42fc89934f01',
+      ...globalSettingsData,
     },
   });
 

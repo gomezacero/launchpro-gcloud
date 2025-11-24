@@ -70,9 +70,13 @@ model Account {
   metaAdAccountId String? // e.g., "act_641975565566309"
   metaPortfolio   String? // e.g., "Capital Quick LLC"
   metaPageId      String? // e.g., "1039541308325786"
+  metaAccessToken String? @db.Text // Account-specific access token
+  metaPixelId     String? // Account-specific pixel ID
 
   // TikTok accounts
   tiktokAdvertiserId String? // e.g., "7476563770333167633"
+  tiktokAccessToken  String? @db.Text // Account-specific access token
+  tiktokPixelId      String? // Account-specific pixel ID
 
   // Linked Tonic Account (for Meta/TikTok accounts)
   linkedTonicAccountId String?

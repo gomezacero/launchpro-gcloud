@@ -9,16 +9,7 @@ import { waitForTrackingLink, formatPollingTime } from '@/lib/tracking-link-poll
 import { CampaignStatus, Platform, CampaignType, MediaType } from '@prisma/client';
 import { Storage } from '@google-cloud/storage';
 
-// Meta Pixel Mapping (Account ID -> Pixel ID)
-const META_PIXEL_MAPPING: Record<string, string> = {
-  'act_641975565566309': '878273167774607', // B1
-  'act_677352071396973': '878273167774607', // A1
-  'act_3070045536479246': '878273167774607', // J2 (Placeholder - update if different)
-  'act_614906531545813': '878273167774607', // L2 (Placeholder)
-  'act_1780161402845930': '878273167774607', // M2 (Placeholder)
-  'act_1165341668311653': '878273167774607', // S2 (Placeholder)
-  // Add others as needed. Defaulting to the one seen in logs for now.
-};
+
 
 /**
  * Campaign Orchestrator Service
@@ -856,22 +847,40 @@ class CampaignOrchestratorService {
               throw new Error(`Meta account ${platformConfig.accountId} not found`);
             }
 
-            // Get pixel ID and access token from mappings
-            const pixelId = META_PIXEL_MAPPING[metaAccount.name];
-            const accessToken = META_ACCESS_TOKEN_MAPPING[metaAccount.name];
+            // Get pixel ID and access token from DB
+            const pixelId = metaAccount.metaPixelId;
+            let accessToken = metaAccount.metaAccessToken;
 
             if (!pixelId) {
               throw new Error(
-                `No pixel mapping found for Meta account "${metaAccount.name}". ` +
-                `Please add it to META_PIXEL_MAPPING in campaign-orchestrator.service.ts`
+                `No pixel ID found for Meta account "${metaAccount.name}". ` +
+                `Please configure it in the Account settings.`
               );
             }
 
+            // FALLBACK: If account doesn't have access token, use global settings
             if (!accessToken) {
-              throw new Error(
-                `No access token found for Meta account "${metaAccount.name}". ` +
-                `Please add it to META_ACCESS_TOKEN_MAPPING in campaign-orchestrator.service.ts`
-              );
+              logger.warn('meta', `⚠️  No access token in account "${metaAccount.name}". Trying global settings...`);
+
+              const globalSettings = await prisma.globalSettings.findUnique({
+                where: { id: 'global-settings' },
+              });
+
+              accessToken = globalSettings?.metaAccessToken;
+
+              if (!accessToken) {
+                // Final fallback to environment variable
+                accessToken = env.META_ACCESS_TOKEN;
+              }
+
+              if (accessToken) {
+                logger.info('meta', `✅ Using global Meta access token for account "${metaAccount.name}"`);
+              } else {
+                throw new Error(
+                  `No access token found for Meta account "${metaAccount.name}". ` +
+                  `Please configure it in the Account settings, Global Settings, or .env file.`
+                );
+              }
             }
 
             logger.info('tonic', `Configuring Facebook pixel ${pixelId} for account "${metaAccount.name}"...`);
@@ -887,16 +896,91 @@ class CampaignOrchestratorService {
             logger.success('tonic', `✅ Facebook pixel ${pixelId} configured for campaign ${tonicCampaignId}`);
 
           } else if (platformConfig.platform === Platform.TIKTOK) {
-            logger.info('tonic', `Configuring TikTok pixel ${TIKTOK_PIXEL_ID} for campaign ${tonicCampaignId}...`);
+            // Get TikTok account to fetch pixel ID and access token
+            const tiktokAccount = await prisma.account.findUnique({
+              where: { id: platformConfig.accountId },
+            });
+
+            if (!tiktokAccount) {
+              throw new Error(`TikTok account ${platformConfig.accountId} not found`);
+            }
+
+            let pixelId = tiktokAccount.tiktokPixelId;
+            let accessToken = tiktokAccount.tiktokAccessToken;
+
+            // FALLBACK: If account doesn't have access token, use global settings
+            if (!accessToken) {
+              logger.warn('tiktok', `⚠️  No access token in account "${tiktokAccount.name}". Trying global settings...`);
+
+              const globalSettings = await prisma.globalSettings.findUnique({
+                where: { id: 'global-settings' },
+              });
+
+              accessToken = globalSettings?.tiktokAccessToken;
+
+              if (!accessToken) {
+                // Final fallback to environment variable
+                accessToken = env.TIKTOK_ACCESS_TOKEN;
+              }
+
+              if (accessToken) {
+                logger.info('tiktok', `✅ Using global TikTok access token for account "${tiktokAccount.name}"`);
+              } else {
+                throw new Error(
+                  `No access token found for TikTok account "${tiktokAccount.name}". ` +
+                  `Please configure it in the Account settings, Global Settings, or .env file.`
+                );
+              }
+            }
+
+            // AUTO-FETCH PIXEL ID: If not configured, try to fetch from TikTok API
+            if (!pixelId) {
+              logger.warn('tiktok', `⚠️  No pixel ID configured for TikTok account "${tiktokAccount.name}". Attempting auto-fetch...`);
+
+              try {
+                const tiktokService = (await import('./tiktok.service')).default;
+                const pixels = await tiktokService.listPixels(
+                  tiktokAccount.tiktokAdvertiserId || undefined,
+                  accessToken
+                );
+
+                if (pixels && pixels.length > 0) {
+                  pixelId = pixels[0].pixel_id;
+                  logger.info('tiktok', `✅ Auto-fetched pixel ID: ${pixelId} for account "${tiktokAccount.name}"`);
+
+                  // Save to database for future use
+                  await prisma.account.update({
+                    where: { id: tiktokAccount.id },
+                    data: { tiktokPixelId: pixelId },
+                  });
+
+                  logger.success('tiktok', `💾 Saved pixel ID ${pixelId} to database for account "${tiktokAccount.name}"`);
+                } else {
+                  throw new Error(
+                    `No pixels found for TikTok account "${tiktokAccount.name}" (Advertiser ID: ${tiktokAccount.tiktokAdvertiserId}). ` +
+                    `Please create a pixel in your TikTok Ads Manager or configure it manually in the Account settings.`
+                  );
+                }
+              } catch (fetchError: any) {
+                logger.error('tiktok', `❌ Failed to auto-fetch pixel ID:`, fetchError.message);
+                throw new Error(
+                  `No pixel ID found for TikTok account "${tiktokAccount.name}". ` +
+                  `Auto-fetch failed: ${fetchError.message}. ` +
+                  `Please configure it in the Account settings.`
+                );
+              }
+            }
+
+            logger.info('tonic', `Configuring TikTok pixel ${pixelId} for campaign ${tonicCampaignId}...`);
 
             await tonicService.createPixel(credentials, 'tiktok', {
               campaign_id: parseInt(tonicCampaignId.toString()),
-              pixel_id: TIKTOK_PIXEL_ID, // REQUIRED
-              access_token: TIKTOK_ACCESS_TOKEN, // REQUIRED
+              pixel_id: pixelId, // REQUIRED
+              access_token: accessToken, // REQUIRED
               revenue_type: 'preestimated_revenue',
             });
 
-            logger.success('tonic', `✅ TikTok pixel ${TIKTOK_PIXEL_ID} configured for campaign ${tonicCampaignId}`);
+            logger.success('tonic', `✅ TikTok pixel ${pixelId} configured for campaign ${tonicCampaignId}`);
           }
         } catch (error: any) {
           // FAIL-FAST: Pixel configuration is CRITICAL - cannot proceed without it
@@ -1088,6 +1172,33 @@ class CampaignOrchestratorService {
     }
 
     const adAccountId = metaAccount.metaAdAccountId;
+    let accessToken = metaAccount.metaAccessToken;
+
+    // FALLBACK: If account doesn't have access token, use global settings
+    if (!accessToken) {
+      logger.warn('meta', `⚠️  No access token in account "${metaAccount.name}". Trying global settings...`);
+
+      const globalSettings = await prisma.globalSettings.findUnique({
+        where: { id: 'global-settings' },
+      });
+
+      accessToken = globalSettings?.metaAccessToken;
+
+      if (!accessToken) {
+        // Final fallback to environment variable
+        accessToken = env.META_ACCESS_TOKEN;
+      }
+
+      if (accessToken) {
+        logger.info('meta', `✅ Using global Meta access token for account "${metaAccount.name}"`);
+      } else {
+        throw new Error(
+          `No access token found for Meta account "${metaAccount.name}". ` +
+          `Please configure it in the Account settings, Global Settings, or .env file.`
+        );
+      }
+    }
+
     logger.info('meta', `Using Meta Ad Account: ${metaAccount.name} (${adAccountId})`);
 
     // Fetch ALL media for this campaign (manual uploads or AI-generated)
@@ -1144,12 +1255,12 @@ class CampaignOrchestratorService {
       // ABO: Do NOT set budget at campaign level
       daily_budget: isCBO ? budgetInCents : undefined,
       bid_strategy: isCBO ? 'LOWEST_COST_WITHOUT_CAP' : undefined,
-    }, adAccountId);
+    }, adAccountId, accessToken);
 
     logger.success('meta', `Meta campaign created with ID: ${metaCampaign.id}`);
 
     // Get Pixel ID for this account
-    const pixelId = META_PIXEL_MAPPING[adAccountId] || '878273167774607'; // Fallback to default if not found
+    const pixelId = metaAccount.metaPixelId || '878273167774607'; // Fallback to default if not found
     logger.info('meta', `Using Pixel ID: ${pixelId} for Account: ${adAccountId}`);
 
     // Generate targeting suggestions from AI
@@ -1267,7 +1378,7 @@ class CampaignOrchestratorService {
         pixel_id: pixelId,
         custom_event_type: 'PURCHASE',
       },
-    }, adAccountId);
+    }, adAccountId, accessToken);
 
     logger.success('meta', `Meta ad set created with ID: ${adSet.id}`);
     let imageHash: string | undefined;
@@ -1282,7 +1393,7 @@ class CampaignOrchestratorService {
       const response = await axios.get(video.url, { responseType: 'arraybuffer' });
       const videoBuffer = Buffer.from(response.data);
 
-      videoId = await metaService.uploadVideo(videoBuffer, video.fileName, adAccountId);
+      videoId = await metaService.uploadVideo(videoBuffer, video.fileName, adAccountId, accessToken);
 
       // Update media record
       await prisma.media.update({
@@ -1300,7 +1411,7 @@ class CampaignOrchestratorService {
       const response = await axios.get(image.url, { responseType: 'arraybuffer' });
       const imageBuffer = Buffer.from(response.data);
 
-      imageHash = await metaService.uploadImage(imageBuffer, image.fileName, adAccountId);
+      imageHash = await metaService.uploadImage(imageBuffer, image.fileName, adAccountId, accessToken);
 
       // Update media record
       await prisma.media.update({
@@ -1372,7 +1483,7 @@ class CampaignOrchestratorService {
           },
         }),
       },
-    }, adAccountId);
+    }, adAccountId, accessToken);
 
     logger.success('meta', `Meta creative created with ID: ${creative.id} `);
 
@@ -1382,7 +1493,7 @@ class CampaignOrchestratorService {
       adset_id: adSet.id,
       creative: { creative_id: creative.id },
       status: 'PAUSED',
-    }, adAccountId);
+    }, adAccountId, accessToken);
 
     logger.success('meta', `Meta ad created with ID: ${ad.id} `);
 
@@ -1458,14 +1569,51 @@ class CampaignOrchestratorService {
       adFormat: adFormat,
     });
 
+    // Fetch the TikTok Account
+    const tiktokAccount = await prisma.account.findUnique({
+      where: { id: platformConfig.accountId },
+    });
+
+    if (!tiktokAccount || !tiktokAccount.tiktokAdvertiserId) {
+      throw new Error(`TikTok account not found or missing Advertiser ID for config ID: ${platformConfig.accountId}`);
+    }
+
+    const advertiserId = tiktokAccount.tiktokAdvertiserId;
+    let accessToken = tiktokAccount.tiktokAccessToken;
+
+    // FALLBACK: If account doesn't have access token, use global settings
+    if (!accessToken) {
+      logger.warn('tiktok', `⚠️  No access token in account "${tiktokAccount.name}". Trying global settings...`);
+
+      const globalSettings = await prisma.globalSettings.findUnique({
+        where: { id: 'global-settings' },
+      });
+
+      accessToken = globalSettings?.tiktokAccessToken;
+
+      if (!accessToken) {
+        // Final fallback to environment variable
+        accessToken = env.TIKTOK_ACCESS_TOKEN;
+      }
+
+      if (accessToken) {
+        logger.info('tiktok', `✅ Using global TikTok access token for account "${tiktokAccount.name}"`);
+      } else {
+        throw new Error(
+          `No access token found for TikTok account "${tiktokAccount.name}". ` +
+          `Please configure it in the Account settings, Global Settings, or .env file.`
+        );
+      }
+    }
+
     // Create Campaign (according to TikTok Ads API - LEAD_GENERATION objective)
     const tiktokCampaign = await tiktokService.createCampaign({
-      advertiser_id: tiktokService['advertiserId'],
+      advertiser_id: advertiserId,
       campaign_name: campaign.name,
       objective_type: 'LEAD_GENERATION', // For lead generation campaigns
       budget_mode: 'BUDGET_MODE_DAY',
       budget: parseInt(platformConfig.budget) * 100, // Convert to cents (TikTok requirement)
-    });
+    }, accessToken);
 
     logger.success('tiktok', `TikTok campaign created with ID: ${tiktokCampaign.campaign_id} `);
 
@@ -1550,7 +1698,7 @@ class CampaignOrchestratorService {
 
     // Create Ad Group parameters object
     const adGroupParams: any = {
-      advertiser_id: tiktokService['advertiserId'],
+      advertiser_id: advertiserId,
       campaign_id: tiktokCampaign.campaign_id,
       adgroup_name: `${campaign.name} - Ad Group`,
       promotion_type: 'LEAD_GENERATION',
@@ -1573,204 +1721,228 @@ class CampaignOrchestratorService {
       location_ids: [locationId], // Use resolved Location ID
     };
 
-  // Add optional fields only if they have values
-  if(platformConfig.pixelId) {
-    adGroupParams.pixel_id = platformConfig.pixelId;
-  }
-  if(tiktokAgeGroups.length > 0) {
-  adGroupParams.age_groups = tiktokAgeGroups;
-}
+    // Add optional fields only if they have values
+    if (platformConfig.pixelId) {
+      adGroupParams.pixel_id = platformConfig.pixelId;
+    }
+    if (tiktokAgeGroups.length > 0) {
+      adGroupParams.age_groups = tiktokAgeGroups;
+    }
 
-logger.info('tiktok', `Creating Ad Group with params (including all bid fields):`, {
-  ...adGroupParams,
-  bidFields: {
-    bid: adGroupParams.bid,
-    bid_price: adGroupParams.bid_price,
-    deep_cpa_bid: adGroupParams.deep_cpa_bid,
-    conversion_bid_price: adGroupParams.conversion_bid_price,
-    deep_bid_type: adGroupParams.deep_bid_type
-  }
-});
+    logger.info('tiktok', `Creating Ad Group with params (including all bid fields):`, {
+      ...adGroupParams,
+      bidFields: {
+        bid: adGroupParams.bid,
+        bid_price: adGroupParams.bid_price,
+        deep_cpa_bid: adGroupParams.deep_cpa_bid,
+        conversion_bid_price: adGroupParams.conversion_bid_price,
+        deep_bid_type: adGroupParams.deep_bid_type
+      }
+    });
 
-const adGroup = await tiktokService.createAdGroup(adGroupParams);
+    const adGroup = await tiktokService.createAdGroup(adGroupParams, accessToken);
 
-logger.success('tiktok', `TikTok ad group created with ID: ${adGroup.adgroup_id} `);
+    logger.success('tiktok', `TikTok ad group created with ID: ${adGroup.adgroup_id} `);
 
-// Upload media to TikTok
-let videoId: string | undefined;
-let imageIds: string[] = [];
+    // Upload media to TikTok
+    let videoId: string | undefined;
+    let imageIds: string[] = [];
 
-if (useVideo) {
-  // UPLOAD VIDEO
-  const video = videos[0]; // Use first video
-  logger.info('tiktok', `Uploading video to TikTok: ${video.fileName} `);
+    if (useVideo) {
+      // UPLOAD VIDEO
+      const video = videos[0]; // Use first video
+      logger.info('tiktok', `Uploading video to TikTok: ${video.fileName} `);
 
-  // TikTok supports upload by URL (easier with signed URLs)
-  const uploadResult = await tiktokService.uploadVideo({
-    advertiser_id: tiktokService['advertiserId'],
-    upload_type: 'UPLOAD_BY_URL',
-    video_url: video.url,
-    auto_bind_enabled: true,
-    auto_fix_enabled: true,
-  });
+      // Generate unique filename for video
+      const timestamp = Date.now();
+      const randomString = Math.random().toString(36).substring(2, 8);
+      const uniqueFileName = video.fileName.replace(/\.[^/.]+$/, `_tiktok_${timestamp}_${randomString}$&`);
 
-  videoId = uploadResult.video_id;
+      // TikTok supports upload by URL (easier with signed URLs)
+      const uploadResult = await tiktokService.uploadVideo({
+        advertiser_id: advertiserId,
+        upload_type: 'UPLOAD_BY_URL',
+        video_url: video.url,
+        file_name: uniqueFileName,
+        auto_bind_enabled: true,
+        auto_fix_enabled: true,
+      }, accessToken);
 
-  // Update media record
-  await prisma.media.update({
-    where: { id: video.id },
-    data: {
-      usedInTiktok: true,
-      tiktokVideoId: videoId,
-    },
-  });
+      videoId = uploadResult.video_id;
 
-  logger.success('tiktok', `Video uploaded successfully to TikTok`, { videoId });
-} else {
-  // UPLOAD IMAGE
-  const image = images[0]; // Use first image
-  logger.info('tiktok', `Uploading image to TikTok: ${image.fileName}`);
+      // Update media record
+      await prisma.media.update({
+        where: { id: video.id },
+        data: {
+          usedInTiktok: true,
+          tiktokVideoId: videoId,
+        },
+      });
 
-  // Upload image directly via URL (no processing needed)
-  // This matches the proven working approach from Google Apps Script
-  try {
-    // Generate unique filename to avoid duplicates in TikTok Asset Library
-    const timestamp = Date.now();
-    const randomString = Math.random().toString(36).substring(2, 8);
-    const uniqueFileName = image.fileName.replace(/\.[^/.]+$/, `_tiktok_${timestamp}_${randomString}$&`);
+      logger.success('tiktok', `Video uploaded successfully to TikTok`, { videoId });
+    } else {
+      // UPLOAD IMAGE
+      const image = images[0]; // Use first image
+      logger.info('tiktok', `Uploading image to TikTok: ${image.fileName}`);
 
-    logger.info('tiktok', `Uploading image via URL: ${uniqueFileName}`);
+      // Upload image directly via URL (no processing needed)
+      // This matches the proven working approach from Google Apps Script
+      try {
+        // Generate unique filename to avoid duplicates in TikTok Asset Library
+        const timestamp = Date.now();
+        const randomString = Math.random().toString(36).substring(2, 8);
+        const uniqueFileName = image.fileName.replace(/\.[^/.]+$/, `_tiktok_${timestamp}_${randomString}$&`);
 
-    // Upload directly using the GCS signed URL (like Google Apps Script uses Drive URLs)
-    const uploadResult = await tiktokService.uploadImage(
-      image.url, // Use signed URL directly
-      uniqueFileName,
-      'UPLOAD_BY_URL'
+        logger.info('tiktok', `Uploading image via URL: ${uniqueFileName}`);
+
+        // Upload directly using the GCS signed URL (like Google Apps Script uses Drive URLs)
+        const uploadResult = await tiktokService.uploadImage(
+          image.url, // Use signed URL directly
+          uniqueFileName,
+          'UPLOAD_BY_URL',
+          accessToken
+        );
+
+        imageIds = [uploadResult.image_id];
+        logger.success('tiktok', `Image uploaded successfully to TikTok`, {
+          imageId: imageIds[0],
+          fileName: uniqueFileName
+        });
+
+      } catch (error: any) {
+        logger.error('tiktok', `Failed to upload image: ${error.message}`);
+        throw new Error(`TikTok image upload failed: ${error.message}`);
+      }
+
+      // Update media record
+      await prisma.media.update({
+        where: { id: image.id },
+        data: { usedInTiktok: true },
+      });
+    }
+
+    // Get TikTok identity (required for ads)
+    // DEFAULT: Use ADVERTISER identity (most common for API-created ads)
+    let identityId = 'ADVERTISER';
+    let identityType = 'ADVERTISER';
+
+    // OPTIONAL: Try to get custom identities if available
+    try {
+      const identities = await tiktokService.getIdentities(advertiserId, accessToken);
+      logger.info('tiktok', `Identities response: ${JSON.stringify(identities)}`);
+
+      // Find an available CUSTOMIZED_USER identity
+      const availableIdentity = identities.identity_list?.find((identity: any) => {
+        return identity.identity_id && identity.identity_type === 'CUSTOMIZED_USER';
+      });
+
+      if (availableIdentity) {
+        identityId = availableIdentity.identity_id;
+        identityType = availableIdentity.identity_type;
+        logger.info('tiktok', `Using custom TikTok identity: ${availableIdentity.display_name} (${identityId}, type: ${identityType})`);
+      } else {
+        logger.info('tiktok', `No custom identity found. Using default ADVERTISER identity.`);
+      }
+    } catch (identityError: any) {
+      logger.warn('tiktok', `Failed to fetch identities: ${identityError.message}. Using default ADVERTISER identity.`);
+    }
+
+    // FORMAT TONIC LINK
+    const finalLink = this.formatTonicLink(
+      campaign.tonicTrackingLink || 'https://example.com',
+      'TIKTOK',
+      aiContent.copyMaster
     );
 
-    imageIds = [uploadResult.image_id];
-    logger.success('tiktok', `Image uploaded successfully to TikTok`, {
-      imageId: imageIds[0],
-      fileName: uniqueFileName
-    });
+    logger.info('tiktok', `Using formatted Tonic link: ${finalLink} `);
 
-  } catch (error: any) {
-    logger.error('tiktok', `Failed to upload image: ${error.message}`);
-    throw new Error(`TikTok image upload failed: ${error.message}`);
-  }
+    // Create Ad with retry logic for image processing delays
+    logger.info('tiktok', 'Creating TikTok ad...');
 
-  // Update media record
-  await prisma.media.update({
-    where: { id: image.id },
-    data: { usedInTiktok: true },
-  });
-}
+    let ad: any;
+    let adCreationAttempts = 0;
+    const maxAdCreationAttempts = 3;
+    const baseDelay = 10000; // 10 seconds base delay
 
-// Get TikTok identity (required for ads)
-const identities = await tiktokService.getIdentities();
-logger.info('tiktok', `Identities response: ${JSON.stringify(identities)}`);
-const identityId = identities.identity_list?.[0]?.identity_id;
+    while (adCreationAttempts < maxAdCreationAttempts) {
+      try {
+        ad = await tiktokService.createAd({
+          advertiser_id: advertiserId,
+          adgroup_id: adGroup.adgroup_id,
+          ad_name: `${campaign.name} - Ad`,
+          ad_format: useVideo ? 'SINGLE_VIDEO' : 'SINGLE_IMAGE',
+          ad_text: adCopy.primaryText,
+          call_to_action: adCopy.callToAction || 'LEARN_MORE',
+          landing_page_url: finalLink,
+          display_name: campaign.offer.name,
+          ...(useVideo ? { video_id: videoId } : { image_ids: imageIds }),
+          identity_id: identityId,
+          identity_type: identityType, // Use the actual identity type from the API
+        }, accessToken);
 
-if (!identityId) {
-  throw new Error('No TikTok identity found. Please set up a TikTok account first.');
-}
+        logger.success('tiktok', `✅ TikTok ad created successfully with ID: ${ad.ad_id} `);
+        break; // Success, exit the retry loop
 
-// FORMAT TONIC LINK
-const finalLink = this.formatTonicLink(
-  campaign.tonicTrackingLink || 'https://example.com',
-  'TIKTOK',
-  aiContent.copyMaster
-);
+      } catch (adError: any) {
+        adCreationAttempts++;
 
-logger.info('tiktok', `Using formatted Tonic link: ${finalLink} `);
+        // Check if it's the "Unsupported image size" error and we have more attempts
+        if (adError.message.includes('Unsupported image size') && adCreationAttempts < maxAdCreationAttempts) {
+          const delay = baseDelay * Math.pow(2, adCreationAttempts - 1); // Exponential backoff: 10s, 20s, 40s
 
-// Create Ad with retry logic for image processing delays
-logger.info('tiktok', 'Creating TikTok ad...');
+          logger.warn('tiktok',
+            `⚠️ Image may still be processing in TikTok (attempt ${adCreationAttempts}/${maxAdCreationAttempts}). ` +
+            `Waiting ${delay / 1000} seconds before retry...`, {
+            error: adError.message,
+            imageId: imageIds[0]
+          });
 
-let ad: any;
-let adCreationAttempts = 0;
-const maxAdCreationAttempts = 3;
-const baseDelay = 10000; // 10 seconds base delay
-
-while (adCreationAttempts < maxAdCreationAttempts) {
-  try {
-    ad = await tiktokService.createAd({
-      advertiser_id: tiktokService['advertiserId'],
-      adgroup_id: adGroup.adgroup_id,
-      ad_name: `${campaign.name} - Ad`,
-      ad_format: useVideo ? 'SINGLE_VIDEO' : 'SINGLE_IMAGE',
-      ad_text: adCopy.primaryText,
-      call_to_action: adCopy.callToAction || 'LEARN_MORE',
-      landing_page_url: finalLink,
-      display_name: campaign.offer.name,
-      ...(useVideo ? { video_id: videoId } : { image_ids: imageIds }),
-      identity_id: identityId,
-      identity_type: 'CUSTOMIZED_USER',
-    });
-
-    logger.success('tiktok', `✅ TikTok ad created successfully with ID: ${ad.ad_id} `);
-    break; // Success, exit the retry loop
-
-  } catch (adError: any) {
-    adCreationAttempts++;
-
-    // Check if it's the "Unsupported image size" error and we have more attempts
-    if (adError.message.includes('Unsupported image size') && adCreationAttempts < maxAdCreationAttempts) {
-      const delay = baseDelay * Math.pow(2, adCreationAttempts - 1); // Exponential backoff: 10s, 20s, 40s
-
-      logger.warn('tiktok',
-        `⚠️ Image may still be processing in TikTok (attempt ${adCreationAttempts}/${maxAdCreationAttempts}). ` +
-        `Waiting ${delay/1000} seconds before retry...`, {
-        error: adError.message,
-        imageId: imageIds[0]
-      });
-
-      await new Promise(resolve => setTimeout(resolve, delay));
-    } else {
-      // Either not an image error or we've exhausted retries
-      logger.error('tiktok', `Failed to create ad after ${adCreationAttempts} attempts`, {
-        error: adError.message,
-        finalImageId: imageIds[0]
-      });
-      throw adError;
+          await new Promise(resolve => setTimeout(resolve, delay));
+        } else {
+          // Either not an image error or we've exhausted retries
+          logger.error('tiktok', `Failed to create ad after ${adCreationAttempts} attempts`, {
+            error: adError.message,
+            finalImageId: imageIds[0]
+          });
+          throw adError;
+        }
+      }
     }
-  }
-}
 
-if (!ad) {
-  throw new Error('Failed to create TikTok ad after all retry attempts');
-}
+    if (!ad) {
+      throw new Error('Failed to create TikTok ad after all retry attempts');
+    }
 
-// Update database
-await prisma.campaignPlatform.update({
-  where: {
-    campaignId_platform: {
-      campaignId: campaign.id,
+    // Update database
+    await prisma.campaignPlatform.update({
+      where: {
+        campaignId_platform: {
+          campaignId: campaign.id,
+          platform: Platform.TIKTOK,
+        },
+      },
+      data: {
+        tiktokCampaignId: tiktokCampaign.campaign_id,
+        tiktokAdGroupId: adGroup.adgroup_id,
+        tiktokAdId: ad.ad_id,
+        status: CampaignStatus.ACTIVE,
+      },
+    });
+
+    logger.success('tiktok', 'TikTok campaign launched successfully', {
+      campaignId: tiktokCampaign.campaign_id,
+      adGroupId: adGroup.adgroup_id,
+      adId: ad.ad_id,
+      adFormat,
+    });
+
+    return {
       platform: Platform.TIKTOK,
-    },
-  },
-  data: {
-    tiktokCampaignId: tiktokCampaign.campaign_id,
-    tiktokAdGroupId: adGroup.adgroup_id,
-    tiktokAdId: ad.ad_id,
-    status: CampaignStatus.ACTIVE,
-  },
-});
-
-logger.success('tiktok', 'TikTok campaign launched successfully', {
-  campaignId: tiktokCampaign.campaign_id,
-  adGroupId: adGroup.adgroup_id,
-  adId: ad.ad_id,
-  adFormat,
-});
-
-return {
-  platform: Platform.TIKTOK,
-  success: true,
-  campaignId: tiktokCampaign.campaign_id,
-  adGroupId: adGroup.adgroup_id,
-  adId: ad.ad_id,
-};
+      success: true,
+      campaignId: tiktokCampaign.campaign_id,
+      adGroupId: adGroup.adgroup_id,
+      adId: ad.ad_id,
+    };
   }
 
   /**
@@ -1782,138 +1954,138 @@ return {
    * - Media files uploaded (if required)
    * - Platform configurations set
    */
-  async launchExistingCampaignToPlatforms(campaignId: string): Promise < LaunchResult > {
-  const errors: string[] = [];
+  async launchExistingCampaignToPlatforms(campaignId: string): Promise<LaunchResult> {
+    const errors: string[] = [];
 
-  try {
-    logger.info('system', `Launching existing campaign ${campaignId} to platforms...`);
+    try {
+      logger.info('system', `Launching existing campaign ${campaignId} to platforms...`);
 
-    // Fetch campaign with all related data
-    const campaign = await prisma.campaign.findUnique({
-      where: { id: campaignId },
-      include: {
-        offer: true,
-        platforms: true,
-        media: true,
-      },
-    });
+      // Fetch campaign with all related data
+      const campaign = await prisma.campaign.findUnique({
+        where: { id: campaignId },
+        include: {
+          offer: true,
+          platforms: true,
+          media: true,
+        },
+      });
 
-    if(!campaign) {
-      throw new Error(`Campaign ${campaignId} not found`);
-    }
+      if (!campaign) {
+        throw new Error(`Campaign ${campaignId} not found`);
+      }
 
       // Validate that Tonic campaign was created (tracking link is optional - will use fallback if missing)
-      if(!campaign.tonicCampaignId) {
-  throw new Error(`Campaign ${campaignId} does not have Tonic campaign ID.Please create the campaign first.`);
-}
+      if (!campaign.tonicCampaignId) {
+        throw new Error(`Campaign ${campaignId} does not have Tonic campaign ID.Please create the campaign first.`);
+      }
 
-// Warn if tracking link is missing (but don't fail - ads will use fallback URL)
-if (!campaign.tonicTrackingLink || campaign.tonicTrackingLink.includes('tonic-placeholder')) {
-  logger.warn('system', '⚠️  Tracking link is missing or placeholder. Ads will use fallback URL.', {
-    tonicCampaignId: campaign.tonicCampaignId,
-    trackingLink: campaign.tonicTrackingLink,
-  });
-}
+      // Warn if tracking link is missing (but don't fail - ads will use fallback URL)
+      if (!campaign.tonicTrackingLink || campaign.tonicTrackingLink.includes('tonic-placeholder')) {
+        logger.warn('system', '⚠️  Tracking link is missing or placeholder. Ads will use fallback URL.', {
+          tonicCampaignId: campaign.tonicCampaignId,
+          trackingLink: campaign.tonicTrackingLink,
+        });
+      }
 
-logger.info('system', `Found campaign: ${campaign.name} `, {
-  tonicCampaignId: campaign.tonicCampaignId,
-  tonicTrackingLink: campaign.tonicTrackingLink || undefined,
-  platformCount: campaign.platforms.length,
-  mediaCount: campaign.media.length,
-});
+      logger.info('system', `Found campaign: ${campaign.name} `, {
+        tonicCampaignId: campaign.tonicCampaignId,
+        tonicTrackingLink: campaign.tonicTrackingLink || undefined,
+        platformCount: campaign.platforms.length,
+        mediaCount: campaign.media.length,
+      });
 
-// Prepare AI content structure (keywords and copy master are already in campaign)
-const aiContentResult = {
-  copyMaster: campaign.copyMaster || '',
-  keywords: campaign.keywords || [],
-  article: campaign.tonicArticleId ? { headlineId: campaign.tonicArticleId } : undefined,
-};
+      // Prepare AI content structure (keywords and copy master are already in campaign)
+      const aiContentResult = {
+        copyMaster: campaign.copyMaster || '',
+        keywords: campaign.keywords || [],
+        article: campaign.tonicArticleId ? { headlineId: campaign.tonicArticleId } : undefined,
+      };
 
-// Update status to LAUNCHING
-await prisma.campaign.update({
-  where: { id: campaignId },
-  data: { status: CampaignStatus.LAUNCHING },
-});
+      // Update status to LAUNCHING
+      await prisma.campaign.update({
+        where: { id: campaignId },
+        data: { status: CampaignStatus.LAUNCHING },
+      });
 
-// Launch to each platform
-const platformResults = [];
+      // Launch to each platform
+      const platformResults = [];
 
-for (const platformConfig of campaign.platforms) {
-  try {
-    logger.info('system', `Launching to ${platformConfig.platform}...`);
+      for (const platformConfig of campaign.platforms) {
+        try {
+          logger.info('system', `Launching to ${platformConfig.platform}...`);
 
-    // Convert database platform config to the format expected by launch methods
-    const platformParams = {
-      platform: platformConfig.platform,
-      accountId: platformConfig.metaAccountId || platformConfig.tiktokAccountId || '',
-      performanceGoal: platformConfig.performanceGoal,
-      budget: platformConfig.budget,
-      startDate: platformConfig.startDate,
-      generateWithAI: platformConfig.generateWithAI,
-    };
+          // Convert database platform config to the format expected by launch methods
+          const platformParams = {
+            platform: platformConfig.platform,
+            accountId: platformConfig.metaAccountId || platformConfig.tiktokAccountId || '',
+            performanceGoal: platformConfig.performanceGoal,
+            budget: platformConfig.budget,
+            startDate: platformConfig.startDate,
+            generateWithAI: platformConfig.generateWithAI,
+          };
 
-    if (platformConfig.platform === Platform.META) {
-      const result = await this.launchToMeta(campaign, platformParams, aiContentResult);
-      platformResults.push(result);
-    } else if (platformConfig.platform === Platform.TIKTOK) {
-      const result = await this.launchToTikTok(campaign, platformParams, aiContentResult);
-      platformResults.push(result);
-    }
-  } catch (error: any) {
-    logger.error('system', `Error launching to ${platformConfig.platform}: ${error.message} `, {
-      platform: platformConfig.platform,
-      error: error.message,
-      stack: error.stack,
-    });
-    errors.push(`${platformConfig.platform}: ${error.message} `);
-    platformResults.push({
-      platform: platformConfig.platform,
-      success: false,
-      error: error.message,
-    });
-  }
-}
+          if (platformConfig.platform === Platform.META) {
+            const result = await this.launchToMeta(campaign, platformParams, aiContentResult);
+            platformResults.push(result);
+          } else if (platformConfig.platform === Platform.TIKTOK) {
+            const result = await this.launchToTikTok(campaign, platformParams, aiContentResult);
+            platformResults.push(result);
+          }
+        } catch (error: any) {
+          logger.error('system', `Error launching to ${platformConfig.platform}: ${error.message} `, {
+            platform: platformConfig.platform,
+            error: error.message,
+            stack: error.stack,
+          });
+          errors.push(`${platformConfig.platform}: ${error.message} `);
+          platformResults.push({
+            platform: platformConfig.platform,
+            success: false,
+            error: error.message,
+          });
+        }
+      }
 
-// Update final status
-const allSuccessful = platformResults.every((r) => r.success);
+      // Update final status
+      const allSuccessful = platformResults.every((r) => r.success);
 
-await prisma.campaign.update({
-  where: { id: campaignId },
-  data: {
-    status: allSuccessful ? CampaignStatus.ACTIVE : CampaignStatus.FAILED,
-    launchedAt: new Date(),
-  },
-});
+      await prisma.campaign.update({
+        where: { id: campaignId },
+        data: {
+          status: allSuccessful ? CampaignStatus.ACTIVE : CampaignStatus.FAILED,
+          launchedAt: new Date(),
+        },
+      });
 
-logger.success('system', `Campaign launch complete! Status: ${allSuccessful ? 'ACTIVE' : 'FAILED'} `, {
-  campaignId,
-  platforms: platformResults.map(p => ({ platform: p.platform, success: p.success })),
-});
+      logger.success('system', `Campaign launch complete! Status: ${allSuccessful ? 'ACTIVE' : 'FAILED'} `, {
+        campaignId,
+        platforms: platformResults.map(p => ({ platform: p.platform, success: p.success })),
+      });
 
-return {
-  success: allSuccessful,
-  campaignId,
-  tonicCampaignId: campaign.tonicCampaignId,
-  tonicTrackingLink: campaign.tonicTrackingLink || undefined,
-  platforms: platformResults,
-  aiContent: aiContentResult,
-  errors: errors.length > 0 ? errors : undefined,
-};
+      return {
+        success: allSuccessful,
+        campaignId,
+        tonicCampaignId: campaign.tonicCampaignId,
+        tonicTrackingLink: campaign.tonicTrackingLink || undefined,
+        platforms: platformResults,
+        aiContent: aiContentResult,
+        errors: errors.length > 0 ? errors : undefined,
+      };
     } catch (error: any) {
-  logger.error('system', `Failed to launch campaign to platforms: ${error.message} `, {
-    campaignId,
-    error: error.message,
-    stack: error.stack,
-  });
+      logger.error('system', `Failed to launch campaign to platforms: ${error.message} `, {
+        campaignId,
+        error: error.message,
+        stack: error.stack,
+      });
 
-  // Update campaign status to FAILED
-  await prisma.campaign.update({
-    where: { id: campaignId },
-    data: { status: CampaignStatus.FAILED },
-  });
+      // Update campaign status to FAILED
+      await prisma.campaign.update({
+        where: { id: campaignId },
+        data: { status: CampaignStatus.FAILED },
+      });
 
-  throw new Error(`Failed to launch campaign to platforms: ${error.message} `);
-}
+      throw new Error(`Failed to launch campaign to platforms: ${error.message} `);
+    }
   }
 }
 
