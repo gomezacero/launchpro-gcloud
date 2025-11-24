@@ -437,6 +437,25 @@ class TikTokService {
   // ============================================
 
   /**
+   * Get image information and status from TikTok Asset Library
+   * This is crucial to verify image is fully processed before using in ads
+   */
+  async getImageInfo(imageIds: string[]) {
+    try {
+      const response = await this.client.get('/file/image/ad/info/', {
+        params: {
+          advertiser_id: this.advertiserId,
+          image_ids: JSON.stringify(imageIds),
+        },
+      });
+      return this.handleResponse(response);
+    } catch (error: any) {
+      console.error('[TikTok] Failed to get image info:', error.message);
+      throw error;
+    }
+  }
+
+  /**
    * Upload an image
    */
   async uploadImage(

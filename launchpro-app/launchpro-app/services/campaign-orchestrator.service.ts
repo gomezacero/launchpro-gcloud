@@ -1645,10 +1645,10 @@ if (useVideo) {
     logger.info('tiktok', `Original image dimensions: ${metadata.width}x${metadata.height}`);
 
     // TikTok requires specific dimensions for ads
-    // For SINGLE_IMAGE ads: 1200x1200 (1:1), 1080x1920 (9:16), or 1920x1080 (16:9)
-    // We'll use 1200x1200 as default for maximum compatibility
-    const targetWidth = 1200;
-    const targetHeight = 1200;
+    // For SINGLE_IMAGE ads: 1080x1080 (1:1), 1080x1920 (9:16), or 1920x1080 (16:9)
+    // We'll use 1080x1080 as it's more widely supported according to multiple sources
+    const targetWidth = 1080;
+    const targetHeight = 1080;
 
     // Check if image needs resizing
     const needsResize = metadata.width !== targetWidth || metadata.height !== targetHeight;
@@ -1671,7 +1671,7 @@ if (useVideo) {
         .toBuffer();
 
       finalFileName = image.fileName.replace(/\.[^/.]+$/, '_tiktok.jpg');
-      logger.success('tiktok', `Image resized successfully to ${targetWidth}x${targetHeight}`);
+      logger.success('tiktok', `Image resized successfully to ${targetWidth}x${targetHeight} (1080x1080)`);
     } else {
       logger.info('tiktok', `Image dimensions are already TikTok-compatible (${metadata.width}x${metadata.height})`);
       // Still convert to JPEG to ensure format compatibility
@@ -1699,6 +1699,59 @@ if (useVideo) {
       finalDimensions: `${targetWidth}x${targetHeight}`,
       fileName: finalFileName
     });
+
+    // CRITICAL: Wait for TikTok to process the image asynchronously
+    logger.info('tiktok', '⏳ Waiting for TikTok to process the image (this can take 30-60 seconds)...');
+
+    // Initial delay to allow processing to start
+    await new Promise(resolve => setTimeout(resolve, 5000)); // 5 seconds initial wait
+
+    // Verify image is ready in TikTok's Asset Library
+    let imageReady = false;
+    let verifyAttempts = 0;
+    const maxVerifyAttempts = 12; // Max 60 seconds (12 * 5 seconds)
+
+    while (!imageReady && verifyAttempts < maxVerifyAttempts) {
+      try {
+        logger.info('tiktok', `Verifying image status (attempt ${verifyAttempts + 1}/${maxVerifyAttempts})...`);
+
+        const imageInfo = await tiktokService.getImageInfo(imageIds);
+
+        if (imageInfo && imageInfo.list && imageInfo.list.length > 0) {
+          const uploadedImage = imageInfo.list[0];
+
+          // Check if image dimensions match our target
+          if (uploadedImage.width === targetWidth && uploadedImage.height === targetHeight) {
+            logger.success('tiktok', `✅ Image verified and ready in TikTok Asset Library`, {
+              imageId: uploadedImage.image_id,
+              dimensions: `${uploadedImage.width}x${uploadedImage.height}`,
+              format: uploadedImage.format || 'jpeg',
+              size: uploadedImage.size || 'N/A'
+            });
+            imageReady = true;
+          } else {
+            logger.warn('tiktok', `Image dimensions mismatch. Expected ${targetWidth}x${targetHeight}, got ${uploadedImage.width}x${uploadedImage.height}`);
+            // Still proceed, but log the warning
+            imageReady = true;
+          }
+        } else {
+          logger.info('tiktok', 'Image not yet available in Asset Library, waiting...');
+        }
+      } catch (verifyError: any) {
+        logger.warn('tiktok', `Failed to verify image status: ${verifyError.message}`);
+      }
+
+      if (!imageReady) {
+        verifyAttempts++;
+        if (verifyAttempts < maxVerifyAttempts) {
+          await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 more seconds
+        }
+      }
+    }
+
+    if (!imageReady) {
+      logger.warn('tiktok', '⚠️ Could not verify image status after 60 seconds, proceeding anyway...');
+    }
 
   } catch (error: any) {
     logger.error('tiktok', `Failed to process/upload image: ${error.message}`);
@@ -1730,22 +1783,62 @@ const finalLink = this.formatTonicLink(
 
 logger.info('tiktok', `Using formatted Tonic link: ${finalLink} `);
 
-// Create Ad (according to TikTok Ads API)
-const ad = await tiktokService.createAd({
-  advertiser_id: tiktokService['advertiserId'],
-  adgroup_id: adGroup.adgroup_id,
-  ad_name: `${campaign.name} - Ad`,
-  ad_format: useVideo ? 'SINGLE_VIDEO' : 'SINGLE_IMAGE',
-  ad_text: adCopy.primaryText,
-  call_to_action: adCopy.callToAction || 'LEARN_MORE',
-  landing_page_url: finalLink,
-  display_name: campaign.offer.name,
-  ...(useVideo ? { video_id: videoId } : { image_ids: imageIds }),
-  identity_id: identityId,
-  identity_type: 'CUSTOMIZED_USER',
-});
+// Create Ad with retry logic for image processing delays
+logger.info('tiktok', 'Creating TikTok ad...');
 
-logger.success('tiktok', `TikTok ad created with ID: ${ad.ad_id} `);
+let ad: any;
+let adCreationAttempts = 0;
+const maxAdCreationAttempts = 3;
+const baseDelay = 10000; // 10 seconds base delay
+
+while (adCreationAttempts < maxAdCreationAttempts) {
+  try {
+    ad = await tiktokService.createAd({
+      advertiser_id: tiktokService['advertiserId'],
+      adgroup_id: adGroup.adgroup_id,
+      ad_name: `${campaign.name} - Ad`,
+      ad_format: useVideo ? 'SINGLE_VIDEO' : 'SINGLE_IMAGE',
+      ad_text: adCopy.primaryText,
+      call_to_action: adCopy.callToAction || 'LEARN_MORE',
+      landing_page_url: finalLink,
+      display_name: campaign.offer.name,
+      ...(useVideo ? { video_id: videoId } : { image_ids: imageIds }),
+      identity_id: identityId,
+      identity_type: 'CUSTOMIZED_USER',
+    });
+
+    logger.success('tiktok', `✅ TikTok ad created successfully with ID: ${ad.ad_id} `);
+    break; // Success, exit the retry loop
+
+  } catch (adError: any) {
+    adCreationAttempts++;
+
+    // Check if it's the "Unsupported image size" error and we have more attempts
+    if (adError.message.includes('Unsupported image size') && adCreationAttempts < maxAdCreationAttempts) {
+      const delay = baseDelay * Math.pow(2, adCreationAttempts - 1); // Exponential backoff: 10s, 20s, 40s
+
+      logger.warn('tiktok',
+        `⚠️ Image may still be processing in TikTok (attempt ${adCreationAttempts}/${maxAdCreationAttempts}). ` +
+        `Waiting ${delay/1000} seconds before retry...`, {
+        error: adError.message,
+        imageId: imageIds[0]
+      });
+
+      await new Promise(resolve => setTimeout(resolve, delay));
+    } else {
+      // Either not an image error or we've exhausted retries
+      logger.error('tiktok', `Failed to create ad after ${adCreationAttempts} attempts`, {
+        error: adError.message,
+        finalImageId: imageIds[0]
+      });
+      throw adError;
+    }
+  }
+}
+
+if (!ad) {
+  throw new Error('Failed to create TikTok ad after all retry attempts');
+}
 
 // Update database
 await prisma.campaignPlatform.update({
