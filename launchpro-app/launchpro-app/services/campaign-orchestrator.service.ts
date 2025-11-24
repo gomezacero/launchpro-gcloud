@@ -1629,139 +1629,34 @@ if (useVideo) {
 } else {
   // UPLOAD IMAGE
   const image = images[0]; // Use first image
-  logger.info('tiktok', `Processing image for TikTok: ${image.fileName} `);
+  logger.info('tiktok', `Uploading image to TikTok: ${image.fileName}`);
 
-  // ALWAYS process the image first to ensure TikTok compatibility
+  // Upload image directly via URL (no processing needed)
+  // This matches the proven working approach from Google Apps Script
   try {
-    const sharp = require('sharp');
+    // Generate unique filename to avoid duplicates in TikTok Asset Library
+    const timestamp = Date.now();
+    const randomString = Math.random().toString(36).substring(2, 8);
+    const uniqueFileName = image.fileName.replace(/\.[^/.]+$/, `_tiktok_${timestamp}_${randomString}$&`);
 
-    // Download image to buffer
-    logger.info('tiktok', `Downloading and processing image for TikTok compliance...`);
-    const imageResponse = await fetch(image.url);
-    const originalBuffer = Buffer.from(await imageResponse.arrayBuffer());
+    logger.info('tiktok', `Uploading image via URL: ${uniqueFileName}`);
 
-    // Get image metadata to check dimensions
-    const metadata = await sharp(originalBuffer).metadata();
-    logger.info('tiktok', `Original image dimensions: ${metadata.width}x${metadata.height}`);
-
-    // TikTok requires specific dimensions for ads
-    // For SINGLE_IMAGE ads: 1080x1080 (1:1), 1080x1920 (9:16), or 1920x1080 (16:9)
-    // We'll use 1080x1080 as it's more widely supported according to multiple sources
-    const targetWidth = 1080;
-    const targetHeight = 1080;
-
-    // Check if image needs resizing
-    const needsResize = metadata.width !== targetWidth || metadata.height !== targetHeight;
-
-    let finalBuffer: Buffer;
-    let finalFileName: string;
-
-    if (needsResize) {
-      logger.info('tiktok', `Resizing image from ${metadata.width}x${metadata.height} to ${targetWidth}x${targetHeight} for TikTok compliance...`);
-
-      finalBuffer = await sharp(originalBuffer)
-        .resize(targetWidth, targetHeight, {
-          fit: 'cover', // This will crop to fill the exact dimensions
-          position: 'center'
-        })
-        .jpeg({
-          quality: 95, // High quality
-          mozjpeg: true // Better compression
-        })
-        .toBuffer();
-
-      // Generate unique filename to avoid duplicates in TikTok Asset Library
-      const timestamp = Date.now();
-      const randomString = Math.random().toString(36).substring(2, 8);
-      finalFileName = image.fileName.replace(/\.[^/.]+$/, `_tiktok_${timestamp}_${randomString}.jpg`);
-      logger.success('tiktok', `Image resized successfully to ${targetWidth}x${targetHeight} (1080x1080)`);
-    } else {
-      logger.info('tiktok', `Image dimensions are already TikTok-compatible (${metadata.width}x${metadata.height})`);
-      // Still convert to JPEG to ensure format compatibility
-      finalBuffer = await sharp(originalBuffer)
-        .jpeg({
-          quality: 95,
-          mozjpeg: true
-        })
-        .toBuffer();
-      // Generate unique filename even for compatible images to avoid duplicates
-      const timestamp = Date.now();
-      const randomString = Math.random().toString(36).substring(2, 8);
-      finalFileName = image.fileName.replace(/\.[^/.]+$/, `_${timestamp}_${randomString}.jpg`);
-    }
-
-    // Upload the processed image
-    logger.info('tiktok', `Uploading processed image to TikTok...`);
-
+    // Upload directly using the GCS signed URL (like Google Apps Script uses Drive URLs)
     const uploadResult = await tiktokService.uploadImage(
-      finalBuffer,
-      finalFileName,
-      'UPLOAD_BY_FILE'
+      image.url, // Use signed URL directly
+      uniqueFileName,
+      'UPLOAD_BY_URL'
     );
 
     imageIds = [uploadResult.image_id];
     logger.success('tiktok', `Image uploaded successfully to TikTok`, {
       imageId: imageIds[0],
-      finalDimensions: `${targetWidth}x${targetHeight}`,
-      fileName: finalFileName
+      fileName: uniqueFileName
     });
 
-    // CRITICAL: Wait for TikTok to process the image asynchronously
-    logger.info('tiktok', '⏳ Waiting for TikTok to process the image (this can take 30-60 seconds)...');
-
-    // Initial delay to allow processing to start
-    await new Promise(resolve => setTimeout(resolve, 5000)); // 5 seconds initial wait
-
-    // Verify image is ready in TikTok's Asset Library
-    let imageReady = false;
-    let verifyAttempts = 0;
-    const maxVerifyAttempts = 12; // Max 60 seconds (12 * 5 seconds)
-
-    while (!imageReady && verifyAttempts < maxVerifyAttempts) {
-      try {
-        logger.info('tiktok', `Verifying image status (attempt ${verifyAttempts + 1}/${maxVerifyAttempts})...`);
-
-        const imageInfo = await tiktokService.getImageInfo(imageIds);
-
-        if (imageInfo && imageInfo.list && imageInfo.list.length > 0) {
-          const uploadedImage = imageInfo.list[0];
-
-          // Check if image dimensions match our target
-          if (uploadedImage.width === targetWidth && uploadedImage.height === targetHeight) {
-            logger.success('tiktok', `✅ Image verified and ready in TikTok Asset Library`, {
-              imageId: uploadedImage.image_id,
-              dimensions: `${uploadedImage.width}x${uploadedImage.height}`,
-              format: uploadedImage.format || 'jpeg',
-              size: uploadedImage.size || 'N/A'
-            });
-            imageReady = true;
-          } else {
-            logger.warn('tiktok', `Image dimensions mismatch. Expected ${targetWidth}x${targetHeight}, got ${uploadedImage.width}x${uploadedImage.height}`);
-            // Still proceed, but log the warning
-            imageReady = true;
-          }
-        } else {
-          logger.info('tiktok', 'Image not yet available in Asset Library, waiting...');
-        }
-      } catch (verifyError: any) {
-        logger.warn('tiktok', `Failed to verify image status: ${verifyError.message}`);
-      }
-
-      if (!imageReady) {
-        verifyAttempts++;
-        if (verifyAttempts < maxVerifyAttempts) {
-          await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 more seconds
-        }
-      }
-    }
-
-    if (!imageReady) {
-      logger.warn('tiktok', '⚠️ Could not verify image status after 60 seconds, proceeding anyway...');
-    }
-
   } catch (error: any) {
-    logger.error('tiktok', `Failed to process/upload image: ${error.message}`);
-    throw new Error(`TikTok image processing failed: ${error.message}`);
+    logger.error('tiktok', `Failed to upload image: ${error.message}`);
+    throw new Error(`TikTok image upload failed: ${error.message}`);
   }
 
   // Update media record
