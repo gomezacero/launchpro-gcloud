@@ -1670,7 +1670,10 @@ if (useVideo) {
         })
         .toBuffer();
 
-      finalFileName = image.fileName.replace(/\.[^/.]+$/, '_tiktok.jpg');
+      // Generate unique filename to avoid duplicates in TikTok Asset Library
+      const timestamp = Date.now();
+      const randomString = Math.random().toString(36).substring(2, 8);
+      finalFileName = image.fileName.replace(/\.[^/.]+$/, `_tiktok_${timestamp}_${randomString}.jpg`);
       logger.success('tiktok', `Image resized successfully to ${targetWidth}x${targetHeight} (1080x1080)`);
     } else {
       logger.info('tiktok', `Image dimensions are already TikTok-compatible (${metadata.width}x${metadata.height})`);
@@ -1681,7 +1684,10 @@ if (useVideo) {
           mozjpeg: true
         })
         .toBuffer();
-      finalFileName = image.fileName.replace(/\.[^/.]+$/, '.jpg');
+      // Generate unique filename even for compatible images to avoid duplicates
+      const timestamp = Date.now();
+      const randomString = Math.random().toString(36).substring(2, 8);
+      finalFileName = image.fileName.replace(/\.[^/.]+$/, `_${timestamp}_${randomString}.jpg`);
     }
 
     // Upload the processed image
