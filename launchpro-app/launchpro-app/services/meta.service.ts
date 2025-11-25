@@ -83,6 +83,7 @@ export interface MetaAdCreativeParams {
     };
     video_data?: {
       video_id: string;
+      image_hash?: string;  // Thumbnail image hash (required for video ads)
       message?: string;
       title?: string;
       call_to_action?: {

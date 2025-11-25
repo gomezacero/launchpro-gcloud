@@ -1385,28 +1385,54 @@ class CampaignOrchestratorService {
     let imageHash: string | undefined;
     let videoId: string | undefined;
 
+    // Validation: Video ads require at least one image for thumbnail
+    if (useVideo && images.length === 0) {
+      throw new Error(
+        'Meta requires a thumbnail image for video ads. Please upload at least one image along with your video.'
+      );
+    }
+
     if (useVideo) {
       // UPLOAD VIDEO
-      const video = videos[0]; // Use first video
-      logger.info('meta', `Uploading video to Meta: ${video.fileName} `);
+      const video = videos[0];
+      logger.info('meta', `Uploading video to Meta: ${video.fileName}`);
 
       const axios = require('axios');
-      const response = await axios.get(video.url, { responseType: 'arraybuffer' });
-      const videoBuffer = Buffer.from(response.data);
+      const videoResponse = await axios.get(video.url, { responseType: 'arraybuffer' });
+      const videoBuffer = Buffer.from(videoResponse.data);
 
       videoId = await metaService.uploadVideo(videoBuffer, video.fileName, adAccountId, accessToken);
 
-      // Update media record
       await prisma.media.update({
         where: { id: video.id },
         data: { usedInMeta: true },
       });
 
       logger.success('meta', `Video uploaded successfully to Meta`, { videoId });
+
+      // UPLOAD THUMBNAIL (using first image)
+      const thumbnailImage = images[0];
+      logger.info('meta', `Uploading thumbnail image for video: ${thumbnailImage.fileName}`);
+
+      const thumbnailResponse = await axios.get(thumbnailImage.url, { responseType: 'arraybuffer' });
+      const thumbnailBuffer = Buffer.from(thumbnailResponse.data);
+
+      imageHash = await metaService.uploadImage(thumbnailBuffer, thumbnailImage.fileName, adAccountId, accessToken);
+
+      await prisma.media.update({
+        where: { id: thumbnailImage.id },
+        data: {
+          usedInMeta: true,
+          metaHash: imageHash,
+        },
+      });
+
+      logger.success('meta', `Thumbnail uploaded successfully to Meta`, { imageHash });
+
     } else {
       // UPLOAD IMAGE
-      const image = images[0]; // Use first image
-      logger.info('meta', `Uploading image to Meta: ${image.fileName} `);
+      const image = images[0];
+      logger.info('meta', `Uploading image to Meta: ${image.fileName}`);
 
       const axios = require('axios');
       const response = await axios.get(image.url, { responseType: 'arraybuffer' });
@@ -1414,7 +1440,6 @@ class CampaignOrchestratorService {
 
       imageHash = await metaService.uploadImage(imageBuffer, image.fileName, adAccountId, accessToken);
 
-      // Update media record
       await prisma.media.update({
         where: { id: image.id },
         data: {
@@ -1463,6 +1488,7 @@ class CampaignOrchestratorService {
         ...(useVideo ? {
           video_data: {
             video_id: videoId!,
+            image_hash: imageHash!,  // Thumbnail required for video ads
             title: adCopy.headline,
             message: adCopy.primaryText,
             call_to_action: {
