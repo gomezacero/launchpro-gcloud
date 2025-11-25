@@ -8,6 +8,7 @@ import { waitForArticleApproval, formatElapsedTime } from '@/lib/article-polling
 import { waitForTrackingLink, formatPollingTime } from '@/lib/tracking-link-polling';
 import { CampaignStatus, Platform, CampaignType, MediaType } from '@prisma/client';
 import { Storage } from '@google-cloud/storage';
+import sharp from 'sharp';
 
 
 
@@ -1528,6 +1529,50 @@ class CampaignOrchestratorService {
   }
 
   /**
+   * Procesa una imagen para cumplir con los requisitos de TikTok Ads API
+   * - Normaliza formato y metadatos
+   * - Convierte a JPEG con sRGB
+   * - Valida dimensiones (40-2600px)
+   */
+  private async processTikTokImage(imageBuffer: Buffer): Promise<Buffer> {
+    // Obtener metadata original
+    const metadata = await sharp(imageBuffer).metadata();
+    logger.info('tiktok', `Original image: ${metadata.width}x${metadata.height}, format: ${metadata.format}`);
+
+    let width = metadata.width || 0;
+    let height = metadata.height || 0;
+
+    // Validar dimensiones están en rango válido (40-2600px)
+    if (width < 40 || height < 40) {
+      throw new Error(`Image too small: ${width}x${height}. Minimum is 40x40px`);
+    }
+
+    // Si alguna dimensión excede 2600px, redimensionar proporcionalmente
+    if (width > 2600 || height > 2600) {
+      const scale = Math.min(2600 / width, 2600 / height);
+      width = Math.round(width * scale);
+      height = Math.round(height * scale);
+      logger.info('tiktok', `Resizing to fit TikTok limits: ${width}x${height}`);
+    }
+
+    // Re-procesar imagen: convertir a JPEG, normalizar color profile, limpiar metadatos
+    const processedBuffer = await sharp(imageBuffer)
+      .resize(width, height, { fit: 'inside', withoutEnlargement: true })
+      .jpeg({
+        quality: 90,
+        mozjpeg: true,  // Mejor compresión
+      })
+      .toBuffer();
+
+    // Verificar resultado
+    const processedMeta = await sharp(processedBuffer).metadata();
+    logger.info('tiktok', `Processed image: ${processedMeta.width}x${processedMeta.height}, ` +
+      `size: ${(processedBuffer.length / 1024).toFixed(2)}KB`);
+
+    return processedBuffer;
+  }
+
+  /**
    * Launch campaign to TikTok
    *
    * Supports both images and videos according to TikTok Ads API documentation:
@@ -1606,13 +1651,26 @@ class CampaignOrchestratorService {
       }
     }
 
-    // Create Campaign (according to TikTok Ads API - LEAD_GENERATION objective)
+    // Create Campaign (according to TikTok Ads API - TRAFFIC objective for website visits)
+    // Note: TRAFFIC supports both SINGLE_IMAGE and SINGLE_VIDEO formats
+    // LEAD_GENERATION only supports SINGLE_VIDEO for in-feed placements
+    // IMPORTANT: Campaign is created in PAUSED status to allow review before spending budget
+    //
+    // BUDGET UNITS (TikTok API uses DOLLARS, not cents!):
+    // - platformConfig.budget: Value from UI in DOLLARS (e.g., "50" means $50)
+    // - TikTok API budget: Also in DOLLARS (e.g., 50 for $50)
+    // - TikTok minimum daily budget: $50 USD
+    const budgetInDollars = parseInt(platformConfig.budget);
+
+    logger.info('tiktok', `Campaign budget: $${budgetInDollars} USD`);
+
     const tiktokCampaign = await tiktokService.createCampaign({
       advertiser_id: advertiserId,
       campaign_name: campaign.name,
-      objective_type: 'LEAD_GENERATION', // For lead generation campaigns
+      objective_type: 'TRAFFIC', // TRAFFIC supports image ads, LEAD_GENERATION does NOT
       budget_mode: 'BUDGET_MODE_DAY',
-      budget: parseInt(platformConfig.budget) * 100, // Convert to cents (TikTok requirement)
+      budget: budgetInDollars, // TikTok API expects budget in DOLLARS (not cents!)
+      operation_status: 'DISABLE', // DISABLE = paused, ENABLE = active
     }, accessToken);
 
     logger.success('tiktok', `TikTok campaign created with ID: ${tiktokCampaign.campaign_id} `);
@@ -1679,29 +1737,32 @@ class CampaignOrchestratorService {
     endDate.setDate(endDate.getDate() + 30);
 
     // Calculate bid price based on budget
-    // For LEAD_GENERATION, TikTok requires a minimum bid of $1 (100 cents)
-    const dailyBudgetInCents = parseInt(platformConfig.budget) * 100;
-    const targetConversionsPerDay = 5; // Conservative target for optimization
-    let bidPrice = Math.floor(dailyBudgetInCents / targetConversionsPerDay);
+    // For TRAFFIC/CPC campaigns, bid is the cost per click IN DOLLARS
+    // TikTok CPC API expects bid in dollars with decimal, e.g., 0.50 for $0.50
+    //
+    // BID UNITS (all in DOLLARS for TikTok API):
+    // - For CPC: bid_price is in DOLLARS (e.g., 0.50 means $0.50 per click)
+    // - For OCPM/CPM: bid_price is in DOLLARS (e.g., 5.00 means $5.00 per 1000 impressions)
+    const targetClicksPerDay = 10; // Conservative target for optimization
+    let bidPrice = budgetInDollars / targetClicksPerDay;
 
-    // Ensure minimum bid of 100 cents ($1) for LEAD_GENERATION
-    // TikTok often has minimum bid requirements
-    bidPrice = Math.max(bidPrice, 100);
+    // Ensure minimum bid of $0.50 for CPC (TikTok minimum is ~$0.01, but $0.50 is more realistic)
+    bidPrice = Math.max(bidPrice, 0.50);
 
     // Debug logging to understand the values
-    logger.info('tiktok', `Ad Group Configuration Debug:`, {
-      dailyBudgetInCents,
-      bidPrice,
-      platformConfigBudget: platformConfig.budget,
-      pixelId: platformConfig.pixelId
+    logger.info('tiktok', `Ad Group Configuration:`, {
+      budgetInDollars,
+      bidPriceInDollars: bidPrice,
+      pixelId: platformConfig.pixelId || 'none'
     });
 
     // Create Ad Group parameters object
+    // For TRAFFIC objective, we use WEBSITE promotion_type and CLICK optimization
     const adGroupParams: any = {
       advertiser_id: advertiserId,
       campaign_id: tiktokCampaign.campaign_id,
       adgroup_name: `${campaign.name} - Ad Group`,
-      promotion_type: 'LEAD_GENERATION',
+      promotion_type: 'WEBSITE', // WEBSITE for traffic to external URL (supports images)
       // IMPORTANT: Placements field is required by TikTok API
       // Available placements: PLACEMENT_TIKTOK (main app), PLACEMENT_PANGLE (partner network), etc.
       placements: ['PLACEMENT_TIKTOK'], // Using TikTok main app placement only
@@ -1709,15 +1770,11 @@ class CampaignOrchestratorService {
       schedule_start_time: startDate.toISOString().replace('T', ' ').split('.')[0],
       schedule_end_time: endDate.toISOString().replace('T', ' ').split('.')[0],
       budget_mode: 'BUDGET_MODE_DAY',
-      budget: dailyBudgetInCents,
-      optimization_goal: 'LEAD_GENERATION', // For LEAD_GENERATION objective
-      billing_event: 'OCPM', // Optimized CPM for lead gen
+      budget: budgetInDollars, // TikTok API expects budget in DOLLARS (not cents!)
+      optimization_goal: 'CLICK', // CLICK for TRAFFIC objective (supports images)
+      billing_event: 'CPC', // Cost Per Click for traffic campaigns
       bid_type: 'BID_TYPE_CUSTOM', // Custom bidding with specified price
-      bid: bidPrice, // Try 'bid' instead of 'bid_price'
-      bid_price: bidPrice, // Keep both for compatibility
-      deep_bid_type: 'MIN', // Minimum cost strategy for LEAD_GENERATION
-      deep_cpa_bid: bidPrice, // Cost per acquisition for LEAD_GENERATION
-      conversion_bid_price: bidPrice, // Another possible field name
+      bid_price: bidPrice, // CRITICAL: Field name is "bid_price", not "bid"
       location_ids: [locationId], // Use resolved Location ID
     };
 
@@ -1729,15 +1786,8 @@ class CampaignOrchestratorService {
       adGroupParams.age_groups = tiktokAgeGroups;
     }
 
-    logger.info('tiktok', `Creating Ad Group with params (including all bid fields):`, {
-      ...adGroupParams,
-      bidFields: {
-        bid: adGroupParams.bid,
-        bid_price: adGroupParams.bid_price,
-        deep_cpa_bid: adGroupParams.deep_cpa_bid,
-        conversion_bid_price: adGroupParams.conversion_bid_price,
-        deep_bid_type: adGroupParams.deep_bid_type
-      }
+    logger.info('tiktok', `Creating Ad Group with params:`, {
+      ...adGroupParams
     });
 
     const adGroup = await tiktokService.createAdGroup(adGroupParams, accessToken);
@@ -1785,28 +1835,36 @@ class CampaignOrchestratorService {
       const image = images[0]; // Use first image
       logger.info('tiktok', `Uploading image to TikTok: ${image.fileName}`);
 
-      // Upload image directly via URL (no processing needed)
-      // This matches the proven working approach from Google Apps Script
       try {
         // Generate unique filename to avoid duplicates in TikTok Asset Library
+        // Use .jpg extension since we convert to JPEG
         const timestamp = Date.now();
         const randomString = Math.random().toString(36).substring(2, 8);
-        const uniqueFileName = image.fileName.replace(/\.[^/.]+$/, `_tiktok_${timestamp}_${randomString}$&`);
+        const uniqueFileName = image.fileName.replace(/\.[^/.]+$/, `_tiktok_${timestamp}_${randomString}.jpg`);
 
-        logger.info('tiktok', `Uploading image via URL: ${uniqueFileName}`);
+        // Download image from GCS
+        logger.info('tiktok', `Downloading image from GCS: ${image.fileName}`);
+        const axios = require('axios');
+        const imageResponse = await axios.get(image.url, { responseType: 'arraybuffer' });
+        const rawBuffer = Buffer.from(imageResponse.data);
+        logger.info('tiktok', `Downloaded image, size: ${(rawBuffer.length / 1024).toFixed(2)}KB`);
 
-        // Upload directly using the GCS signed URL (like Google Apps Script uses Drive URLs)
+        // CRITICAL: Re-procesar imagen para TikTok (normaliza formato, color profile, metadatos)
+        const imageBuffer = await this.processTikTokImage(rawBuffer);
+        logger.info('tiktok', `Uploading processed image to TikTok...`);
+
         const uploadResult = await tiktokService.uploadImage(
-          image.url, // Use signed URL directly
+          imageBuffer, // Upload processed buffer
           uniqueFileName,
-          'UPLOAD_BY_URL',
+          'UPLOAD_BY_FILE',
           accessToken
         );
 
         imageIds = [uploadResult.image_id];
         logger.success('tiktok', `Image uploaded successfully to TikTok`, {
           imageId: imageIds[0],
-          fileName: uniqueFileName
+          fileName: uniqueFileName,
+          sizeKB: (imageBuffer.length / 1024).toFixed(2)
         });
 
       } catch (error: any) {
@@ -1819,6 +1877,11 @@ class CampaignOrchestratorService {
         where: { id: image.id },
         data: { usedInTiktok: true },
       });
+
+      // CRITICAL: Wait for TikTok to process the uploaded image
+      // TikTok needs time to validate and process images before they can be used in ads
+      logger.info('tiktok', '⏳ Waiting 15 seconds for TikTok to process the uploaded image...');
+      await new Promise(resolve => setTimeout(resolve, 15000)); // 15 seconds
     }
 
     // Get TikTok identity (required for ads)
@@ -1862,7 +1925,7 @@ class CampaignOrchestratorService {
     let ad: any;
     let adCreationAttempts = 0;
     const maxAdCreationAttempts = 3;
-    const baseDelay = 10000; // 10 seconds base delay
+    const baseDelay = 20000; // 20 seconds base delay (increased from 10)
 
     while (adCreationAttempts < maxAdCreationAttempts) {
       try {

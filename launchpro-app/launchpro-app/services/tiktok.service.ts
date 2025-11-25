@@ -27,6 +27,7 @@ export interface TikTokCampaignParams {
   | 'CATALOG_SALES';
   budget_mode?: 'BUDGET_MODE_INFINITE' | 'BUDGET_MODE_DAY' | 'BUDGET_MODE_TOTAL';
   budget?: number; // in cents, required if budget_mode is not INFINITE
+  operation_status?: 'ENABLE' | 'DISABLE'; // ENABLE = active, DISABLE = paused
   special_industries?: string[]; // e.g., ['HOUSING', 'EMPLOYMENT', 'CREDIT']
 }
 
