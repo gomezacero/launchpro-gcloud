@@ -1529,42 +1529,66 @@ class CampaignOrchestratorService {
   }
 
   /**
-   * Procesa una imagen para cumplir con los requisitos de TikTok Ads API
-   * - Normaliza formato y metadatos
-   * - Convierte a JPEG con sRGB
-   * - Valida dimensiones (40-2600px)
+   * Process image for TikTok Ads API
+   *
+   * CRITICAL: TikTok only supports SPECIFIC image sizes for SINGLE_IMAGE ads:
+   * - 720x1280 (9:16 vertical) - Recommended for in-feed ads
+   * - 1200x628 (16:9 horizontal) - For news feed/Pangle
+   * - 640x640 (1:1 square) - Universal
+   *
+   * Images with non-standard sizes (like 896x1280) will be REJECTED with
+   * "Unsupported image size" error even if the aspect ratio is correct!
    */
   private async processTikTokImage(imageBuffer: Buffer): Promise<Buffer> {
-    // Obtener metadata original
     const metadata = await sharp(imageBuffer).metadata();
     logger.info('tiktok', `Original image: ${metadata.width}x${metadata.height}, format: ${metadata.format}`);
 
-    let width = metadata.width || 0;
-    let height = metadata.height || 0;
+    const originalWidth = metadata.width || 0;
+    const originalHeight = metadata.height || 0;
 
-    // Validar dimensiones están en rango válido (40-2600px)
-    if (width < 40 || height < 40) {
-      throw new Error(`Image too small: ${width}x${height}. Minimum is 40x40px`);
+    if (originalWidth < 40 || originalHeight < 40) {
+      throw new Error(`Image too small: ${originalWidth}x${originalHeight}. Minimum is 40x40px`);
     }
 
-    // Si alguna dimensión excede 2600px, redimensionar proporcionalmente
-    if (width > 2600 || height > 2600) {
-      const scale = Math.min(2600 / width, 2600 / height);
-      width = Math.round(width * scale);
-      height = Math.round(height * scale);
-      logger.info('tiktok', `Resizing to fit TikTok limits: ${width}x${height}`);
+    // Calculate aspect ratio to determine best target size
+    const aspectRatio = originalWidth / originalHeight;
+
+    // Determine target dimensions based on aspect ratio
+    // TikTok ONLY supports these exact sizes for SINGLE_IMAGE ads
+    let targetWidth: number;
+    let targetHeight: number;
+
+    if (aspectRatio <= 0.75) {
+      // Vertical (portrait) - use 720x1280 (9:16 = 0.5625)
+      // Catches images like 896x1280 (AR: 0.70) which are clearly vertical
+      targetWidth = 720;
+      targetHeight = 1280;
+      logger.info('tiktok', `Detected vertical image (AR: ${aspectRatio.toFixed(2)}), resizing to 720x1280 (9:16)`);
+    } else if (aspectRatio >= 1.4) {
+      // Horizontal (landscape) - use 1200x628 (16:9 = 1.91)
+      targetWidth = 1200;
+      targetHeight = 628;
+      logger.info('tiktok', `Detected horizontal image (AR: ${aspectRatio.toFixed(2)}), resizing to 1200x628 (16:9)`);
+    } else {
+      // Square-ish (0.75 < AR < 1.4) - use 640x640 (1:1)
+      targetWidth = 640;
+      targetHeight = 640;
+      logger.info('tiktok', `Detected square-ish image (AR: ${aspectRatio.toFixed(2)}), resizing to 640x640 (1:1)`);
     }
 
-    // Re-procesar imagen: convertir a JPEG, normalizar color profile, limpiar metadatos
+    // Resize to exact TikTok dimensions and convert to JPEG
     const processedBuffer = await sharp(imageBuffer)
-      .resize(width, height, { fit: 'inside', withoutEnlargement: true })
+      .resize(targetWidth, targetHeight, {
+        fit: 'cover',      // Crop to fill exact dimensions
+        position: 'center' // Center the crop
+      })
       .jpeg({
         quality: 90,
-        mozjpeg: true,  // Mejor compresión
+        mozjpeg: true,
       })
       .toBuffer();
 
-    // Verificar resultado
+    // Verify the result
     const processedMeta = await sharp(processedBuffer).metadata();
     logger.info('tiktok', `Processed image: ${processedMeta.width}x${processedMeta.height}, ` +
       `size: ${(processedBuffer.length / 1024).toFixed(2)}KB`);
@@ -1758,14 +1782,22 @@ class CampaignOrchestratorService {
 
     // Create Ad Group parameters object
     // For TRAFFIC objective, we use WEBSITE promotion_type and CLICK optimization
+    //
+    // CRITICAL: TikTok PLACEMENT_TIKTOK (in-feed) only supports SINGLE_VIDEO format!
+    // For SINGLE_IMAGE ads, we must use:
+    // - PLACEMENT_PANGLE (partner network) - supports images
+    // - Or PLACEMENT_TYPE_AUTOMATIC (TikTok decides)
+    //
+    // See: https://ads.tiktok.com/help/article/global-app-bundle-image-ad-specifications
     const adGroupParams: any = {
       advertiser_id: advertiserId,
       campaign_id: tiktokCampaign.campaign_id,
       adgroup_name: `${campaign.name} - Ad Group`,
-      promotion_type: 'WEBSITE', // WEBSITE for traffic to external URL (supports images)
-      // IMPORTANT: Placements field is required by TikTok API
-      // Available placements: PLACEMENT_TIKTOK (main app), PLACEMENT_PANGLE (partner network), etc.
-      placements: ['PLACEMENT_TIKTOK'], // Using TikTok main app placement only
+      promotion_type: 'WEBSITE', // WEBSITE for traffic to external URL
+      // Use automatic placement for images (Pangle supports images, TikTok in-feed does NOT)
+      // For videos, we can use PLACEMENT_TIKTOK directly
+      placement_type: useVideo ? 'PLACEMENT_TYPE_NORMAL' : 'PLACEMENT_TYPE_AUTOMATIC',
+      ...(useVideo ? { placements: ['PLACEMENT_TIKTOK'] } : {}), // Only specify placements for videos
       schedule_type: 'SCHEDULE_START_END',
       schedule_start_time: startDate.toISOString().replace('T', ' ').split('.')[0],
       schedule_end_time: endDate.toISOString().replace('T', ' ').split('.')[0],
