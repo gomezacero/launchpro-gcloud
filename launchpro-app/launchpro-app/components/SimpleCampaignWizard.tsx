@@ -54,6 +54,7 @@ export default function SimpleCampaignWizard() {
     platforms: [] as ('META' | 'TIKTOK')[],
     budget: '50',
     startDate: new Date().toISOString().split('T')[0],
+    keywords: '', // Comma-separated keywords (optional - AI generates if empty)
   });
 
   // Auto-selected Tonic account based on platforms
@@ -160,6 +161,11 @@ export default function SimpleCampaignWizard() {
         throw new Error('Could not determine Tonic account. Please try again.');
       }
 
+      // Process keywords (comma-separated to array)
+      const keywordsArray = formData.keywords
+        ? formData.keywords.split(',').map(k => k.trim()).filter(k => k)
+        : [];
+
       // Build campaign payload
       const payload = {
         name: formData.name,
@@ -168,10 +174,8 @@ export default function SimpleCampaignWizard() {
         offerId: formData.offerId,
         country: formData.country,
         language: formData.language,
-        // Backend will generate these automatically:
-        // - copyMaster
-        // - communicationAngle
-        // - keywords (6-10)
+        // Keywords: Use manual if provided, otherwise AI generates 6-10
+        keywords: keywordsArray.length > 0 ? keywordsArray : undefined,
         platforms: formData.platforms.map(platform => ({
           platform,
           accountId: 'auto', // Backend will select appropriate account
@@ -406,6 +410,28 @@ export default function SimpleCampaignWizard() {
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 min={new Date().toISOString().split('T')[0]}
               />
+            </div>
+
+            {/* Keywords (Optional) */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Keywords (Optional)
+                <span className="text-xs text-gray-500 ml-2">
+                  Leave empty to generate with AI
+                </span>
+              </label>
+              <textarea
+                value={formData.keywords}
+                onChange={(e) =>
+                  setFormData({ ...formData, keywords: e.target.value })
+                }
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                rows={2}
+                placeholder="e.g., car loans, auto financing, vehicle payment plans..."
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Separate keywords with commas. AI will generate 6-10 keywords if left empty.
+              </p>
             </div>
 
             {/* Navigation */}

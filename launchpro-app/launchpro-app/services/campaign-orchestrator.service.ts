@@ -1134,11 +1134,18 @@ class CampaignOrchestratorService {
     // 2. site (always 'direct' as requested)
     url.searchParams.set('site', 'direct');
 
-    // 3. adtitle (Copy Master)
-    if (copyMaster) {
-      // Truncate if too long (URL safety)
-      const safeTitle = copyMaster.substring(0, 100);
+    // 3. adtitle (Copy Master) - Clean and set
+    if (copyMaster && copyMaster.trim()) {
+      // Truncate if too long and clean for URL
+      const safeTitle = copyMaster
+        .substring(0, 100)
+        .trim()
+        .replace(/\n/g, ' ')  // Replace newlines with spaces
+        .replace(/\s+/g, ' '); // Collapse multiple spaces
       url.searchParams.set('adtitle', safeTitle);
+      logger.info('tonic', `Setting adtitle: "${safeTitle}"`);
+    } else {
+      logger.warn('tonic', 'Copy Master is empty, adtitle will not be set');
     }
 
     // 4. ad_id (Platform Macro)
@@ -1327,7 +1334,9 @@ class CampaignOrchestratorService {
     // Map common language codes to Meta Locale IDs
     // 6 = Spanish (All), 1001 = English (US), etc.
     // See: https://developers.facebook.com/docs/marketing-api/audiences/reference/targeting-search/
-    logger.info('meta', `Processing language targeting for: "${campaign.language}"`);
+    logger.info('meta', `=== LANGUAGE DEBUG ===`);
+    logger.info('meta', `campaign.language raw value: "${campaign.language}"`);
+    logger.info('meta', `campaign.language type: ${typeof campaign.language}`);
 
     const localeMap: Record<string, number[]> = {
       'es': [6], // Spanish (All)
@@ -1335,21 +1344,61 @@ class CampaignOrchestratorService {
       'pt': [1002], // Portuguese (Brazil)
       'fr': [9], // French (All)
       'de': [7], // German (All)
-      // Add fallbacks for full names if needed
+      // Full names (from dropdown)
+      'español': [6],
       'spanish': [6],
       'english': [1001],
+      'inglés': [1001],
       'portuguese': [1002],
+      'portugués': [1002],
+      'french': [9],
+      'francés': [9],
+      'german': [7],
+      'alemán': [7],
     };
 
     // Normalize language input (lowercase, trim)
     const normalizedLang = campaign.language ? campaign.language.toLowerCase().trim() : 'en';
     const targetLocales = localeMap[normalizedLang] || undefined;
 
+    logger.info('meta', `Normalized language: "${normalizedLang}"`);
+    logger.info('meta', `Locale lookup result: ${JSON.stringify(targetLocales)}`);
+
     if (!targetLocales) {
       logger.warn('meta', `No locale mapping found for language "${campaign.language}" (normalized: "${normalizedLang}"). Targeting all languages.`);
     } else {
-      logger.info('meta', `Targeting locales: ${targetLocales} for language "${campaign.language}"`);
+      logger.info('meta', `✅ Targeting locales: ${JSON.stringify(targetLocales)} for language "${campaign.language}"`);
     }
+    logger.info('meta', `=== END LANGUAGE DEBUG ===`);
+
+    // Build targeting object - only include locales if we have a valid value
+    const targetingSpec: any = {
+      geo_locations: {
+        countries: [campaign.country], // Use campaign country
+      },
+      age_min: ageMin,
+      age_max: ageMax,
+      publisher_platforms: ['facebook', 'instagram', 'messenger'], // Explicitly set platforms
+    };
+
+    // Only add optional targeting if they have values
+    if (targetInterests.length > 0) {
+      targetingSpec.interests = targetInterests;
+    }
+    if (targetBehaviors.length > 0) {
+      targetingSpec.behaviors = targetBehaviors;
+    }
+    // IMPORTANT: Only add locales if we have a valid array with values
+    if (targetLocales && targetLocales.length > 0) {
+      targetingSpec.locales = targetLocales;
+      logger.info('meta', `✅ Adding locales to targeting: ${JSON.stringify(targetLocales)}`);
+    } else {
+      logger.warn('meta', `⚠️ No locales to add - targeting will use all languages`);
+    }
+
+    logger.info('meta', `=== TARGETING SPEC BEING SENT ===`);
+    logger.info('meta', JSON.stringify(targetingSpec, null, 2));
+    logger.info('meta', `=== END TARGETING SPEC ===`);
 
     // Create Ad Set (according to Meta Ads API)
     const adSet = await metaService.createAdSet({
@@ -1363,17 +1412,7 @@ class CampaignOrchestratorService {
       bid_strategy: !isCBO ? 'LOWEST_COST_WITHOUT_CAP' : undefined,
 
       start_time: new Date(platformConfig.startDate).toISOString(),
-      targeting: {
-        geo_locations: {
-          countries: [campaign.country], // Use campaign country
-        },
-        age_min: ageMin,
-        age_max: ageMax,
-        interests: targetInterests.length > 0 ? targetInterests : undefined,
-        behaviors: targetBehaviors.length > 0 ? targetBehaviors : undefined,
-        locales: targetLocales, // Add language targeting
-        publisher_platforms: ['facebook', 'instagram', 'messenger'], // Explicitly set platforms
-      },
+      targeting: targetingSpec,
       status: 'PAUSED',
       promoted_object: {
         pixel_id: pixelId,
@@ -1457,59 +1496,9 @@ class CampaignOrchestratorService {
       throw new Error(`Meta Page ID not found for account ${metaAccount.name}.Please configure it in the Account settings.`);
     }
 
-    // Fetch Instagram Account ID (required for ad identity)
-    let instagramActorId: string | undefined = undefined;
-
-    // Step 1: Try to get connected Instagram Business Account
-    try {
-      const instagramAccount = await metaService.getInstagramAccount(metaAccount.metaPageId);
-
-      if (instagramAccount?.instagram_business_account?.id) {
-        instagramActorId = instagramAccount.instagram_business_account.id;
-        logger.info('meta', `Using Instagram Business Account: ${instagramAccount.instagram_business_account.username} (${instagramActorId})`);
-      } else {
-        logger.info('meta', `No Instagram Business Account connected to Page ${metaAccount.metaPageId}`);
-      }
-    } catch (error: any) {
-      logger.warn('meta', `Failed to fetch Instagram Business Account: ${error.message}`);
-    }
-
-    // Step 2: If no Instagram Business Account, try Page-backed Instagram Account
-    if (!instagramActorId) {
-      try {
-        logger.info('meta', `Getting Page-backed Instagram Account for Page ${metaAccount.metaPageId}...`);
-
-        const pageBackedAccount = await metaService.getPageBackedInstagramAccount(
-          metaAccount.metaPageId,
-          accessToken
-        );
-
-        logger.info('meta', `Page-backed response:`, pageBackedAccount);
-
-        if (pageBackedAccount?.data?.[0]?.id) {
-          instagramActorId = pageBackedAccount.data[0].id;
-          logger.info('meta', `Using Page-backed Instagram Account: ${instagramActorId}`);
-        } else {
-          logger.warn('meta', `No Page-backed Instagram Account found. Response: ${JSON.stringify(pageBackedAccount)}`);
-        }
-      } catch (error: any) {
-        const metaError = error.response?.data?.error || {};
-        logger.error('meta', `Failed to fetch Page-backed Instagram Account`, {
-          message: metaError.message || error.message,
-          type: metaError.type,
-          code: metaError.code,
-          error_subcode: metaError.error_subcode,
-          fbtrace_id: metaError.fbtrace_id,
-        });
-      }
-    }
-
-    // Log final Instagram Actor ID status
-    if (instagramActorId) {
-      logger.info('meta', `Final Instagram Actor ID: ${instagramActorId}`);
-    } else {
-      logger.warn('meta', `No Instagram Actor ID available. Ad will be created without Instagram identity.`);
-    }
+    // Instagram Identity: Not specifying any Instagram ID
+    // Meta will automatically use "Use Facebook Page as Instagram" option
+    logger.info('meta', `Instagram identity: Using Facebook Page as Instagram (no instagram_user_id specified)`);
 
     // FORMAT TONIC LINK
     const finalLink = this.formatTonicLink(
@@ -1524,7 +1513,7 @@ class CampaignOrchestratorService {
       name: `${campaign.name} - Creative`,
       object_story_spec: {
         page_id: metaAccount.metaPageId,
-        instagram_actor_id: instagramActorId, // Pass Instagram ID if available
+        // No instagram_user_id - Meta will use "Use Facebook Page as Instagram" automatically
         ...(useVideo ? {
           video_data: {
             video_id: videoId!,
@@ -2161,6 +2150,11 @@ class CampaignOrchestratorService {
         keywords: campaign.keywords || [],
         article: campaign.tonicArticleId ? { headlineId: campaign.tonicArticleId } : undefined,
       };
+
+      logger.info('system', `=== COPY MASTER DEBUG ===`);
+      logger.info('system', `campaign.copyMaster from DB: "${campaign.copyMaster}"`);
+      logger.info('system', `aiContentResult.copyMaster: "${aiContentResult.copyMaster}"`);
+      logger.info('system', `=== END COPY MASTER DEBUG ===`);
 
       // Update status to LAUNCHING
       await prisma.campaign.update({

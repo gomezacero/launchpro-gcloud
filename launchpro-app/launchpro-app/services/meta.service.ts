@@ -66,7 +66,7 @@ export interface MetaAdCreativeParams {
   name: string;
   object_story_spec?: {
     page_id: string;
-    instagram_actor_id?: string; // ID of the Instagram account
+    instagram_user_id?: string; // ID of the Instagram user (Meta API requires this instead of instagram_actor_id)
     link_data?: {
       link: string;
       message?: string;
@@ -312,19 +312,14 @@ class MetaService {
     if (params.start_time) payload.start_time = params.start_time;
     if (params.end_time) payload.end_time = params.end_time;
 
-    // Add targeting
+    // Add targeting - preserve all targeting including locales
     if (params.targeting) {
-      payload.targeting = {
-        ...params.targeting,
-        // ENFORCE PLACEMENTS: Facebook, Instagram, Messenger (No Audience Network)
-        publisher_platforms: ['facebook', 'instagram', 'messenger'],
-        // ENFORCE POSITIONS: Automatic within the selected platforms (or specify if needed)
-        // facebook_positions: ['feed', 'story', ...], 
-        // instagram_positions: ['stream', 'story', ...],
+      // Use the targeting as-is from the orchestrator (it already has publisher_platforms)
+      payload.targeting = params.targeting;
 
-        // Disable "Allow limited budget in excluded placements" (Advantage+ Placements)
-        // This is done by explicitly setting publisher_platforms and NOT setting advantage_plus_placements
-      };
+      // Log targeting details for debugging
+      console.log('[META] Targeting received:', JSON.stringify(params.targeting, null, 2));
+      console.log('[META] Locales in targeting:', params.targeting.locales);
     } else {
       // If no targeting provided, still enforce placements
       payload.targeting = {

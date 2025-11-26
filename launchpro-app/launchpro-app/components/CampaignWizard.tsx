@@ -621,6 +621,30 @@ export default function CampaignWizard() {
                   placeholder="e.g., Urgency, Trust, Value"
                 />
               </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Keywords (Optional)
+                  <span className="text-xs text-gray-500 ml-2">
+                    Leave empty to generate with AI
+                  </span>
+                </label>
+                <textarea
+                  value={formData.keywords.join(', ')}
+                  onChange={(e) => {
+                    const keywordsArray = e.target.value
+                      ? e.target.value.split(',').map(k => k.trim()).filter(k => k)
+                      : [];
+                    handleInputChange('keywords', keywordsArray);
+                  }}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  rows={2}
+                  placeholder="e.g., car loans, auto financing, vehicle payment plans..."
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Separate keywords with commas. AI will generate 6-10 keywords if left empty.
+                </p>
+              </div>
             </div>
           )}
 
