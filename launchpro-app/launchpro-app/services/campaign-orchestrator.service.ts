@@ -1457,18 +1457,58 @@ class CampaignOrchestratorService {
       throw new Error(`Meta Page ID not found for account ${metaAccount.name}.Please configure it in the Account settings.`);
     }
 
-    // Fetch Instagram Account ID (if connected)
-    let instagramActorId = undefined;
+    // Fetch Instagram Account ID (required for ad identity)
+    let instagramActorId: string | undefined = undefined;
+
+    // Step 1: Try to get connected Instagram Business Account
     try {
       const instagramAccount = await metaService.getInstagramAccount(metaAccount.metaPageId);
-      if (instagramAccount && instagramAccount.instagram_business_account) {
+
+      if (instagramAccount?.instagram_business_account?.id) {
         instagramActorId = instagramAccount.instagram_business_account.id;
-        logger.info('meta', `Found Instagram Business Account: ${instagramAccount.instagram_business_account.username} (${instagramActorId})`);
+        logger.info('meta', `Using Instagram Business Account: ${instagramAccount.instagram_business_account.username} (${instagramActorId})`);
       } else {
-        logger.info('meta', `No Instagram Business Account connected to Page ${metaAccount.metaPageId}. Using Page as identity.`);
+        logger.info('meta', `No Instagram Business Account connected to Page ${metaAccount.metaPageId}`);
       }
     } catch (error: any) {
-      logger.warn('meta', `Failed to fetch Instagram account: ${error.message}. Using Page as identity.`);
+      logger.warn('meta', `Failed to fetch Instagram Business Account: ${error.message}`);
+    }
+
+    // Step 2: If no Instagram Business Account, try Page-backed Instagram Account
+    if (!instagramActorId) {
+      try {
+        logger.info('meta', `Getting Page-backed Instagram Account for Page ${metaAccount.metaPageId}...`);
+
+        const pageBackedAccount = await metaService.getPageBackedInstagramAccount(
+          metaAccount.metaPageId,
+          accessToken
+        );
+
+        logger.info('meta', `Page-backed response:`, pageBackedAccount);
+
+        if (pageBackedAccount?.data?.[0]?.id) {
+          instagramActorId = pageBackedAccount.data[0].id;
+          logger.info('meta', `Using Page-backed Instagram Account: ${instagramActorId}`);
+        } else {
+          logger.warn('meta', `No Page-backed Instagram Account found. Response: ${JSON.stringify(pageBackedAccount)}`);
+        }
+      } catch (error: any) {
+        const metaError = error.response?.data?.error || {};
+        logger.error('meta', `Failed to fetch Page-backed Instagram Account`, {
+          message: metaError.message || error.message,
+          type: metaError.type,
+          code: metaError.code,
+          error_subcode: metaError.error_subcode,
+          fbtrace_id: metaError.fbtrace_id,
+        });
+      }
+    }
+
+    // Log final Instagram Actor ID status
+    if (instagramActorId) {
+      logger.info('meta', `Final Instagram Actor ID: ${instagramActorId}`);
+    } else {
+      logger.warn('meta', `No Instagram Actor ID available. Ad will be created without Instagram identity.`);
     }
 
     // FORMAT TONIC LINK

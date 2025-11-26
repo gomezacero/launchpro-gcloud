@@ -729,6 +729,51 @@ class MetaService {
 
     return response.data;
   }
+
+  /**
+   * Get Page Access Token for a specific page
+   * Required for certain page-level operations like page_backed_instagram_accounts
+   */
+  async getPageAccessToken(pageId: string, userAccessToken?: string): Promise<string | null> {
+    try {
+      const client = this.getClient(userAccessToken);
+      const response = await client.get(`/${pageId}`, {
+        params: {
+          fields: 'access_token',
+        },
+      });
+
+      return response.data?.access_token || null;
+    } catch (error: any) {
+      console.error('[META] Failed to get Page Access Token:', error.response?.data?.error || error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Get Page-backed Instagram Account
+   * This is the "Use Facebook Page" option when no Instagram Business account is connected
+   * IMPORTANT: This endpoint requires a Page Access Token, not a User Access Token
+   * See: https://developers.facebook.com/docs/marketing-api/reference/page/page_backed_instagram_accounts
+   */
+  async getPageBackedInstagramAccount(pageId: string, userAccessToken?: string) {
+    // First, get the Page Access Token (required for this endpoint)
+    const pageAccessToken = await this.getPageAccessToken(pageId, userAccessToken);
+
+    if (!pageAccessToken) {
+      throw new Error('Unable to obtain Page Access Token. Ensure the app has pages_read_engagement permission.');
+    }
+
+    // Use Page Access Token to fetch page_backed_instagram_accounts
+    const client = this.getClient(pageAccessToken);
+    const response = await client.get(`/${pageId}/page_backed_instagram_accounts`, {
+      params: {
+        fields: 'id,username,profile_pic',
+      },
+    });
+
+    return response.data;
+  }
 }
 
 // Export singleton instance
