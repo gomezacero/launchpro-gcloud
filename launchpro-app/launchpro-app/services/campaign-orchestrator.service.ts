@@ -1037,13 +1037,14 @@ class CampaignOrchestratorService {
             logger.info('system', `Launching to ${platformConfig.platform}...`);
 
             if (platformConfig.platform === Platform.META) {
-              const result = await this.launchToMeta(campaign, platformConfig, aiContentResult);
+              const result = await this.launchToMeta(campaign, platformConfig, aiContentResult, tonicCampaignId?.toString());
               platformResults.push(result);
             } else if (platformConfig.platform === Platform.TIKTOK) {
               const result = await this.launchToTikTok(
                 campaign,
                 platformConfig,
-                aiContentResult
+                aiContentResult,
+                tonicCampaignId?.toString()
               );
               platformResults.push(result);
             }
@@ -1167,8 +1168,18 @@ class CampaignOrchestratorService {
    * - Images: JPG, PNG, max 30MB, recommended 1:1 aspect ratio
    * - Videos: MP4, MOV, max 4GB, 1-241 min duration
    */
-  private async launchToMeta(campaign: any, platformConfig: any, aiContent: any) {
-    logger.info('meta', 'Creating Meta campaign...', { campaignName: campaign.name });
+  private async launchToMeta(campaign: any, platformConfig: any, aiContent: any, tonicCampaignId?: string) {
+    // Build campaign name with Tonic ID prefix (format: {tonicId}_{campaignName})
+    const fullCampaignName = tonicCampaignId ? `${tonicCampaignId}_${campaign.name}` : campaign.name;
+
+    // Helper to get tomorrow's date in YYYY-MM-DD format for Ad names
+    const getTomorrowDate = (): string => {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      return tomorrow.toISOString().split('T')[0]; // "2025-11-27"
+    };
+
+    logger.info('meta', 'Creating Meta campaign...', { campaignName: fullCampaignName, originalName: campaign.name, tonicId: tonicCampaignId });
 
     // Fetch the Meta Account to get the correct Ad Account ID
     const metaAccount = await prisma.account.findUnique({
@@ -1253,7 +1264,7 @@ class CampaignOrchestratorService {
 
     // Create Campaign (according to Meta Ads API - OUTCOME_LEADS for lead generation)
     const metaCampaign = await metaService.createCampaign({
-      name: campaign.name,
+      name: fullCampaignName,
       objective: 'OUTCOME_SALES', // Required for Purchase conversion event
       status: 'PAUSED', // Always create as paused first
       special_ad_categories: platformConfig.specialAdCategories && platformConfig.specialAdCategories.length > 0
@@ -1338,15 +1349,19 @@ class CampaignOrchestratorService {
     logger.info('meta', `campaign.language raw value: "${campaign.language}"`);
     logger.info('meta', `campaign.language type: ${typeof campaign.language}`);
 
+    // Meta Locale IDs for targeting:
+    // For Spanish, we use multiple locale IDs to ensure Meta recognizes the targeting:
+    // 6 = Spanish (All), 23 = Spanish (Latin America), 24 = Spanish (Spain)
+    // Reference: https://developers.facebook.com/docs/marketing-api/audiences/reference/targeting-search/
     const localeMap: Record<string, number[]> = {
-      'es': [6], // Spanish (All)
+      'es': [6, 23, 24], // Spanish - include all Spanish variants
       'en': [1001], // English (US)
       'pt': [1002], // Portuguese (Brazil)
       'fr': [9], // French (All)
       'de': [7], // German (All)
       // Full names (from dropdown)
-      'español': [6],
-      'spanish': [6],
+      'español': [6, 23, 24], // Spanish - include all Spanish variants
+      'spanish': [6, 23, 24], // Spanish - include all Spanish variants
       'english': [1001],
       'inglés': [1001],
       'portuguese': [1002],
@@ -1403,7 +1418,7 @@ class CampaignOrchestratorService {
     // Create Ad Set (according to Meta Ads API)
     const adSet = await metaService.createAdSet({
       campaign_id: metaCampaign.id,
-      name: `${campaign.name} - AdSet`,
+      name: `${fullCampaignName} - AdSet`,
       optimization_goal: 'OFFSITE_CONVERSIONS', // Correct goal for Website Leads (Pixel)
       billing_event: 'IMPRESSIONS', // Standard for lead gen
 
@@ -1544,8 +1559,9 @@ class CampaignOrchestratorService {
     logger.success('meta', `Meta creative created with ID: ${creative.id} `);
 
     // Create Ad (according to Meta Ads API)
+    // Ad name uses tomorrow's date in YYYY-MM-DD format
     const ad = await metaService.createAd({
-      name: `${campaign.name} - Ad`,
+      name: getTomorrowDate(),
       adset_id: adSet.id,
       creative: { creative_id: creative.id },
       status: 'PAUSED',
@@ -1658,8 +1674,18 @@ class CampaignOrchestratorService {
    * - Images: JPG, PNG, 50KB-500KB, recommended 9:16 aspect ratio
    * - Videos: MP4, MOV, MPEG, max 500MB, 5-60 sec, recommended 9:16 aspect ratio
    */
-  private async launchToTikTok(campaign: any, platformConfig: any, aiContent: any) {
-    logger.info('tiktok', 'Creating TikTok campaign...', { campaignName: campaign.name });
+  private async launchToTikTok(campaign: any, platformConfig: any, aiContent: any, tonicCampaignId?: string) {
+    // Build campaign name with Tonic ID prefix (format: {tonicId}_{campaignName})
+    const fullCampaignName = tonicCampaignId ? `${tonicCampaignId}_${campaign.name}` : campaign.name;
+
+    // Helper to get tomorrow's date in YYYY-MM-DD format for Ad names
+    const getTomorrowDate = (): string => {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      return tomorrow.toISOString().split('T')[0]; // "2025-11-27"
+    };
+
+    logger.info('tiktok', 'Creating TikTok campaign...', { campaignName: fullCampaignName, originalName: campaign.name, tonicId: tonicCampaignId });
 
     // Fetch ALL media for this campaign (manual uploads or AI-generated)
     const allMedia = await prisma.media.findMany({
@@ -1745,7 +1771,7 @@ class CampaignOrchestratorService {
 
     const tiktokCampaign = await tiktokService.createCampaign({
       advertiser_id: advertiserId,
-      campaign_name: campaign.name,
+      campaign_name: fullCampaignName,
       objective_type: 'TRAFFIC', // TRAFFIC supports image ads, LEAD_GENERATION does NOT
       budget_mode: 'BUDGET_MODE_DAY',
       budget: budgetInDollars, // TikTok API expects budget in DOLLARS (not cents!)
@@ -1847,7 +1873,7 @@ class CampaignOrchestratorService {
     const adGroupParams: any = {
       advertiser_id: advertiserId,
       campaign_id: tiktokCampaign.campaign_id,
-      adgroup_name: `${campaign.name} - Ad Group`,
+      adgroup_name: `${fullCampaignName} - Ad Group`,
       promotion_type: 'WEBSITE', // WEBSITE for traffic to external URL
       // Use automatic placement for images (Pangle supports images, TikTok in-feed does NOT)
       // For videos, we can use PLACEMENT_TIKTOK directly
@@ -2016,10 +2042,11 @@ class CampaignOrchestratorService {
 
     while (adCreationAttempts < maxAdCreationAttempts) {
       try {
+        // Ad name uses tomorrow's date in YYYY-MM-DD format
         ad = await tiktokService.createAd({
           advertiser_id: advertiserId,
           adgroup_id: adGroup.adgroup_id,
-          ad_name: `${campaign.name} - Ad`,
+          ad_name: getTomorrowDate(),
           ad_format: useVideo ? 'SINGLE_VIDEO' : 'SINGLE_IMAGE',
           ad_text: adCopy.primaryText,
           call_to_action: adCopy.callToAction || 'LEARN_MORE',
@@ -2180,10 +2207,10 @@ class CampaignOrchestratorService {
           };
 
           if (platformConfig.platform === Platform.META) {
-            const result = await this.launchToMeta(campaign, platformParams, aiContentResult);
+            const result = await this.launchToMeta(campaign, platformParams, aiContentResult, campaign.tonicCampaignId);
             platformResults.push(result);
           } else if (platformConfig.platform === Platform.TIKTOK) {
-            const result = await this.launchToTikTok(campaign, platformParams, aiContentResult);
+            const result = await this.launchToTikTok(campaign, platformParams, aiContentResult, campaign.tonicCampaignId);
             platformResults.push(result);
           }
         } catch (error: any) {
