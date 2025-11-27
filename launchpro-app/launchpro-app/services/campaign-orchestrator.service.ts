@@ -4,6 +4,7 @@ import { tonicService } from './tonic.service';
 import { metaService } from './meta.service';
 import { tiktokService } from './tiktok.service';
 import { aiService } from './ai.service';
+// NOTE: videoConverterService removed - TikTok requires direct video upload
 import { waitForArticleApproval, formatElapsedTime } from '@/lib/article-polling';
 import { waitForTrackingLink, formatPollingTime } from '@/lib/tracking-link-polling';
 import { CampaignStatus, Platform, CampaignType, MediaType } from '@prisma/client';
@@ -1702,14 +1703,20 @@ class CampaignOrchestratorService {
       videos: videos.map(v => v.fileName),
     });
 
-    // Validate that we have media
-    if (images.length === 0 && videos.length === 0) {
-      throw new Error('No media found for TikTok campaign. Please upload at least one image or video.');
+    // IMPORTANTE: TikTok PLACEMENT_TIKTOK (in-feed) SOLO soporta VIDEO, NO imágenes estáticas
+    // Validar que tengamos al menos un video
+    if (videos.length === 0) {
+      throw new Error(
+        'TikTok requires VIDEO for in-feed ads (PLACEMENT_TIKTOK does not support static images). ' +
+        'Please upload a video file (.mp4, .mov, etc.) to launch this campaign on TikTok.'
+      );
     }
 
-    // Determine ad format (TikTok prefers video, but images work too)
-    const useVideo = videos.length > 0;
-    const adFormat = useVideo ? 'VIDEO' : 'IMAGE';
+    logger.info('tiktok', `Found ${videos.length} video(s) for TikTok campaign`, {
+      videos: videos.map(v => v.fileName),
+    });
+
+    const adFormat = 'VIDEO'; // TikTok PLACEMENT_TIKTOK siempre requiere VIDEO
 
     // Generate ad copy specific to TikTok
     const adCopy = await aiService.generateAdCopy({
@@ -1756,9 +1763,20 @@ class CampaignOrchestratorService {
       }
     }
 
-    // Create Campaign (according to TikTok Ads API - TRAFFIC objective for website visits)
-    // Note: TRAFFIC supports both SINGLE_IMAGE and SINGLE_VIDEO formats
-    // LEAD_GENERATION only supports SINGLE_VIDEO for in-feed placements
+    // Create Campaign (according to TikTok Ads API)
+    // Obtener pixelId: primero de platformConfig, luego de la cuenta de TikTok
+    const pixelId = platformConfig.pixelId || tiktokAccount.tiktokPixelId;
+
+    // VALIDACIÓN: Para conversiones de ventas, el Pixel es OBLIGATORIO
+    if (!pixelId) {
+      throw new Error(
+        'TikTok Pixel ID is required for conversion campaigns (Sales). ' +
+        'Please configure a Pixel in the account settings or platform configuration.'
+      );
+    }
+    logger.info('tiktok', `Using TikTok Pixel ID: ${pixelId}`);
+
+    // WEB_CONVERSIONS objective for Sales/Purchase optimization
     // IMPORTANT: Campaign is created in PAUSED status to allow review before spending budget
     //
     // BUDGET UNITS (TikTok API uses DOLLARS, not cents!):
@@ -1772,7 +1790,7 @@ class CampaignOrchestratorService {
     const tiktokCampaign = await tiktokService.createCampaign({
       advertiser_id: advertiserId,
       campaign_name: fullCampaignName,
-      objective_type: 'TRAFFIC', // TRAFFIC supports image ads, LEAD_GENERATION does NOT
+      objective_type: 'WEB_CONVERSIONS', // Para conversiones de ventas (Sales)
       budget_mode: 'BUDGET_MODE_DAY',
       budget: budgetInDollars, // TikTok API expects budget in DOLLARS (not cents!)
       operation_status: 'DISABLE', // DISABLE = paused, ENABLE = active
@@ -1841,60 +1859,44 @@ class CampaignOrchestratorService {
     const endDate = new Date(startDate);
     endDate.setDate(endDate.getDate() + 30);
 
-    // Calculate bid price based on budget
-    // For TRAFFIC/CPC campaigns, bid is the cost per click IN DOLLARS
-    // TikTok CPC API expects bid in dollars with decimal, e.g., 0.50 for $0.50
-    //
-    // BID UNITS (all in DOLLARS for TikTok API):
-    // - For CPC: bid_price is in DOLLARS (e.g., 0.50 means $0.50 per click)
-    // - For OCPM/CPM: bid_price is in DOLLARS (e.g., 5.00 means $5.00 per 1000 impressions)
-    const targetClicksPerDay = 10; // Conservative target for optimization
-    let bidPrice = budgetInDollars / targetClicksPerDay;
-
-    // Ensure minimum bid of $0.50 for CPC (TikTok minimum is ~$0.01, but $0.50 is more realistic)
-    bidPrice = Math.max(bidPrice, 0.50);
-
     // Debug logging to understand the values
+    // Nota: Con BID_TYPE_NO_BID, TikTok optimiza automáticamente (no necesitamos bid_price)
     logger.info('tiktok', `Ad Group Configuration:`, {
       budgetInDollars,
-      bidPriceInDollars: bidPrice,
-      pixelId: platformConfig.pixelId || 'none'
+      pixelId: pixelId,
+      optimization: 'CONVERSION with OCPM (auto-bid)'
     });
 
     // Create Ad Group parameters object
-    // For TRAFFIC objective, we use WEBSITE promotion_type and CLICK optimization
+    // For WEB_CONVERSIONS objective, we use WEBSITE promotion_type and CONVERSION optimization
     //
-    // CRITICAL: TikTok PLACEMENT_TIKTOK (in-feed) only supports SINGLE_VIDEO format!
-    // For SINGLE_IMAGE ads, we must use:
-    // - PLACEMENT_PANGLE (partner network) - supports images
-    // - Or PLACEMENT_TYPE_AUTOMATIC (TikTok decides)
-    //
-    // See: https://ads.tiktok.com/help/article/global-app-bundle-image-ad-specifications
+    // IMPORTANTE: Siempre usar PLACEMENT_TIKTOK (requerimiento de la empresa - NO usar Pangle)
+    // Nota: Si las imágenes no funcionan en PLACEMENT_TIKTOK, el usuario deberá usar video
     const adGroupParams: any = {
       advertiser_id: advertiserId,
       campaign_id: tiktokCampaign.campaign_id,
       adgroup_name: `${fullCampaignName} - Ad Group`,
       promotion_type: 'WEBSITE', // WEBSITE for traffic to external URL
-      // Use automatic placement for images (Pangle supports images, TikTok in-feed does NOT)
-      // For videos, we can use PLACEMENT_TIKTOK directly
-      placement_type: useVideo ? 'PLACEMENT_TYPE_NORMAL' : 'PLACEMENT_TYPE_AUTOMATIC',
-      ...(useVideo ? { placements: ['PLACEMENT_TIKTOK'] } : {}), // Only specify placements for videos
+      // SIEMPRE usar PLACEMENT_TIKTOK (no usar Pangle ni automatic)
+      placement_type: 'PLACEMENT_TYPE_NORMAL',
+      placements: ['PLACEMENT_TIKTOK'],
       schedule_type: 'SCHEDULE_START_END',
       schedule_start_time: startDate.toISOString().replace('T', ' ').split('.')[0],
       schedule_end_time: endDate.toISOString().replace('T', ' ').split('.')[0],
       budget_mode: 'BUDGET_MODE_DAY',
       budget: budgetInDollars, // TikTok API expects budget in DOLLARS (not cents!)
-      optimization_goal: 'CLICK', // CLICK for TRAFFIC objective (supports images)
-      billing_event: 'CPC', // Cost Per Click for traffic campaigns
-      bid_type: 'BID_TYPE_CUSTOM', // Custom bidding with specified price
-      bid_price: bidPrice, // CRITICAL: Field name is "bid_price", not "bid"
+      // Configuración para CONVERSIONES (Sales)
+      optimization_goal: 'CONVERT', // Optimizar para conversiones de ventas (TikTok usa 'CONVERT', no 'CONVERSION')
+      billing_event: 'OCPM', // Optimized Cost Per Mille (requerido para conversiones)
+      bid_type: 'BID_TYPE_CUSTOM', // Custom bid para conversiones
+      conversion_bid_price: 5.00, // Costo objetivo por conversión en USD ($5 por defecto)
+      // Configuración de Pixel para conversiones (OBLIGATORIO)
+      pixel_id: pixelId,
+      optimization_event: 'SHOPPING', // Evento de compra/venta (TikTok usa 'SHOPPING', no 'COMPLETE_PAYMENT')
       location_ids: [locationId], // Use resolved Location ID
     };
 
     // Add optional fields only if they have values
-    if (platformConfig.pixelId) {
-      adGroupParams.pixel_id = platformConfig.pixelId;
-    }
     if (tiktokAgeGroups.length > 0) {
       adGroupParams.age_groups = tiktokAgeGroups;
     }
@@ -1907,102 +1909,100 @@ class CampaignOrchestratorService {
 
     logger.success('tiktok', `TikTok ad group created with ID: ${adGroup.adgroup_id} `);
 
-    // Upload media to TikTok
+    // Upload video to TikTok
+    // NOTA: TikTok PLACEMENT_TIKTOK solo soporta VIDEO
+    const video = videos[0]; // Usar el primer video
     let videoId: string | undefined;
-    let imageIds: string[] = [];
 
-    if (useVideo) {
-      // UPLOAD VIDEO
-      const video = videos[0]; // Use first video
-      logger.info('tiktok', `Uploading video to TikTok: ${video.fileName} `);
+    logger.info('tiktok', `Uploading video to TikTok: ${video.fileName}`);
 
-      // Generate unique filename for video
-      const timestamp = Date.now();
-      const randomString = Math.random().toString(36).substring(2, 8);
-      const uniqueFileName = video.fileName.replace(/\.[^/.]+$/, `_tiktok_${timestamp}_${randomString}$&`);
+    // Generate unique filename for video
+    const timestamp = Date.now();
+    const randomString = Math.random().toString(36).substring(2, 8);
+    const uniqueFileName = video.fileName.replace(/\.[^/.]+$/, `_tiktok_${timestamp}_${randomString}$&`);
 
-      // TikTok supports upload by URL (easier with signed URLs)
-      const uploadResult = await tiktokService.uploadVideo({
-        advertiser_id: advertiserId,
-        upload_type: 'UPLOAD_BY_URL',
-        video_url: video.url,
-        file_name: uniqueFileName,
-        auto_bind_enabled: true,
-        auto_fix_enabled: true,
-      }, accessToken);
+    // TikTok supports upload by URL (easier with signed URLs)
+    const uploadResult = await tiktokService.uploadVideo({
+      advertiser_id: advertiserId,
+      upload_type: 'UPLOAD_BY_URL',
+      video_url: video.url,
+      file_name: uniqueFileName,
+      auto_bind_enabled: true,
+      auto_fix_enabled: true,
+    }, accessToken);
 
-      videoId = uploadResult.video_id;
+    // TikTok API returns an ARRAY with the video info
+    // Access the first element to get the video_id and video_cover_url
+    const videoInfo = Array.isArray(uploadResult) ? uploadResult[0] : uploadResult;
+    videoId = videoInfo?.video_id;
+    const videoCoverUrl = videoInfo?.video_cover_url;
 
-      // Update media record
-      await prisma.media.update({
-        where: { id: video.id },
-        data: {
-          usedInTiktok: true,
-          tiktokVideoId: videoId,
-        },
-      });
+    logger.info('tiktok', `Video upload response:`, {
+      video_id: videoId,
+      video_cover_url: videoCoverUrl,
+      file_name: videoInfo?.file_name,
+      duration: videoInfo?.duration,
+      format: videoInfo?.format,
+      displayable: videoInfo?.displayable,
+      allowed_placements: videoInfo?.allowed_placements,
+    });
 
-      logger.success('tiktok', `Video uploaded successfully to TikTok`, { videoId });
-    } else {
-      // UPLOAD IMAGE
-      const image = images[0]; // Use first image
-      logger.info('tiktok', `Uploading image to TikTok: ${image.fileName}`);
+    if (!videoId) {
+      logger.error('tiktok', `TikTok video upload did not return a video_id! Full response:`, uploadResult);
+      throw new Error('TikTok video upload failed - no video_id returned. Please try again.');
+    }
 
+    // Update media record
+    await prisma.media.update({
+      where: { id: video.id },
+      data: {
+        usedInTiktok: true,
+        tiktokVideoId: videoId,
+      },
+    });
+
+    logger.success('tiktok', `Video uploaded successfully to TikTok`, { videoId });
+
+    // CRITICAL: Wait for TikTok to fully process the video before creating the ad
+    // Even though displayable=true, TikTok may need extra time to make it available for ads
+    logger.info('tiktok', '⏳ Waiting 10 seconds for TikTok to process the video...');
+    await new Promise(resolve => setTimeout(resolve, 10000));
+
+    // STEP 2: Upload the video thumbnail as an image (REQUIRED for SINGLE_VIDEO ads)
+    // TikTok requires image_ids array even for video ads - this is the thumbnail
+    let thumbnailImageId: string | null = null;
+
+    if (videoCoverUrl) {
       try {
-        // Generate unique filename to avoid duplicates in TikTok Asset Library
-        // Use .jpg extension since we convert to JPEG
-        const timestamp = Date.now();
-        const randomString = Math.random().toString(36).substring(2, 8);
-        const uniqueFileName = image.fileName.replace(/\.[^/.]+$/, `_tiktok_${timestamp}_${randomString}.jpg`);
+        logger.info('tiktok', `Uploading video thumbnail as image...`, { videoCoverUrl });
 
-        // Download image from GCS
-        logger.info('tiktok', `Downloading image from GCS: ${image.fileName}`);
-        const axios = require('axios');
-        const imageResponse = await axios.get(image.url, { responseType: 'arraybuffer' });
-        const rawBuffer = Buffer.from(imageResponse.data);
-        logger.info('tiktok', `Downloaded image, size: ${(rawBuffer.length / 1024).toFixed(2)}KB`);
-
-        // CRITICAL: Re-procesar imagen para TikTok (normaliza formato, color profile, metadatos)
-        const imageBuffer = await this.processTikTokImage(rawBuffer);
-        logger.info('tiktok', `Uploading processed image to TikTok...`);
-
-        const uploadResult = await tiktokService.uploadImage(
-          imageBuffer, // Upload processed buffer
-          uniqueFileName,
-          'UPLOAD_BY_FILE',
+        // Upload the thumbnail URL as an image to TikTok
+        const thumbnailUploadResult = await tiktokService.uploadImage(
+          videoCoverUrl, // URL of the auto-generated thumbnail
+          `${uniqueFileName.replace('.mp4', '')}_thumbnail.jpg`,
+          'UPLOAD_BY_URL',
           accessToken
         );
 
-        imageIds = [uploadResult.image_id];
-        logger.success('tiktok', `Image uploaded successfully to TikTok`, {
-          imageId: imageIds[0],
-          fileName: uniqueFileName,
-          sizeKB: (imageBuffer.length / 1024).toFixed(2)
-        });
+        // TikTok image upload returns { image_id: 'xxx' } or array
+        const thumbnailInfo = Array.isArray(thumbnailUploadResult) ? thumbnailUploadResult[0] : thumbnailUploadResult;
+        thumbnailImageId = thumbnailInfo?.image_id;
 
-      } catch (error: any) {
-        logger.error('tiktok', `Failed to upload image: ${error.message}`);
-        throw new Error(`TikTok image upload failed: ${error.message}`);
+        if (thumbnailImageId) {
+          logger.success('tiktok', `Thumbnail uploaded successfully`, { thumbnailImageId });
+        } else {
+          logger.warn('tiktok', `Thumbnail upload did not return image_id`, thumbnailUploadResult);
+        }
+      } catch (thumbError: any) {
+        logger.warn('tiktok', `Failed to upload thumbnail: ${thumbError.message}. Will try without it.`);
       }
-
-      // Update media record
-      await prisma.media.update({
-        where: { id: image.id },
-        data: { usedInTiktok: true },
-      });
-
-      // CRITICAL: Wait for TikTok to process the uploaded image
-      // TikTok needs time to validate and process images before they can be used in ads
-      logger.info('tiktok', '⏳ Waiting 15 seconds for TikTok to process the uploaded image...');
-      await new Promise(resolve => setTimeout(resolve, 15000)); // 15 seconds
     }
 
-    // Get TikTok identity (required for ads)
-    // DEFAULT: Use ADVERTISER identity (most common for API-created ads)
-    let identityId = 'ADVERTISER';
-    let identityType = 'ADVERTISER';
+    // Get TikTok identity (OPTIONAL for non-Spark ads with custom identity/display_name)
+    let identityId: string | null = null;
+    let identityType: string | null = null;
 
-    // OPTIONAL: Try to get custom identities if available
+    // Try to get custom identities if available (for Spark Ads)
     try {
       const identities = await tiktokService.getIdentities(advertiserId, accessToken);
       logger.info('tiktok', `Identities response: ${JSON.stringify(identities)}`);
@@ -2017,10 +2017,10 @@ class CampaignOrchestratorService {
         identityType = availableIdentity.identity_type;
         logger.info('tiktok', `Using custom TikTok identity: ${availableIdentity.display_name} (${identityId}, type: ${identityType})`);
       } else {
-        logger.info('tiktok', `No custom identity found. Using default ADVERTISER identity.`);
+        logger.info('tiktok', `No custom identity found. Will use display_name for non-Spark ads.`);
       }
     } catch (identityError: any) {
-      logger.warn('tiktok', `Failed to fetch identities: ${identityError.message}. Using default ADVERTISER identity.`);
+      logger.warn('tiktok', `Failed to fetch identities: ${identityError.message}. Will use display_name for non-Spark ads.`);
     }
 
     // FORMAT TONIC LINK
@@ -2042,20 +2042,42 @@ class CampaignOrchestratorService {
 
     while (adCreationAttempts < maxAdCreationAttempts) {
       try {
-        // Ad name uses tomorrow's date in YYYY-MM-DD format
-        ad = await tiktokService.createAd({
+        // Build ad params for SINGLE_VIDEO ad
+        // Required: video_id, image_ids (thumbnail), display_name
+        const adParams: any = {
           advertiser_id: advertiserId,
           adgroup_id: adGroup.adgroup_id,
           ad_name: getTomorrowDate(),
-          ad_format: useVideo ? 'SINGLE_VIDEO' : 'SINGLE_IMAGE',
+          ad_format: 'SINGLE_VIDEO', // TikTok PLACEMENT_TIKTOK solo soporta video
           ad_text: adCopy.primaryText,
           call_to_action: adCopy.callToAction || 'LEARN_MORE',
           landing_page_url: finalLink,
-          display_name: campaign.offer.name,
-          ...(useVideo ? { video_id: videoId } : { image_ids: imageIds }),
-          identity_id: identityId,
-          identity_type: identityType, // Use the actual identity type from the API
-        }, accessToken);
+          display_name: campaign.offer.name, // REQUIRED for non-Spark ads (custom identity)
+          video_id: videoId, // Siempre tenemos video
+        };
+
+        // Add thumbnail image_ids (REQUIRED for SINGLE_VIDEO ads)
+        if (thumbnailImageId) {
+          adParams.image_ids = [thumbnailImageId];
+          logger.info('tiktok', `Using uploaded thumbnail image_id: ${thumbnailImageId}`);
+        } else {
+          logger.warn('tiktok', 'No thumbnail image_id available - TikTok might reject the ad');
+        }
+
+        // Only add identity params if we have a valid CUSTOMIZED_USER identity
+        // For non-Spark ads, display_name is sufficient
+        if (identityId && identityType && identityType !== 'ADVERTISER') {
+          adParams.identity_id = identityId;
+          adParams.identity_type = identityType;
+          logger.info('tiktok', `Using identity: ${identityId} (${identityType})`);
+        } else {
+          logger.info('tiktok', 'Using display_name only (no identity_id/identity_type for non-Spark ad)');
+        }
+
+        // Log the full ad params for debugging
+        logger.info('tiktok', 'Creating ad with params:', adParams);
+
+        ad = await tiktokService.createAd(adParams, accessToken);
 
         logger.success('tiktok', `✅ TikTok ad created successfully with ID: ${ad.ad_id} `);
         break; // Success, exit the retry loop
@@ -2063,23 +2085,23 @@ class CampaignOrchestratorService {
       } catch (adError: any) {
         adCreationAttempts++;
 
-        // Check if it's the "Unsupported image size" error and we have more attempts
-        if (adError.message.includes('Unsupported image size') && adCreationAttempts < maxAdCreationAttempts) {
-          const delay = baseDelay * Math.pow(2, adCreationAttempts - 1); // Exponential backoff: 10s, 20s, 40s
+        // Retry with exponential backoff for video processing delays
+        if (adCreationAttempts < maxAdCreationAttempts) {
+          const delay = baseDelay * Math.pow(2, adCreationAttempts - 1); // Exponential backoff: 20s, 40s, 80s
 
           logger.warn('tiktok',
-            `⚠️ Image may still be processing in TikTok (attempt ${adCreationAttempts}/${maxAdCreationAttempts}). ` +
+            `⚠️ Video may still be processing in TikTok (attempt ${adCreationAttempts}/${maxAdCreationAttempts}). ` +
             `Waiting ${delay / 1000} seconds before retry...`, {
             error: adError.message,
-            imageId: imageIds[0]
+            videoId: videoId
           });
 
           await new Promise(resolve => setTimeout(resolve, delay));
         } else {
-          // Either not an image error or we've exhausted retries
+          // We've exhausted retries
           logger.error('tiktok', `Failed to create ad after ${adCreationAttempts} attempts`, {
             error: adError.message,
-            finalImageId: imageIds[0]
+            videoId: videoId
           });
           throw adError;
         }

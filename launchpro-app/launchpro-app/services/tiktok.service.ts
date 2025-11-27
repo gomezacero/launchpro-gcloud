@@ -84,8 +84,9 @@ export interface TikTokAdParams {
   display_name?: string; // Brand name
 
   // Creative assets
-  image_ids?: string[]; // For SINGLE_IMAGE
+  image_ids?: string[]; // For SINGLE_IMAGE and SINGLE_VIDEO (thumbnail/cover image)
   video_id?: string; // For SINGLE_VIDEO
+  video_cover_url?: string; // Deprecated: Use image_ids for thumbnails instead
 
   // Identity
   identity_id?: string; // TikTok identity (account) ID
