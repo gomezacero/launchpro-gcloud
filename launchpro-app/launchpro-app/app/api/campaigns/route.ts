@@ -112,6 +112,7 @@ export async function POST(request: NextRequest) {
       copyMaster: body.copyMaster,
       communicationAngle: body.communicationAngle,
       keywords: body.keywords,
+      contentGenerationPhrases: body.contentGenerationPhrases, // Manual phrases for RSOC
       platforms: body.platforms.map((p: any) => ({
         platform: p.platform,
         accountId: p.accountId,
@@ -119,6 +120,13 @@ export async function POST(request: NextRequest) {
         budget: parseFloat(p.budget),
         startDate: new Date(p.startDate),
         generateWithAI: p.generateWithAI !== false,
+        specialAdCategories: p.specialAdCategories,
+        // Manual Ad Copy (Meta only)
+        manualAdCopy: p.platform === 'META' ? {
+          adTitle: p.manualAdTitle,
+          description: p.manualDescription,
+          primaryText: p.manualPrimaryText,
+        } : undefined,
       })),
       skipPlatformLaunch: hasManualUpload, // Skip if manual upload is needed
     });

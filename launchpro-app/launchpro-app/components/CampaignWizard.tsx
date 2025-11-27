@@ -36,6 +36,10 @@ interface PlatformConfig {
   uploadedImages?: UploadedFile[];
   uploadedVideos?: UploadedFile[];
   specialAdCategories?: string[];
+  // Manual Ad Copy fields (Meta only)
+  manualAdTitle?: string;
+  manualDescription?: string;
+  manualPrimaryText?: string;
 }
 
 interface UploadedFile {
@@ -74,8 +78,13 @@ export default function CampaignWizard() {
     copyMaster: '',
     communicationAngle: '',
     keywords: [] as string[],
+    contentGenerationPhrases: [] as string[],
     platforms: [] as PlatformConfig[],
   });
+
+  // Local state for text inputs that need onBlur conversion
+  const [keywordsText, setKeywordsText] = useState('');
+  const [contentPhrasesText, setContentPhrasesText] = useState('');
 
   // Load offers and accounts on mount
   useEffect(() => {
@@ -630,10 +639,11 @@ export default function CampaignWizard() {
                   </span>
                 </label>
                 <textarea
-                  value={formData.keywords.join(', ')}
-                  onChange={(e) => {
-                    const keywordsArray = e.target.value
-                      ? e.target.value.split(',').map(k => k.trim()).filter(k => k)
+                  value={keywordsText}
+                  onChange={(e) => setKeywordsText(e.target.value)}
+                  onBlur={() => {
+                    const keywordsArray = keywordsText
+                      ? keywordsText.split(',').map(k => k.trim()).filter(k => k)
                       : [];
                     handleInputChange('keywords', keywordsArray);
                   }}
@@ -644,6 +654,37 @@ export default function CampaignWizard() {
                 <p className="text-xs text-gray-500 mt-1">
                   Separate keywords with commas. AI will generate 6-10 keywords if left empty.
                 </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Content Generation Phrases (Optional)
+                  <span className="text-xs text-gray-500 ml-2">
+                    Leave empty to generate with AI (3-5 phrases required if filled)
+                  </span>
+                </label>
+                <textarea
+                  value={contentPhrasesText}
+                  onChange={(e) => setContentPhrasesText(e.target.value)}
+                  onBlur={() => {
+                    const phrasesArray = contentPhrasesText
+                      ? contentPhrasesText.split(',').map(p => p.trim()).filter(p => p)
+                      : [];
+                    handleInputChange('contentGenerationPhrases', phrasesArray);
+                  }}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  rows={3}
+                  placeholder="e.g., best car loan rates, quick approval process, flexible payment options..."
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Separate phrases with commas. AI will generate 3-5 phrases if left empty. These are used by Tonic for RSOC article generation.
+                </p>
+                {formData.contentGenerationPhrases.length > 0 &&
+                 (formData.contentGenerationPhrases.length < 3 || formData.contentGenerationPhrases.length > 5) && (
+                  <p className="text-xs text-red-600 mt-1 font-medium">
+                    Must have between 3 and 5 phrases. Currently: {formData.contentGenerationPhrases.length}
+                  </p>
+                )}
               </div>
             </div>
           )}
@@ -828,6 +869,74 @@ export default function CampaignWizard() {
                         🤖 Generate images and videos with AI
                       </label>
                     </div>
+
+                    {/* Manual Ad Copy Fields - Only for Meta */}
+                    {platform.platform === 'META' && (
+                      <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                        <h4 className="text-sm font-semibold text-blue-900 mb-3">
+                          Ad Copy (Optional)
+                        </h4>
+                        <p className="text-xs text-blue-700 mb-4">
+                          Leave empty to generate with AI. If you fill any field, empty fields will remain empty.
+                        </p>
+
+                        <div className="space-y-4">
+                          {/* Ad Title / Headline */}
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Ad Title (Headline)
+                            </label>
+                            <input
+                              type="text"
+                              value={platform.manualAdTitle || ''}
+                              onChange={(e) => updatePlatform(index, 'manualAdTitle', e.target.value)}
+                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                              placeholder="Max 40 characters..."
+                              maxLength={40}
+                            />
+                            <p className="text-xs text-gray-500 mt-1">
+                              {(platform.manualAdTitle || '').length}/40 characters
+                            </p>
+                          </div>
+
+                          {/* Primary Text */}
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Primary Text
+                            </label>
+                            <textarea
+                              value={platform.manualPrimaryText || ''}
+                              onChange={(e) => updatePlatform(index, 'manualPrimaryText', e.target.value)}
+                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                              rows={2}
+                              placeholder="Max 125 characters..."
+                              maxLength={125}
+                            />
+                            <p className="text-xs text-gray-500 mt-1">
+                              {(platform.manualPrimaryText || '').length}/125 characters
+                            </p>
+                          </div>
+
+                          {/* Description */}
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Description
+                            </label>
+                            <input
+                              type="text"
+                              value={platform.manualDescription || ''}
+                              onChange={(e) => updatePlatform(index, 'manualDescription', e.target.value)}
+                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                              placeholder="Max 30 characters..."
+                              maxLength={30}
+                            />
+                            <p className="text-xs text-gray-500 mt-1">
+                              {(platform.manualDescription || '').length}/30 characters. Note: Description is ignored by Meta API when using video ads.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     {/* MANUAL UPLOAD SECTION - Only shown when AI is disabled */}
                     {!platform.generateWithAI && (
@@ -1045,7 +1154,11 @@ export default function CampaignWizard() {
                     (!formData.name ||
                       !formData.tonicAccountId ||
                       !formData.offerId ||
-                      !formData.country)) ||
+                      !formData.country ||
+                      // Validate content generation phrases: if filled, must be 3-5
+                      (formData.contentGenerationPhrases.length > 0 &&
+                        (formData.contentGenerationPhrases.length < 3 ||
+                         formData.contentGenerationPhrases.length > 5)))) ||
                   (step === 2 &&
                     (formData.platforms.length === 0 ||
                       formData.platforms.some((p) => !p.accountId)))

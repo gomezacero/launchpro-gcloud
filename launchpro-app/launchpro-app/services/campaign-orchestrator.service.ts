@@ -67,10 +67,20 @@ export interface CreateCampaignParams {
     startDate: Date;
     generateWithAI: boolean; // Generate images/videos with AI?
     specialAdCategories?: string[];
+    // Manual Ad Copy (Meta only)
+    manualAdCopy?: {
+      adTitle?: string;
+      description?: string;
+      primaryText?: string;
+    };
   }[];
 
   // Manual keywords (optional, will be AI-generated if not provided)
   keywords?: string[];
+
+  // Manual content generation phrases (optional, will be AI-generated if not provided)
+  // Must be 3-5 phrases if provided
+  contentGenerationPhrases?: string[];
 
   // Skip platform launch (for manual media upload workflow)
   skipPlatformLaunch?: boolean;
@@ -361,22 +371,48 @@ class CampaignOrchestratorService {
       if (campaignType === 'rsoc') {
         logger.info('ai', 'Generating article for RSOC campaign...');
 
-        // Generate article content with AI
-        const articleContent = await aiService.generateArticle({
-          offerName: offer.name,
-          copyMaster: params.copyMaster || `Discover the best deals on ${offer.name}`,
-          keywords: params.keywords || [],
-          country: params.country,
-          language: params.language,
-        });
+        // Check if manual content generation phrases were provided (must be 3-5)
+        const hasManualPhrases = params.contentGenerationPhrases &&
+          params.contentGenerationPhrases.length >= 3 &&
+          params.contentGenerationPhrases.length <= 5;
 
-        logger.info('ai', '📄 AI Generated Article Content:', {
-          headline: articleContent.headline,
-          headlineLength: articleContent.headline.length,
-          teaserLength: articleContent.teaser.length,
-          phrasesCount: articleContent.contentGenerationPhrases.length,
-          teaser: articleContent.teaser.substring(0, 100) + '...',
-          phrases: articleContent.contentGenerationPhrases,
+        let finalContentPhrases: string[];
+        let articleHeadline: string;
+
+        if (hasManualPhrases) {
+          // Use manual phrases, still need to generate headline with AI
+          logger.info('ai', `Using ${params.contentGenerationPhrases!.length} MANUAL content generation phrases`);
+          finalContentPhrases = params.contentGenerationPhrases!;
+
+          // Generate only headline with AI
+          const articleContent = await aiService.generateArticle({
+            offerName: offer.name,
+            copyMaster: params.copyMaster || `Discover the best deals on ${offer.name}`,
+            keywords: params.keywords || [],
+            country: params.country,
+            language: params.language,
+          });
+          articleHeadline = articleContent.headline;
+        } else {
+          // Generate everything with AI
+          logger.info('ai', 'Generating article content with AI (no manual phrases provided)...');
+          const articleContent = await aiService.generateArticle({
+            offerName: offer.name,
+            copyMaster: params.copyMaster || `Discover the best deals on ${offer.name}`,
+            keywords: params.keywords || [],
+            country: params.country,
+            language: params.language,
+          });
+          finalContentPhrases = articleContent.contentGenerationPhrases;
+          articleHeadline = articleContent.headline;
+        }
+
+        logger.info('ai', '📄 Article Content Ready:', {
+          headline: articleHeadline,
+          headlineLength: articleHeadline.length,
+          phrasesCount: finalContentPhrases.length,
+          phrases: finalContentPhrases,
+          source: hasManualPhrases ? 'MANUAL' : 'AI',
         });
 
         logger.info('tonic', 'Creating article request in Tonic...');
@@ -386,8 +422,8 @@ class CampaignOrchestratorService {
             country: params.country,
             language: params.language,
             domain: rsocDomain,
-            content_generation_phrases: articleContent.contentGenerationPhrases,
-            headline: articleContent.headline,
+            content_generation_phrases: finalContentPhrases,
+            headline: articleHeadline,
             teaser: '', // User requested teaser to be empty (auto-completes)
           };
 
@@ -1245,13 +1281,38 @@ class CampaignOrchestratorService {
     const useVideo = videos.length > 0;
     const adFormat = useVideo ? 'VIDEO' : 'IMAGE';
 
-    // Generate ad copy specific to Meta
-    const adCopy = await aiService.generateAdCopy({
-      offerName: campaign.offer.name,
-      copyMaster: aiContent.copyMaster,
-      platform: 'META',
-      adFormat: adFormat,
-    });
+    // Check if manual ad copy was provided for Meta
+    const hasManualAdCopy = platformConfig.manualAdCopy &&
+      (platformConfig.manualAdCopy.adTitle ||
+       platformConfig.manualAdCopy.description ||
+       platformConfig.manualAdCopy.primaryText);
+
+    let adCopy: { headline: string; primaryText: string; description: string; callToAction: string };
+
+    if (hasManualAdCopy) {
+      // Use manual values - empty fields stay empty (as per user requirement)
+      logger.info('meta', 'Using MANUAL ad copy values (empty fields will remain empty)');
+      adCopy = {
+        headline: platformConfig.manualAdCopy.adTitle || '',
+        primaryText: platformConfig.manualAdCopy.primaryText || '',
+        description: platformConfig.manualAdCopy.description || '',
+        callToAction: 'LEARN_MORE',
+      };
+      logger.info('meta', 'Manual ad copy:', {
+        headline: adCopy.headline || '(empty)',
+        primaryText: adCopy.primaryText || '(empty)',
+        description: adCopy.description || '(empty)',
+      });
+    } else {
+      // Generate ad copy with AI (all fields empty = use AI)
+      logger.info('meta', 'Generating ad copy with AI (no manual values provided)');
+      adCopy = await aiService.generateAdCopy({
+        offerName: campaign.offer.name,
+        copyMaster: aiContent.copyMaster,
+        platform: 'META',
+        adFormat: adFormat,
+      });
+    }
 
     // Determine budget strategy: CBO (Campaign Budget Optimization) vs ABO (Ad Set Budget Optimization)
     const isCBO = campaign.campaignType === 'CBO';
