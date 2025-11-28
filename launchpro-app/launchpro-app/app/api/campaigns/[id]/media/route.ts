@@ -70,6 +70,7 @@ export async function POST(
     const file = formData.get('file') as File;
     const mediaType = formData.get('type') as 'IMAGE' | 'VIDEO';
     const platform = formData.get('platform') as 'META' | 'TIKTOK' | null; // Optional
+    const linkedVideoId = formData.get('linkedVideoId') as string | null; // For linking thumbnails to videos
 
     if (!file) {
       return NextResponse.json(
@@ -194,8 +195,21 @@ export async function POST(
       type: mediaType,
     });
 
+    // If this is a thumbnail, link it to the video
+    if (linkedVideoId && mediaType === 'IMAGE') {
+      await prisma.media.update({
+        where: { id: linkedVideoId },
+        data: { thumbnailMediaId: media.id },
+      });
+      logger.info('api', `🔗 Linked thumbnail ${media.id} to video ${linkedVideoId}`);
+    }
+
     return NextResponse.json({
       success: true,
+      data: {
+        mediaId: media.id,
+        id: media.id,
+      },
       media: {
         id: media.id,
         url: signedUrl,

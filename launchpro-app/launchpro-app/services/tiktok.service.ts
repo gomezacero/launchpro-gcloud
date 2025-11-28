@@ -868,9 +868,36 @@ class TikTokService {
 
   /**
    * Get Location ID for a country code
-   * e.g., 'CO' -> '3685413' (Colombia location ID)
+   * Uses GeoNames IDs - e.g., 'CO' -> '3686110' (Colombia country ID)
+   * Note: 3685413 is Cundinamarca (region), 3686110 is Colombia (country)
    */
   async getLocationId(countryCode: string): Promise<string> {
+    // Fallback map for common countries using correct COUNTRY level IDs (GeoNames)
+    // These are verified country-level IDs, not region IDs
+    const countryIdMap: Record<string, string> = {
+      'CO': '3686110', // Colombia (country) - NOT 3685413 which is Cundinamarca
+      'US': '6252001', // United States
+      'MX': '3996063', // Mexico
+      'ES': '2510769', // Spain
+      'AR': '3865483', // Argentina
+      'CL': '3895114', // Chile
+      'PE': '3932488', // Peru
+      'BR': '3469034', // Brazil
+      'EC': '3658394', // Ecuador
+      'VE': '3625428', // Venezuela
+      'PA': '3703430', // Panama
+      'CR': '3624060', // Costa Rica
+      'GT': '3595528', // Guatemala
+      'HN': '3608932', // Honduras
+      'SV': '3585968', // El Salvador
+      'NI': '3617476', // Nicaragua
+      'DO': '3508796', // Dominican Republic
+      'PR': '4566966', // Puerto Rico
+      'UY': '3439705', // Uruguay
+      'PY': '3437598', // Paraguay
+      'BO': '3923057', // Bolivia
+    };
+
     try {
       const response = await this.client.get('/tool/region/', {
         params: {
@@ -887,28 +914,25 @@ class TikTokService {
       if (data && data.list) {
         const country = data.list.find((c: any) => c.region_code === countryCode);
         if (country) {
+          console.log(`[TikTok] Found location ID for ${countryCode}: ${country.location_id}`);
           return country.location_id;
         }
       }
 
-      // Fallback map for common countries if API fails or doesn't return it
-      const fallbackMap: Record<string, string> = {
-        'US': '6252001',
-        'CO': '3685413', // Fallback based on logs (needs verification, but better than string)
-        // Actually, if the API call succeeds, we should find it.
-      };
-
-      if (fallbackMap[countryCode]) {
-        return fallbackMap[countryCode];
+      // Use fallback map if API doesn't return the country
+      if (countryIdMap[countryCode]) {
+        console.log(`[TikTok] Using fallback location ID for ${countryCode}: ${countryIdMap[countryCode]}`);
+        return countryIdMap[countryCode];
       }
 
-      // If we can't find it, we might try to return the code itself if it happens to be numeric (unlikely for country codes)
-      // or throw error.
       throw new Error(`Location ID not found for country code: ${countryCode}`);
     } catch (error: any) {
       console.error('Failed to fetch location ID:', error.message);
-      // Fallback for CO specifically since we know it failed
-      if (countryCode === 'CO') return '3685413'; // Colombia location ID (verified from logs)
+      // Use fallback map on error
+      if (countryIdMap[countryCode]) {
+        console.log(`[TikTok] Using fallback location ID for ${countryCode} after error: ${countryIdMap[countryCode]}`);
+        return countryIdMap[countryCode];
+      }
       throw error;
     }
   }

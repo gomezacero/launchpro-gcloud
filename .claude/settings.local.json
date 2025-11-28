@@ -15,7 +15,10 @@
       "Bash(npx tsx:*)",
       "Bash(node -r dotenv/config node_modules/.bin/tsx:*)",
       "Bash(test:*)",
-      "Bash(\"C:/Users/Roberto/Desktop/Quick/LaunchPro/launchpro-app/launchpro-app/node_modules/ffmpeg-static/ffmpeg.exe\" -version)"
+      "Bash(\"C:/Users/Roberto/Desktop/Quick/LaunchPro/launchpro-app/launchpro-app/node_modules/ffmpeg-static/ffmpeg.exe\" -version)",
+      "Bash(python:*)",
+      "Bash(del:*)",
+      "Bash(npx prisma:*)"
     ],
     "deny": [],
     "ask": []

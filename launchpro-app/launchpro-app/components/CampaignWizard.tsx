@@ -40,6 +40,8 @@ interface PlatformConfig {
   manualAdTitle?: string;
   manualDescription?: string;
   manualPrimaryText?: string;
+  // Manual Ad Copy fields (TikTok)
+  manualTiktokAdText?: string;
 }
 
 interface UploadedFile {
@@ -48,6 +50,10 @@ interface UploadedFile {
   fileName: string;
   fileSize: number;
   type: 'IMAGE' | 'VIDEO';
+  // For videos: associated thumbnail (Meta requires thumbnail for video ads)
+  thumbnailId?: string;
+  thumbnailUrl?: string;
+  thumbnailFileName?: string;
 }
 
 export default function CampaignWizard() {
@@ -321,6 +327,95 @@ export default function CampaignWizard() {
     }));
   };
 
+  /**
+   * Upload thumbnail for a specific video (Meta only)
+   */
+  const handleThumbnailUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+    platformIndex: number,
+    videoId: string
+  ) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const file = files[0];
+
+    // Validate it's an image
+    if (!file.type.startsWith('image/')) {
+      setError('Thumbnail must be an image file');
+      return;
+    }
+
+    // Max 30MB for thumbnail
+    if (file.size > 30 * 1024 * 1024) {
+      setError('Thumbnail too large. Max size: 30MB');
+      return;
+    }
+
+    // Create temp file for thumbnail
+    const thumbnailId = `thumb-${Date.now()}-${Math.random()}`;
+    const thumbnailUrl = URL.createObjectURL(file);
+
+    // Store the actual File object for later upload
+    if (!(window as any).__tempFiles) {
+      (window as any).__tempFiles = {};
+    }
+    (window as any).__tempFiles[thumbnailId] = file;
+
+    // Update the video with thumbnail info
+    setFormData((prev) => ({
+      ...prev,
+      platforms: prev.platforms.map((p, i) => {
+        if (i !== platformIndex) return p;
+
+        return {
+          ...p,
+          uploadedVideos: (p.uploadedVideos || []).map((vid) => {
+            if (vid.id !== videoId) return vid;
+            return {
+              ...vid,
+              thumbnailId,
+              thumbnailUrl,
+              thumbnailFileName: file.name,
+            };
+          }),
+        };
+      }),
+    }));
+  };
+
+  /**
+   * Remove thumbnail from a video
+   */
+  const removeThumbnail = (platformIndex: number, videoId: string, thumbnailId: string) => {
+    // Clean up temporary file
+    if ((window as any).__tempFiles && (window as any).__tempFiles[thumbnailId]) {
+      URL.revokeObjectURL((window as any).__tempFiles[thumbnailId]);
+      delete (window as any).__tempFiles[thumbnailId];
+    }
+
+    // Update the video to remove thumbnail
+    setFormData((prev) => ({
+      ...prev,
+      platforms: prev.platforms.map((p, i) => {
+        if (i !== platformIndex) return p;
+
+        return {
+          ...p,
+          uploadedVideos: (p.uploadedVideos || []).map((vid) => {
+            if (vid.id !== videoId) return vid;
+            return {
+              ...vid,
+              thumbnailId: undefined,
+              thumbnailUrl: undefined,
+              thumbnailFileName: undefined,
+            };
+          }),
+        };
+      }),
+    }));
+  };
+
   const handleSubmit = async () => {
     setLoading(true);
     setError(null);
@@ -351,8 +446,15 @@ export default function CampaignWizard() {
       if (fileIds.length > 0) {
         console.log(`[Wizard] Uploading ${fileIds.length} manual files to campaign ${campaignId}...`);
 
+        // Track uploaded media IDs for linking thumbnails to videos
+        const uploadedMediaMap: Record<string, string> = {}; // tempFileId -> serverMediaId
+
+        // First pass: Upload all files (images and videos)
         for (const fileId of fileIds) {
           const file = tempFiles[fileId];
+
+          // Skip thumbnails in first pass - they start with 'thumb-'
+          if (fileId.startsWith('thumb-')) continue;
 
           // Determine media type from file
           const isVideo = file.type.startsWith('video/');
@@ -386,11 +488,67 @@ export default function CampaignWizard() {
               return;
             }
 
-            console.log(`[Wizard] ✅ Uploaded ${file.name} successfully`);
+            // Store the mapping for linking thumbnails later
+            uploadedMediaMap[fileId] = uploadData.data?.mediaId || uploadData.data?.id;
+            console.log(`[Wizard] ✅ Uploaded ${file.name} successfully (ID: ${uploadedMediaMap[fileId]})`);
           } catch (uploadErr: any) {
             console.error(`[Wizard] Error uploading ${file.name}:`, uploadErr.message);
             setError(`Error uploading ${file.name}: ${uploadErr.message}`);
             return;
+          }
+        }
+
+        // Second pass: Upload thumbnails and link to their videos
+        for (const fileId of fileIds) {
+          if (!fileId.startsWith('thumb-')) continue;
+
+          const thumbnailFile = tempFiles[fileId];
+
+          // Find the video this thumbnail belongs to
+          let videoInfo: { videoTempId: string; platform: string } | null = null;
+          for (const platform of formData.platforms) {
+            const video = platform.uploadedVideos?.find(vid => vid.thumbnailId === fileId);
+            if (video) {
+              videoInfo = { videoTempId: video.id, platform: platform.platform };
+              break;
+            }
+          }
+
+          if (!videoInfo) {
+            console.warn(`[Wizard] Thumbnail ${fileId} has no associated video, skipping`);
+            continue;
+          }
+
+          const videoServerId = uploadedMediaMap[videoInfo.videoTempId];
+          if (!videoServerId) {
+            console.warn(`[Wizard] Video ${videoInfo.videoTempId} not uploaded yet, skipping thumbnail`);
+            continue;
+          }
+
+          // Upload thumbnail with video ID link
+          const uploadFormData = new FormData();
+          uploadFormData.append('file', thumbnailFile);
+          uploadFormData.append('type', 'IMAGE');
+          uploadFormData.append('platform', videoInfo.platform);
+          uploadFormData.append('linkedVideoId', videoServerId);
+
+          try {
+            const uploadRes = await fetch(`/api/campaigns/${campaignId}/media`, {
+              method: 'POST',
+              body: uploadFormData,
+            });
+
+            const uploadData = await uploadRes.json();
+
+            if (!uploadData.success) {
+              console.error(`[Wizard] Failed to upload thumbnail:`, uploadData.error);
+              // Don't fail the whole operation for thumbnail failure
+            } else {
+              console.log(`[Wizard] ✅ Uploaded thumbnail for video ${videoServerId}`);
+            }
+          } catch (uploadErr: any) {
+            console.error(`[Wizard] Error uploading thumbnail:`, uploadErr.message);
+            // Don't fail the whole operation for thumbnail failure
           }
         }
 
@@ -938,6 +1096,35 @@ export default function CampaignWizard() {
                       </div>
                     )}
 
+                    {/* Manual Ad Copy Fields - Only for TikTok */}
+                    {platform.platform === 'TIKTOK' && (
+                      <div className="mt-4 p-4 bg-pink-50 border border-pink-200 rounded-lg">
+                        <h4 className="text-sm font-semibold text-pink-900 mb-3">
+                          Ad Text (Optional)
+                        </h4>
+                        <p className="text-xs text-pink-700 mb-4">
+                          Leave empty to generate with AI. This is the main text shown on your TikTok ad.
+                        </p>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Ad Text (Title)
+                          </label>
+                          <textarea
+                            value={platform.manualTiktokAdText || ''}
+                            onChange={(e) => updatePlatform(index, 'manualTiktokAdText', e.target.value)}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500"
+                            rows={2}
+                            placeholder="Max 100 characters..."
+                            maxLength={100}
+                          />
+                          <p className="text-xs text-gray-500 mt-1">
+                            {(platform.manualTiktokAdText || '').length}/100 characters
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
                     {/* MANUAL UPLOAD SECTION - Only shown when AI is disabled */}
                     {!platform.generateWithAI && (
                       <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
@@ -1007,22 +1194,64 @@ export default function CampaignWizard() {
                             className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                           />
                           {platform.uploadedVideos && platform.uploadedVideos.length > 0 && (
-                            <div className="mt-2 space-y-1">
+                            <div className="mt-2 space-y-3">
                               {platform.uploadedVideos.map((vid) => (
                                 <div
                                   key={vid.id}
-                                  className="flex items-center justify-between text-xs bg-green-50 p-2 rounded"
+                                  className="p-3 border border-green-200 rounded-lg bg-green-50"
                                 >
-                                  <span className="text-green-700">
-                                    ✓ {vid.fileName} ({(vid.fileSize / 1024 / 1024).toFixed(2)}MB)
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => removeFile(index, vid.id, 'VIDEO')}
-                                    className="text-red-600 hover:text-red-800"
-                                  >
-                                    ✕
-                                  </button>
+                                  {/* Video info row */}
+                                  <div className="flex items-center justify-between text-xs">
+                                    <span className="text-green-700 font-medium">
+                                      🎬 {vid.fileName} ({(vid.fileSize / 1024 / 1024).toFixed(2)}MB)
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => removeFile(index, vid.id, 'VIDEO')}
+                                      className="text-red-600 hover:text-red-800"
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+
+                                  {/* Thumbnail section (Meta only) */}
+                                  {platform.platform === 'META' && (
+                                    <div className="mt-2 pt-2 border-t border-green-200">
+                                      <label className="block text-xs font-medium text-gray-600 mb-1">
+                                        Thumbnail Image (required for Meta)
+                                      </label>
+                                      {vid.thumbnailId ? (
+                                        <div className="flex items-center justify-between text-xs bg-blue-50 p-2 rounded">
+                                          <div className="flex items-center gap-2">
+                                            {vid.thumbnailUrl && (
+                                              <img
+                                                src={vid.thumbnailUrl}
+                                                alt="Thumbnail"
+                                                className="w-8 h-8 object-cover rounded"
+                                              />
+                                            )}
+                                            <span className="text-blue-700">
+                                              ✓ {vid.thumbnailFileName}
+                                            </span>
+                                          </div>
+                                          <button
+                                            type="button"
+                                            onClick={() => removeThumbnail(index, vid.id, vid.thumbnailId!)}
+                                            className="text-red-600 hover:text-red-800"
+                                          >
+                                            ✕
+                                          </button>
+                                        </div>
+                                      ) : (
+                                        <input
+                                          type="file"
+                                          accept="image/*"
+                                          onChange={(e) => handleThumbnailUpload(e, index, vid.id)}
+                                          className="w-full text-xs text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                                        />
+                                      )}
+                                    </div>
+                                  )}
                                 </div>
                               ))}
                             </div>
@@ -1033,6 +1262,16 @@ export default function CampaignWizard() {
                           (!platform.uploadedVideos || platform.uploadedVideos.length === 0) && (
                             <div className="mt-3 text-xs text-yellow-700 font-medium">
                               ⚠️ Please upload at least one image or video to continue
+                            </div>
+                          )}
+
+                        {/* Warning: Meta videos require thumbnails */}
+                        {platform.platform === 'META' &&
+                          platform.uploadedVideos &&
+                          platform.uploadedVideos.length > 0 &&
+                          platform.uploadedVideos.some((vid) => !vid.thumbnailId) && (
+                            <div className="mt-3 text-xs text-orange-700 font-medium bg-orange-50 p-2 rounded">
+                              ⚠️ Meta requires a thumbnail for each video. Please add thumbnails to continue.
                             </div>
                           )}
                       </div>
@@ -1161,7 +1400,14 @@ export default function CampaignWizard() {
                          formData.contentGenerationPhrases.length > 5)))) ||
                   (step === 2 &&
                     (formData.platforms.length === 0 ||
-                      formData.platforms.some((p) => !p.accountId)))
+                      formData.platforms.some((p) => !p.accountId) ||
+                      // Meta videos must have thumbnails
+                      formData.platforms.some((p) =>
+                        p.platform === 'META' &&
+                        p.uploadedVideos &&
+                        p.uploadedVideos.length > 0 &&
+                        p.uploadedVideos.some((vid) => !vid.thumbnailId)
+                      )))
                 }
                 className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >

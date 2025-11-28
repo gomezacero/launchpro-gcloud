@@ -1283,7 +1283,6 @@ class CampaignOrchestratorService {
 
     // Determine ad format (prefer video if available, otherwise image)
     const useVideo = videos.length > 0;
-    const hasMultipleVideos = useVideo && videos.length > 1;
     const adFormat = useVideo ? 'VIDEO' : 'IMAGE';
 
     // Check if manual ad copy was provided for Meta
@@ -1505,8 +1504,6 @@ class CampaignOrchestratorService {
     logger.success('meta', `Meta ad set created with ID: ${adSet.id}`);
     let imageHash: string | undefined;
     let videoId: string | undefined;
-    // Array to store uploaded image hashes for carousel/multiple ads
-    const uploadedImageHashes: Array<{ mediaId: string; imageHash: string; url: string }> = [];
 
     // Validation: Video ads require at least one image for thumbnail
     if (useVideo && images.length === 0) {
@@ -1515,9 +1512,8 @@ class CampaignOrchestratorService {
       );
     }
 
-    if (useVideo && !hasMultipleVideos) {
-      // UPLOAD SINGLE VIDEO (for single video ads only)
-      // Multiple videos are handled separately in the ABO multiple videos section
+    if (useVideo) {
+      // UPLOAD VIDEO
       const video = videos[0];
       logger.info('meta', `Uploading video to Meta: ${video.fileName}`);
 
@@ -1534,27 +1530,8 @@ class CampaignOrchestratorService {
 
       logger.success('meta', `Video uploaded successfully to Meta`, { videoId });
 
-      // UPLOAD THUMBNAIL
-      // Check if video has a linked thumbnail, otherwise use first image
-      let thumbnailImage: any;
-      if (video.thumbnailMediaId) {
-        // Use the linked thumbnail
-        thumbnailImage = await prisma.media.findUnique({
-          where: { id: video.thumbnailMediaId },
-        });
-        logger.info('meta', `Using linked thumbnail for video: ${thumbnailImage?.fileName}`);
-      }
-
-      // Fallback to first image if no linked thumbnail
-      if (!thumbnailImage) {
-        thumbnailImage = images[0];
-        logger.info('meta', `Using first image as thumbnail: ${thumbnailImage?.fileName}`);
-      }
-
-      if (!thumbnailImage) {
-        throw new Error('No thumbnail available for video. Please upload an image as thumbnail.');
-      }
-
+      // UPLOAD THUMBNAIL (using first image)
+      const thumbnailImage = images[0];
       logger.info('meta', `Uploading thumbnail image for video: ${thumbnailImage.fileName}`);
 
       const thumbnailResponse = await axios.get(thumbnailImage.url, { responseType: 'arraybuffer' });
@@ -1572,37 +1549,26 @@ class CampaignOrchestratorService {
 
       logger.success('meta', `Thumbnail uploaded successfully to Meta`, { imageHash });
 
-    } else if (!hasMultipleVideos) {
-      // UPLOAD ALL IMAGES (for CBO Carousel or ABO Multiple Ads)
-      // Skip this when we have multiple videos (they're handled in the video ads section)
+    } else {
+      // UPLOAD IMAGE
+      const image = images[0];
+      logger.info('meta', `Uploading image to Meta: ${image.fileName}`);
+
       const axios = require('axios');
+      const response = await axios.get(image.url, { responseType: 'arraybuffer' });
+      const imageBuffer = Buffer.from(response.data);
 
-      logger.info('meta', `Uploading ${images.length} images to Meta...`);
+      imageHash = await metaService.uploadImage(imageBuffer, image.fileName, adAccountId, accessToken);
 
-      for (const image of images) {
-        logger.info('meta', `Uploading image: ${image.fileName}`);
+      await prisma.media.update({
+        where: { id: image.id },
+        data: {
+          usedInMeta: true,
+          metaHash: imageHash,
+        },
+      });
 
-        const response = await axios.get(image.url, { responseType: 'arraybuffer' });
-        const imageBuffer = Buffer.from(response.data);
-
-        const hash = await metaService.uploadImage(imageBuffer, image.fileName, adAccountId, accessToken);
-
-        await prisma.media.update({
-          where: { id: image.id },
-          data: {
-            usedInMeta: true,
-            metaHash: hash,
-          },
-        });
-
-        uploadedImageHashes.push({ mediaId: image.id, imageHash: hash, url: image.url });
-        logger.success('meta', `Image uploaded: ${image.fileName}`, { imageHash: hash });
-      }
-
-      // Set the first image hash for backwards compatibility
-      imageHash = uploadedImageHashes[0]?.imageHash;
-
-      logger.success('meta', `All ${uploadedImageHashes.length} images uploaded successfully`);
+      logger.success('meta', `Image uploaded successfully to Meta`, { imageHash });
     }
 
     // Create Ad Creative (according to Meta Ads API)
@@ -1624,36 +1590,15 @@ class CampaignOrchestratorService {
 
     logger.info('meta', `Using formatted Tonic link: ${finalLink} `);
 
-    // Determine if we need Carousel (CBO + multiple images) or Multiple Ads (ABO)
-    // Note: hasMultipleVideos is defined earlier (near useVideo) for use in upload logic
-    const hasMultipleImages = !useVideo && images.length > 1;
-    const useCarousel = isCBO && hasMultipleImages;
-    const useMultipleAds = !isCBO && (hasMultipleImages || hasMultipleVideos);
-
-    logger.info('meta', `Ad creation strategy:`, {
-      useVideo,
-      hasMultipleImages,
-      hasMultipleVideos,
-      imageCount: images.length,
-      videoCount: videos.length,
-      isCBO,
-      useCarousel,
-      useMultipleAds,
-    });
-
-    let creative: any;
-    let ad: any;
-    const createdAds: Array<{ adId: string; creativeId: string }> = [];
-
-    if (useVideo && !hasMultipleVideos) {
-      // VIDEO AD - Single video with thumbnail
-      creative = await metaService.createAdCreative({
-        name: `${campaign.name} - Video Creative`,
-        object_story_spec: {
-          page_id: metaAccount.metaPageId,
+    const creative = await metaService.createAdCreative({
+      name: `${campaign.name} - Creative`,
+      object_story_spec: {
+        page_id: metaAccount.metaPageId,
+        // No instagram_user_id - Meta will use "Use Facebook Page as Instagram" automatically
+        ...(useVideo ? {
           video_data: {
             video_id: videoId!,
-            image_hash: imageHash!,
+            image_hash: imageHash!,  // Thumbnail required for video ads
             title: adCopy.headline,
             message: adCopy.primaryText,
             call_to_action: {
@@ -1661,202 +1606,7 @@ class CampaignOrchestratorService {
               value: { link: finalLink },
             },
           },
-        },
-      }, adAccountId, accessToken);
-
-      logger.success('meta', `Video creative created with ID: ${creative.id}`);
-
-      ad = await metaService.createAd({
-        name: getTomorrowDate(),
-        adset_id: adSet.id,
-        creative: { creative_id: creative.id },
-        status: 'PAUSED',
-      }, adAccountId, accessToken);
-
-      createdAds.push({ adId: ad.id, creativeId: creative.id });
-      logger.success('meta', `Video ad created with ID: ${ad.id}`);
-
-    } else if (useCarousel) {
-      // CBO CAROUSEL AD - Multiple images in one ad
-      logger.info('meta', `Creating Carousel Ad with ${uploadedImageHashes.length} images (CBO mode)`);
-
-      const childAttachments = uploadedImageHashes.slice(0, 10).map((img, idx) => ({
-        link: finalLink,
-        image_hash: img.imageHash,
-        name: adCopy.headline || `Image ${idx + 1}`,
-        description: adCopy.description || '',
-        call_to_action: {
-          type: 'LEARN_MORE',
-          value: { link: finalLink },
-        },
-      }));
-
-      creative = await metaService.createAdCreative({
-        name: `${campaign.name} - Carousel Creative`,
-        object_story_spec: {
-          page_id: metaAccount.metaPageId,
-          link_data: {
-            link: finalLink,
-            message: adCopy.primaryText,
-            child_attachments: childAttachments,
-            multi_share_optimized: true,
-          },
-        },
-      }, adAccountId, accessToken);
-
-      logger.success('meta', `Carousel creative created with ID: ${creative.id}`, {
-        cardsCount: childAttachments.length,
-      });
-
-      ad = await metaService.createAd({
-        name: getTomorrowDate(),
-        adset_id: adSet.id,
-        creative: { creative_id: creative.id },
-        status: 'PAUSED',
-      }, adAccountId, accessToken);
-
-      createdAds.push({ adId: ad.id, creativeId: creative.id });
-      logger.success('meta', `Carousel ad created with ID: ${ad.id}`);
-
-    } else if (hasMultipleVideos) {
-      // ABO MULTIPLE VIDEO ADS - One ad per video with its thumbnail
-      // This handles the case when we have multiple videos in ABO mode
-      logger.info('meta', `Creating ${videos.length} individual Video Ads (ABO mode)`);
-
-      const axios = require('axios');
-
-      for (let idx = 0; idx < videos.length; idx++) {
-        const video = videos[idx];
-
-        // Upload video
-        logger.info('meta', `Uploading video ${idx + 1}/${videos.length}: ${video.fileName}`);
-        const videoResponse = await axios.get(video.url, { responseType: 'arraybuffer' });
-        const videoBuffer = Buffer.from(videoResponse.data);
-        const uploadedVideoId = await metaService.uploadVideo(videoBuffer, video.fileName, adAccountId, accessToken);
-
-        await prisma.media.update({
-          where: { id: video.id },
-          data: { usedInMeta: true },
-        });
-
-        // Get linked thumbnail or fallback to image at same index
-        let thumbnailImage: any;
-        if (video.thumbnailMediaId) {
-          thumbnailImage = await prisma.media.findUnique({
-            where: { id: video.thumbnailMediaId },
-          });
-          logger.info('meta', `Using linked thumbnail for video ${idx + 1}: ${thumbnailImage?.fileName}`);
-        }
-        if (!thumbnailImage && images.length > 0) {
-          thumbnailImage = images[idx] || images[0];
-          logger.info('meta', `Using fallback thumbnail for video ${idx + 1}: ${thumbnailImage?.fileName}`);
-        }
-
-        if (!thumbnailImage) {
-          throw new Error(`No thumbnail available for video ${video.fileName}. Please upload a thumbnail image.`);
-        }
-
-        // Upload thumbnail
-        const thumbResponse = await axios.get(thumbnailImage.url, { responseType: 'arraybuffer' });
-        const thumbBuffer = Buffer.from(thumbResponse.data);
-        const thumbHash = await metaService.uploadImage(thumbBuffer, thumbnailImage.fileName, adAccountId, accessToken);
-
-        await prisma.media.update({
-          where: { id: thumbnailImage.id },
-          data: { usedInMeta: true, metaHash: thumbHash },
-        });
-
-        // Create video creative
-        const videoCreative = await metaService.createAdCreative({
-          name: `${campaign.name} - Video Creative ${idx + 1}`,
-          object_story_spec: {
-            page_id: metaAccount.metaPageId,
-            video_data: {
-              video_id: uploadedVideoId,
-              image_hash: thumbHash,
-              title: adCopy.headline,
-              message: adCopy.primaryText,
-              call_to_action: {
-                type: 'LEARN_MORE',
-                value: { link: finalLink },
-              },
-            },
-          },
-        }, adAccountId, accessToken);
-
-        // Create ad
-        const videoAd = await metaService.createAd({
-          name: `${getTomorrowDate()}_${idx + 1}`,
-          adset_id: adSet.id,
-          creative: { creative_id: videoCreative.id },
-          status: 'PAUSED',
-        }, adAccountId, accessToken);
-
-        createdAds.push({ adId: videoAd.id, creativeId: videoCreative.id });
-        logger.success('meta', `Video Ad ${idx + 1}/${videos.length} created`, {
-          adId: videoAd.id,
-          videoId: uploadedVideoId,
-          thumbnailHash: thumbHash,
-        });
-      }
-
-      // Use the last created ad/creative for return value
-      creative = { id: createdAds[createdAds.length - 1].creativeId };
-      ad = { id: createdAds[createdAds.length - 1].adId };
-
-      logger.success('meta', `All ${createdAds.length} video ads created successfully (ABO mode)`);
-
-    } else if (useMultipleAds) {
-      // ABO MULTIPLE IMAGE ADS - One ad per image in the same Ad Set
-      logger.info('meta', `Creating ${uploadedImageHashes.length} individual Ads (ABO mode)`);
-
-      for (let idx = 0; idx < uploadedImageHashes.length; idx++) {
-        const imgData = uploadedImageHashes[idx];
-
-        const imgCreative = await metaService.createAdCreative({
-          name: `${campaign.name} - Creative ${idx + 1}`,
-          object_story_spec: {
-            page_id: metaAccount.metaPageId,
-            link_data: {
-              link: finalLink,
-              message: adCopy.primaryText,
-              name: adCopy.headline,
-              description: adCopy.description,
-              image_hash: imgData.imageHash,
-              call_to_action: {
-                type: 'LEARN_MORE',
-                value: { link: finalLink },
-              },
-            },
-          },
-        }, adAccountId, accessToken);
-
-        const imgAd = await metaService.createAd({
-          name: `${getTomorrowDate()}_${idx + 1}`,
-          adset_id: adSet.id,
-          creative: { creative_id: imgCreative.id },
-          status: 'PAUSED',
-        }, adAccountId, accessToken);
-
-        createdAds.push({ adId: imgAd.id, creativeId: imgCreative.id });
-        logger.success('meta', `Ad ${idx + 1}/${uploadedImageHashes.length} created`, {
-          adId: imgAd.id,
-          creativeId: imgCreative.id,
-        });
-      }
-
-      // Use the last created ad/creative for return value
-      creative = { id: createdAds[createdAds.length - 1].creativeId };
-      ad = { id: createdAds[createdAds.length - 1].adId };
-
-      logger.success('meta', `All ${createdAds.length} ads created successfully (ABO mode)`);
-
-    } else {
-      // SINGLE IMAGE AD - Standard single image ad
-      creative = await metaService.createAdCreative({
-        name: `${campaign.name} - Creative`,
-        object_story_spec: {
-          page_id: metaAccount.metaPageId,
+        } : {
           link_data: {
             link: finalLink,
             message: adCopy.primaryText,
@@ -1868,21 +1618,22 @@ class CampaignOrchestratorService {
               value: { link: finalLink },
             },
           },
-        },
-      }, adAccountId, accessToken);
+        }),
+      },
+    }, adAccountId, accessToken);
 
-      logger.success('meta', `Single image creative created with ID: ${creative.id}`);
+    logger.success('meta', `Meta creative created with ID: ${creative.id} `);
 
-      ad = await metaService.createAd({
-        name: getTomorrowDate(),
-        adset_id: adSet.id,
-        creative: { creative_id: creative.id },
-        status: 'PAUSED',
-      }, adAccountId, accessToken);
+    // Create Ad (according to Meta Ads API)
+    // Ad name uses tomorrow's date in YYYY-MM-DD format
+    const ad = await metaService.createAd({
+      name: getTomorrowDate(),
+      adset_id: adSet.id,
+      creative: { creative_id: creative.id },
+      status: 'PAUSED',
+    }, adAccountId, accessToken);
 
-      createdAds.push({ adId: ad.id, creativeId: creative.id });
-      logger.success('meta', `Single image ad created with ID: ${ad.id}`);
-    }
+    logger.success('meta', `Meta ad created with ID: ${ad.id} `);
 
     // Update campaign-platform status
     await prisma.campaignPlatform.updateMany({
@@ -1893,7 +1644,7 @@ class CampaignOrchestratorService {
       data: {
         metaCampaignId: metaCampaign.id,
         metaAdSetId: adSet.id,
-        metaAdId: ad.id, // Store the last/main ad ID
+        metaAdId: ad.id,
         status: CampaignStatus.ACTIVE,
       },
     });
@@ -1902,8 +1653,7 @@ class CampaignOrchestratorService {
       campaignId: metaCampaign.id,
       adSetId: adSet.id,
       adId: ad.id,
-      adFormat: useVideo ? 'VIDEO' : (useCarousel ? 'CAROUSEL' : (useMultipleAds ? 'MULTIPLE_ADS' : 'SINGLE_IMAGE')),
-      totalAds: createdAds.length,
+      adFormat,
     });
 
     return {
@@ -2203,9 +1953,8 @@ class CampaignOrchestratorService {
       // Configuración para CONVERSIONES (Sales)
       optimization_goal: 'CONVERT', // Optimizar para conversiones de ventas (TikTok usa 'CONVERT', no 'CONVERSION')
       billing_event: 'OCPM', // Optimized Cost Per Mille (requerido para conversiones)
-      bid_type: 'BID_TYPE_NO_BID', // Sin CPA objetivo - TikTok optimiza automáticamente
-      pacing: 'PACING_MODE_SMOOTH', // Standard delivery (requerido para BID_TYPE_NO_BID)
-      // NO enviamos conversion_bid_price para que CPA objetivo quede vacío
+      bid_type: 'BID_TYPE_CUSTOM', // Custom bid para conversiones
+      conversion_bid_price: 5.00, // Costo objetivo por conversión en USD ($5 por defecto)
       // Configuración de Pixel para conversiones (OBLIGATORIO)
       pixel_id: pixelId,
       optimization_event: 'SHOPPING', // Evento de compra/venta (TikTok usa 'SHOPPING', no 'COMPLETE_PAYMENT')
@@ -2224,6 +1973,95 @@ class CampaignOrchestratorService {
     const adGroup = await tiktokService.createAdGroup(adGroupParams, accessToken);
 
     logger.success('tiktok', `TikTok ad group created with ID: ${adGroup.adgroup_id} `);
+
+    // Upload video to TikTok
+    // NOTA: TikTok PLACEMENT_TIKTOK solo soporta VIDEO
+    const video = videos[0]; // Usar el primer video
+    let videoId: string | undefined;
+
+    logger.info('tiktok', `Uploading video to TikTok: ${video.fileName}`);
+
+    // Generate unique filename for video
+    const timestamp = Date.now();
+    const randomString = Math.random().toString(36).substring(2, 8);
+    const uniqueFileName = video.fileName.replace(/\.[^/.]+$/, `_tiktok_${timestamp}_${randomString}$&`);
+
+    // TikTok supports upload by URL (easier with signed URLs)
+    const uploadResult = await tiktokService.uploadVideo({
+      advertiser_id: advertiserId,
+      upload_type: 'UPLOAD_BY_URL',
+      video_url: video.url,
+      file_name: uniqueFileName,
+      auto_bind_enabled: true,
+      auto_fix_enabled: true,
+    }, accessToken);
+
+    // TikTok API returns an ARRAY with the video info
+    // Access the first element to get the video_id and video_cover_url
+    const videoInfo = Array.isArray(uploadResult) ? uploadResult[0] : uploadResult;
+    videoId = videoInfo?.video_id;
+    const videoCoverUrl = videoInfo?.video_cover_url;
+
+    logger.info('tiktok', `Video upload response:`, {
+      video_id: videoId,
+      video_cover_url: videoCoverUrl,
+      file_name: videoInfo?.file_name,
+      duration: videoInfo?.duration,
+      format: videoInfo?.format,
+      displayable: videoInfo?.displayable,
+      allowed_placements: videoInfo?.allowed_placements,
+    });
+
+    if (!videoId) {
+      logger.error('tiktok', `TikTok video upload did not return a video_id! Full response:`, uploadResult);
+      throw new Error('TikTok video upload failed - no video_id returned. Please try again.');
+    }
+
+    // Update media record
+    await prisma.media.update({
+      where: { id: video.id },
+      data: {
+        usedInTiktok: true,
+        tiktokVideoId: videoId,
+      },
+    });
+
+    logger.success('tiktok', `Video uploaded successfully to TikTok`, { videoId });
+
+    // CRITICAL: Wait for TikTok to fully process the video before creating the ad
+    // Even though displayable=true, TikTok may need extra time to make it available for ads
+    logger.info('tiktok', '⏳ Waiting 10 seconds for TikTok to process the video...');
+    await new Promise(resolve => setTimeout(resolve, 10000));
+
+    // STEP 2: Upload the video thumbnail as an image (REQUIRED for SINGLE_VIDEO ads)
+    // TikTok requires image_ids array even for video ads - this is the thumbnail
+    let thumbnailImageId: string | null = null;
+
+    if (videoCoverUrl) {
+      try {
+        logger.info('tiktok', `Uploading video thumbnail as image...`, { videoCoverUrl });
+
+        // Upload the thumbnail URL as an image to TikTok
+        const thumbnailUploadResult = await tiktokService.uploadImage(
+          videoCoverUrl, // URL of the auto-generated thumbnail
+          `${uniqueFileName.replace('.mp4', '')}_thumbnail.jpg`,
+          'UPLOAD_BY_URL',
+          accessToken
+        );
+
+        // TikTok image upload returns { image_id: 'xxx' } or array
+        const thumbnailInfo = Array.isArray(thumbnailUploadResult) ? thumbnailUploadResult[0] : thumbnailUploadResult;
+        thumbnailImageId = thumbnailInfo?.image_id;
+
+        if (thumbnailImageId) {
+          logger.success('tiktok', `Thumbnail uploaded successfully`, { thumbnailImageId });
+        } else {
+          logger.warn('tiktok', `Thumbnail upload did not return image_id`, thumbnailUploadResult);
+        }
+      } catch (thumbError: any) {
+        logger.warn('tiktok', `Failed to upload thumbnail: ${thumbError.message}. Will try without it.`);
+      }
+    }
 
     // Get TikTok identity (OPTIONAL for non-Spark ads with custom identity/display_name)
     let identityId: string | null = null;
@@ -2259,171 +2097,87 @@ class CampaignOrchestratorService {
 
     logger.info('tiktok', `Using formatted Tonic link: ${finalLink} `);
 
-    // Determine ad text - use manual value if provided, otherwise use AI-generated
-    const adText = platformConfig.manualTiktokAdText || adCopy.primaryText;
-    if (platformConfig.manualTiktokAdText) {
-      logger.info('tiktok', `Using MANUAL ad text: "${adText}"`);
-    } else {
-      logger.info('tiktok', `Using AI-generated ad text: "${adText}"`);
-    }
+    // Create Ad with retry logic for image processing delays
+    logger.info('tiktok', 'Creating TikTok ad...');
 
-    // Upload videos and create ads
-    // NOTA: TikTok PLACEMENT_TIKTOK solo soporta VIDEO
-    const hasMultipleVideos = videos.length > 1;
-    const createdAds: Array<{ adId: string; videoId: string }> = [];
     let ad: any;
+    let adCreationAttempts = 0;
+    const maxAdCreationAttempts = 3;
+    const baseDelay = 20000; // 20 seconds base delay (increased from 10)
 
-    logger.info('tiktok', `Processing ${videos.length} video(s) for TikTok ads...`, {
-      hasMultipleVideos,
-      videoCount: videos.length,
-    });
+    while (adCreationAttempts < maxAdCreationAttempts) {
+      try {
+        // Build ad params for SINGLE_VIDEO ad
+        // Required: video_id, image_ids (thumbnail), display_name
+        const adParams: any = {
+          advertiser_id: advertiserId,
+          adgroup_id: adGroup.adgroup_id,
+          ad_name: getTomorrowDate(),
+          ad_format: 'SINGLE_VIDEO', // TikTok PLACEMENT_TIKTOK solo soporta video
+          ad_text: adCopy.primaryText,
+          call_to_action: adCopy.callToAction || 'LEARN_MORE',
+          landing_page_url: finalLink,
+          display_name: campaign.offer.name, // REQUIRED for non-Spark ads (custom identity)
+          video_id: videoId, // Siempre tenemos video
+        };
 
-    // Process each video and create an ad for it
-    for (let idx = 0; idx < videos.length; idx++) {
-      const video = videos[idx];
-      logger.info('tiktok', `Processing video ${idx + 1}/${videos.length}: ${video.fileName}`);
-
-      // Generate unique filename for video
-      const timestamp = Date.now();
-      const randomString = Math.random().toString(36).substring(2, 8);
-      const uniqueFileName = video.fileName.replace(/\.[^/.]+$/, `_tiktok_${timestamp}_${randomString}$&`);
-
-      // Upload video to TikTok
-      const uploadResult = await tiktokService.uploadVideo({
-        advertiser_id: advertiserId,
-        upload_type: 'UPLOAD_BY_URL',
-        video_url: video.url,
-        file_name: uniqueFileName,
-        auto_bind_enabled: true,
-        auto_fix_enabled: true,
-      }, accessToken);
-
-      // TikTok API returns an ARRAY with the video info
-      const videoInfo = Array.isArray(uploadResult) ? uploadResult[0] : uploadResult;
-      const videoId = videoInfo?.video_id;
-      const videoCoverUrl = videoInfo?.video_cover_url;
-
-      logger.info('tiktok', `Video ${idx + 1} upload response:`, {
-        video_id: videoId,
-        video_cover_url: videoCoverUrl,
-        file_name: videoInfo?.file_name,
-        duration: videoInfo?.duration,
-      });
-
-      if (!videoId) {
-        logger.error('tiktok', `TikTok video upload did not return a video_id! Full response:`, uploadResult);
-        throw new Error(`TikTok video upload failed for ${video.fileName} - no video_id returned.`);
-      }
-
-      // Update media record
-      await prisma.media.update({
-        where: { id: video.id },
-        data: {
-          usedInTiktok: true,
-          tiktokVideoId: videoId,
-        },
-      });
-
-      logger.success('tiktok', `Video ${idx + 1} uploaded successfully`, { videoId });
-
-      // Wait for TikTok to process the video
-      logger.info('tiktok', `Waiting 10 seconds for TikTok to process video ${idx + 1}...`);
-      await new Promise(resolve => setTimeout(resolve, 10000));
-
-      // Upload the video thumbnail as an image (REQUIRED for SINGLE_VIDEO ads)
-      let thumbnailImageId: string | null = null;
-
-      if (videoCoverUrl) {
-        try {
-          logger.info('tiktok', `Uploading thumbnail for video ${idx + 1}...`);
-
-          const thumbnailUploadResult = await tiktokService.uploadImage(
-            videoCoverUrl,
-            `${uniqueFileName.replace('.mp4', '')}_thumbnail.jpg`,
-            'UPLOAD_BY_URL',
-            accessToken
-          );
-
-          const thumbnailInfo = Array.isArray(thumbnailUploadResult) ? thumbnailUploadResult[0] : thumbnailUploadResult;
-          thumbnailImageId = thumbnailInfo?.image_id;
-
-          if (thumbnailImageId) {
-            logger.success('tiktok', `Thumbnail ${idx + 1} uploaded successfully`, { thumbnailImageId });
-          }
-        } catch (thumbError: any) {
-          logger.warn('tiktok', `Failed to upload thumbnail for video ${idx + 1}: ${thumbError.message}`);
+        // Add thumbnail image_ids (REQUIRED for SINGLE_VIDEO ads)
+        if (thumbnailImageId) {
+          adParams.image_ids = [thumbnailImageId];
+          logger.info('tiktok', `Using uploaded thumbnail image_id: ${thumbnailImageId}`);
+        } else {
+          logger.warn('tiktok', 'No thumbnail image_id available - TikTok might reject the ad');
         }
-      }
 
-      // Create Ad with retry logic
-      logger.info('tiktok', `Creating TikTok ad ${idx + 1}/${videos.length}...`);
+        // Only add identity params if we have a valid CUSTOMIZED_USER identity
+        // For non-Spark ads, display_name is sufficient
+        if (identityId && identityType && identityType !== 'ADVERTISER') {
+          adParams.identity_id = identityId;
+          adParams.identity_type = identityType;
+          logger.info('tiktok', `Using identity: ${identityId} (${identityType})`);
+        } else {
+          logger.info('tiktok', 'Using display_name only (no identity_id/identity_type for non-Spark ad)');
+        }
 
-      let adCreationAttempts = 0;
-      const maxAdCreationAttempts = 3;
-      const baseDelay = 20000;
+        // Log the full ad params for debugging
+        logger.info('tiktok', 'Creating ad with params:', adParams);
 
-      while (adCreationAttempts < maxAdCreationAttempts) {
-        try {
-          // Build ad params for SINGLE_VIDEO ad
-          const adParams: any = {
-            advertiser_id: advertiserId,
-            adgroup_id: adGroup.adgroup_id,
-            ad_name: hasMultipleVideos ? `${getTomorrowDate()}_${idx + 1}` : getTomorrowDate(),
-            ad_format: 'SINGLE_VIDEO',
-            ad_text: adText,
-            call_to_action: adCopy.callToAction || 'LEARN_MORE',
-            landing_page_url: finalLink,
-            display_name: campaign.offer.name,
-            video_id: videoId,
-          };
+        ad = await tiktokService.createAd(adParams, accessToken);
 
-          if (thumbnailImageId) {
-            adParams.image_ids = [thumbnailImageId];
-          }
+        logger.success('tiktok', `✅ TikTok ad created successfully with ID: ${ad.ad_id} `);
+        break; // Success, exit the retry loop
 
-          if (identityId && identityType && identityType !== 'ADVERTISER') {
-            adParams.identity_id = identityId;
-            adParams.identity_type = identityType;
-          }
+      } catch (adError: any) {
+        adCreationAttempts++;
 
-          logger.info('tiktok', `Creating ad ${idx + 1} with params:`, adParams);
+        // Retry with exponential backoff for video processing delays
+        if (adCreationAttempts < maxAdCreationAttempts) {
+          const delay = baseDelay * Math.pow(2, adCreationAttempts - 1); // Exponential backoff: 20s, 40s, 80s
 
-          ad = await tiktokService.createAd(adParams, accessToken);
+          logger.warn('tiktok',
+            `⚠️ Video may still be processing in TikTok (attempt ${adCreationAttempts}/${maxAdCreationAttempts}). ` +
+            `Waiting ${delay / 1000} seconds before retry...`, {
+            error: adError.message,
+            videoId: videoId
+          });
 
-          createdAds.push({ adId: ad.ad_id, videoId });
-          logger.success('tiktok', `TikTok ad ${idx + 1}/${videos.length} created successfully with ID: ${ad.ad_id}`);
-          break;
-
-        } catch (adError: any) {
-          adCreationAttempts++;
-
-          if (adCreationAttempts < maxAdCreationAttempts) {
-            const delay = baseDelay * Math.pow(2, adCreationAttempts - 1);
-            logger.warn('tiktok',
-              `Video ${idx + 1} may still be processing (attempt ${adCreationAttempts}/${maxAdCreationAttempts}). ` +
-              `Waiting ${delay / 1000} seconds...`, { error: adError.message });
-            await new Promise(resolve => setTimeout(resolve, delay));
-          } else {
-            logger.error('tiktok', `Failed to create ad ${idx + 1} after ${adCreationAttempts} attempts`, {
-              error: adError.message,
-              videoId,
-            });
-            throw adError;
-          }
+          await new Promise(resolve => setTimeout(resolve, delay));
+        } else {
+          // We've exhausted retries
+          logger.error('tiktok', `Failed to create ad after ${adCreationAttempts} attempts`, {
+            error: adError.message,
+            videoId: videoId
+          });
+          throw adError;
         }
       }
     }
 
-    if (createdAds.length === 0) {
-      throw new Error('Failed to create any TikTok ads');
+    if (!ad) {
+      throw new Error('Failed to create TikTok ad after all retry attempts');
     }
 
-    logger.success('tiktok', `All ${createdAds.length} TikTok ad(s) created successfully`);
-
-    // Use the last created ad for the return value
-    const lastAd = createdAds[createdAds.length - 1];
-
-    // Update database (using last created ad for reference)
+    // Update database
     await prisma.campaignPlatform.update({
       where: {
         campaignId_platform: {
@@ -2434,7 +2188,7 @@ class CampaignOrchestratorService {
       data: {
         tiktokCampaignId: tiktokCampaign.campaign_id,
         tiktokAdGroupId: adGroup.adgroup_id,
-        tiktokAdId: lastAd.adId,
+        tiktokAdId: ad.ad_id,
         status: CampaignStatus.ACTIVE,
       },
     });
@@ -2442,8 +2196,7 @@ class CampaignOrchestratorService {
     logger.success('tiktok', 'TikTok campaign launched successfully', {
       campaignId: tiktokCampaign.campaign_id,
       adGroupId: adGroup.adgroup_id,
-      totalAds: createdAds.length,
-      adIds: createdAds.map(a => a.adId),
+      adId: ad.ad_id,
       adFormat,
     });
 
@@ -2452,7 +2205,7 @@ class CampaignOrchestratorService {
       success: true,
       campaignId: tiktokCampaign.campaign_id,
       adGroupId: adGroup.adgroup_id,
-      adId: lastAd.adId,
+      adId: ad.ad_id,
     };
   }
 

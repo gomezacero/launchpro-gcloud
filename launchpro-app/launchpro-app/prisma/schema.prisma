@@ -186,6 +186,14 @@ model CampaignPlatform {
   generateWithAI     Boolean  @default(true)
   specialAdCategories String[] @default([])
 
+  // Manual Ad Copy (for Meta)
+  manualAdTitle      String?
+  manualDescription  String?
+  manualPrimaryText  String?
+
+  // Manual Ad Copy (for TikTok)
+  manualTiktokAdText String?  // Ad text/title for TikTok ads (optional, uses AI if empty)
+
   // Platform-specific IDs after launch
   metaCampaignId     String?
   metaAdSetId        String?
@@ -252,10 +260,16 @@ model Media {
   metaHash         String?
   tiktokVideoId    String?
 
+  // Video-Thumbnail relationship (for videos with associated thumbnails)
+  thumbnailMediaId String?
+  thumbnail        Media?     @relation("VideoThumbnail", fields: [thumbnailMediaId], references: [id])
+  videosThumbnail  Media[]    @relation("VideoThumbnail")
+
   createdAt        DateTime   @default(now())
 
   @@index([campaignId])
   @@index([type])
+  @@index([thumbnailMediaId])
 }
 
 // ============================================
