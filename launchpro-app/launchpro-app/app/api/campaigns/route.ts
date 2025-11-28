@@ -118,15 +118,22 @@ export async function POST(request: NextRequest) {
         accountId: p.accountId,
         performanceGoal: p.performanceGoal,
         budget: parseFloat(p.budget),
-        startDate: new Date(p.startDate),
+        startDate: new Date(p.startDateTime || p.startDate), // Support both datetime and date
         generateWithAI: p.generateWithAI !== false,
         specialAdCategories: p.specialAdCategories,
+        // Fan Page for Meta (user selected)
+        metaPageId: p.metaPageId,
+        // Identity for TikTok (user selected)
+        tiktokIdentityId: p.tiktokIdentityId,
+        tiktokIdentityType: p.tiktokIdentityType,
         // Manual Ad Copy (Meta only)
         manualAdCopy: p.platform === 'META' ? {
           adTitle: p.manualAdTitle,
           description: p.manualDescription,
           primaryText: p.manualPrimaryText,
         } : undefined,
+        // Manual Ad Copy (TikTok only)
+        manualTiktokAdText: p.manualTiktokAdText,
       })),
       skipPlatformLaunch: hasManualUpload, // Skip if manual upload is needed
     });

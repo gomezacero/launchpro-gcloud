@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger';
+import { campaignLogger } from '@/lib/campaign-logger';
 import { tonicService } from './tonic.service';
 import { metaService } from './meta.service';
 import { tiktokService } from './tiktok.service';
@@ -180,6 +181,7 @@ class CampaignOrchestratorService {
       // ============================================
       // STEP 1: Get Tonic credentials and offer details
       // ============================================
+      // Nota: El campaignLogger se inicializará después de obtener el campaignId
       logger.info('tonic', 'Fetching Tonic account credentials...', { accountId: params.tonicAccountId });
       const tonicAccount = await prisma.account.findUnique({
         where: {
@@ -267,6 +269,10 @@ class CampaignOrchestratorService {
       });
 
       logger.success('system', `Campaign created with ID: ${campaign.id}`);
+
+      // Inicializar campaignLogger para este campaignId
+      campaignLogger.initialize(campaign.id);
+      campaignLogger.startStep(campaign.id, 'validation', 'Validando configuración de campaña...');
 
       // ============================================
       // STEP 3: Detect campaign type (RSOC vs Display) WITH CACHING
@@ -367,12 +373,16 @@ class CampaignOrchestratorService {
       logger.info('system', `🎯 Final campaign type: ${campaignType.toUpperCase()}`);
       logger.info('system', `Account capabilities: RSOC=${supportsRSOC}, Display=${supportsDisplay}`);
 
+      // Completar validación
+      campaignLogger.completeStep(campaign.id, 'validation', 'Configuración validada correctamente');
+
       // ============================================
       // STEP 4: For RSOC, create article FIRST
       // ============================================
       let articleHeadlineId: number | undefined;
 
       if (campaignType === 'rsoc') {
+        campaignLogger.startStep(campaign.id, 'tonic_article', 'Creando artículo en Tonic...');
         logger.info('ai', 'Generating article for RSOC campaign...');
 
         // Check if manual content generation phrases were provided (must be 3-5)
@@ -457,6 +467,7 @@ class CampaignOrchestratorService {
           if (matchingHeadline) {
             // FOUND! Use existing headline
             articleHeadlineId = matchingHeadline.headline_id || matchingHeadline.id;
+            campaignLogger.completeStep(campaign.id, 'tonic_article', 'Usando artículo existente');
             logger.success('tonic', `✅ Using EXISTING headline_id: ${articleHeadlineId}`, {
               headline: matchingHeadline.headline,
               offer: matchingHeadline.offer_name,
@@ -466,6 +477,10 @@ class CampaignOrchestratorService {
             // STRATEGY 2: Wait for the article we just created to be approved
             logger.warn('tonic', '⚠️  No existing approved headline found for this offer/country combination.');
             logger.info('tonic', `⏳ Will wait for article request #${articleRequestId} to be approved...`);
+
+            // Log para el usuario
+            campaignLogger.completeStep(campaign.id, 'tonic_article', 'Artículo creado en Tonic');
+            campaignLogger.startStep(campaign.id, 'tonic_approval', 'Esperando aprobación del artículo...');
 
             // Update campaign status to show we're waiting
             await prisma.campaign.update({
@@ -485,6 +500,7 @@ class CampaignOrchestratorService {
             if (pollingResult.success && pollingResult.headlineId) {
               // SUCCESS! Article was approved
               articleHeadlineId = parseInt(pollingResult.headlineId);
+              campaignLogger.completeStep(campaign.id, 'tonic_approval', 'Artículo aprobado');
               logger.success('tonic', `🎉 Article approved after ${formatElapsedTime(pollingResult.elapsedSeconds)}!`, {
                 headlineId: articleHeadlineId,
                 attempts: pollingResult.attemptsCount,
@@ -515,6 +531,7 @@ class CampaignOrchestratorService {
       // ============================================
       // STEP 5: Create campaign in Tonic
       // ============================================
+      campaignLogger.startStep(campaign.id, 'tonic_campaign', 'Creando campaña en Tonic...');
       logger.info('tonic', `Creating ${campaignType.toUpperCase()} campaign in Tonic...`, {
         name: params.name,
         country: params.country,
@@ -552,9 +569,11 @@ class CampaignOrchestratorService {
       }
 
       logger.success('tonic', `Tonic campaign created with ID: ${tonicCampaignId}`);
+      campaignLogger.completeStep(campaign.id, 'tonic_campaign', 'Campaña creada en Tonic');
 
       // Wait for tracking link to become available (campaign needs to be "active")
       // This typically takes 5-10 minutes after campaign creation
+      campaignLogger.startStep(campaign.id, 'tracking_link', 'Obteniendo link de tracking...');
       logger.info('tonic', '⏳ Waiting for tracking link to become available...');
 
       const trackingLinkResult = await waitForTrackingLink(
@@ -573,6 +592,7 @@ class CampaignOrchestratorService {
       if (trackingLinkResult.success && trackingLinkResult.trackingLink) {
         // SUCCESS! Tracking link is available
         trackingLink = trackingLinkResult.trackingLink;
+        campaignLogger.completeStep(campaign.id, 'tracking_link', 'Link de tracking obtenido');
         logger.success('tonic', `🎉 Tracking link obtained after ${formatPollingTime(trackingLinkResult.elapsedSeconds)}!`, {
           trackingLink,
           attempts: trackingLinkResult.attemptsCount,
@@ -628,6 +648,7 @@ class CampaignOrchestratorService {
       // ============================================
       // STEP 6: Generate AI Content (Copy Master, Keywords)
       // ============================================
+      campaignLogger.startStep(campaign.id, 'keywords', 'Generando keywords con IA...');
       logger.info('ai', 'Generating AI content...');
       await prisma.campaign.update({
         where: { id: campaign.id },
@@ -685,6 +706,7 @@ class CampaignOrchestratorService {
         keyword_amount: aiContentResult.keywords.length,
       });
       logger.success('tonic', 'Keywords set in Tonic');
+      campaignLogger.completeStep(campaign.id, 'keywords', 'Keywords configurados');
 
       // 4d. Article already created if RSOC (in Step 4)
       if (campaignType === 'rsoc' && articleHeadlineId) {
@@ -880,6 +902,7 @@ class CampaignOrchestratorService {
       for (const platformConfig of params.platforms) {
         try {
           if (platformConfig.platform === Platform.META) {
+            campaignLogger.startStep(campaign.id, 'pixel_meta', 'Configurando pixel de Meta...');
             // Get Meta account to fetch pixel ID and access token
             const metaAccount = await prisma.account.findUnique({
               where: { id: platformConfig.accountId },
@@ -908,11 +931,11 @@ class CampaignOrchestratorService {
                 where: { id: 'global-settings' },
               });
 
-              accessToken = globalSettings?.metaAccessToken;
+              accessToken = globalSettings?.metaAccessToken ?? null;
 
               if (!accessToken) {
                 // Final fallback to environment variable
-                accessToken = env.META_ACCESS_TOKEN;
+                accessToken = process.env.META_ACCESS_TOKEN ?? null;
               }
 
               if (accessToken) {
@@ -936,8 +959,10 @@ class CampaignOrchestratorService {
             });
 
             logger.success('tonic', `✅ Facebook pixel ${pixelId} configured for campaign ${tonicCampaignId}`);
+            campaignLogger.completeStep(campaign.id, 'pixel_meta', 'Pixel de Meta configurado');
 
           } else if (platformConfig.platform === Platform.TIKTOK) {
+            campaignLogger.startStep(campaign.id, 'pixel_tiktok', 'Configurando pixel de TikTok...');
             // Get TikTok account to fetch pixel ID and access token
             const tiktokAccount = await prisma.account.findUnique({
               where: { id: platformConfig.accountId },
@@ -958,11 +983,11 @@ class CampaignOrchestratorService {
                 where: { id: 'global-settings' },
               });
 
-              accessToken = globalSettings?.tiktokAccessToken;
+              accessToken = globalSettings?.tiktokAccessToken ?? null;
 
               if (!accessToken) {
                 // Final fallback to environment variable
-                accessToken = env.TIKTOK_ACCESS_TOKEN;
+                accessToken = process.env.TIKTOK_ACCESS_TOKEN ?? null;
               }
 
               if (accessToken) {
@@ -1017,12 +1042,13 @@ class CampaignOrchestratorService {
 
             await tonicService.createPixel(credentials, 'tiktok', {
               campaign_id: parseInt(tonicCampaignId.toString()),
-              pixel_id: pixelId, // REQUIRED
-              access_token: accessToken, // REQUIRED
+              pixel_id: pixelId!, // REQUIRED - verified non-null above
+              access_token: accessToken!, // REQUIRED - verified non-null above
               revenue_type: 'preestimated_revenue',
             });
 
             logger.success('tonic', `✅ TikTok pixel ${pixelId} configured for campaign ${tonicCampaignId}`);
+            campaignLogger.completeStep(campaign.id, 'pixel_tiktok', 'Pixel de TikTok configurado');
           }
         } catch (error: any) {
           // FAIL-FAST: Pixel configuration is CRITICAL - cannot proceed without it
@@ -1078,9 +1104,16 @@ class CampaignOrchestratorService {
             logger.info('system', `Launching to ${platformConfig.platform}...`);
 
             if (platformConfig.platform === Platform.META) {
+              campaignLogger.startStep(campaign.id, 'meta_campaign', 'Creando campaña en Meta...');
               const result = await this.launchToMeta(campaign, platformConfig, aiContentResult, tonicCampaignId?.toString());
               platformResults.push(result);
+              if (result.success) {
+                campaignLogger.completeStep(campaign.id, 'meta_campaign', 'Campaña creada en Meta');
+              } else {
+                campaignLogger.failStep(campaign.id, 'meta_campaign', 'Error al crear campaña en Meta', (result as any).error);
+              }
             } else if (platformConfig.platform === Platform.TIKTOK) {
+              campaignLogger.startStep(campaign.id, 'tiktok_campaign', 'Creando campaña en TikTok...');
               const result = await this.launchToTikTok(
                 campaign,
                 platformConfig,
@@ -1088,6 +1121,11 @@ class CampaignOrchestratorService {
                 tonicCampaignId?.toString()
               );
               platformResults.push(result);
+              if (result.success) {
+                campaignLogger.completeStep(campaign.id, 'tiktok_campaign', 'Campaña creada en TikTok');
+              } else {
+                campaignLogger.failStep(campaign.id, 'tiktok_campaign', 'Error al crear campaña en TikTok', (result as any).error);
+              }
             }
           } catch (error: any) {
             logger.error('system', `Error launching to ${platformConfig.platform}: ${error.message}`, {
@@ -1122,6 +1160,13 @@ class CampaignOrchestratorService {
           platforms: platformResults.map(p => ({ platform: p.platform, success: p.success })),
         });
 
+        // Notificar al panel de logs el resultado final
+        if (allSuccessful) {
+          campaignLogger.complete(campaign.id, '¡Campaña lanzada exitosamente!');
+        } else {
+          campaignLogger.completeWithError(campaign.id, 'La campaña se completó con errores en algunas plataformas');
+        }
+
         return {
           success: allSuccessful,
           campaignId: campaign.id,
@@ -1138,6 +1183,26 @@ class CampaignOrchestratorService {
         stack: error.stack,
         campaignId: campaign?.id,
       });
+
+      // Notificar al panel de logs del error
+      if (campaign?.id) {
+        campaignLogger.failStep(campaign.id, 'error', 'Error en el lanzamiento de la campaña', error.message);
+        campaignLogger.completeWithError(campaign.id, 'El lanzamiento falló');
+
+        // Guardar detalles del error en la BD
+        await prisma.campaign.update({
+          where: { id: campaign.id },
+          data: {
+            status: CampaignStatus.FAILED,
+            errorDetails: {
+              step: 'launch',
+              message: error.message,
+              timestamp: new Date().toISOString(),
+              technicalDetails: error.stack || error.message,
+            },
+          },
+        });
+      }
 
       // Rollback campaign if it was created
       if (campaign?.id) {
@@ -1242,11 +1307,11 @@ class CampaignOrchestratorService {
         where: { id: 'global-settings' },
       });
 
-      accessToken = globalSettings?.metaAccessToken;
+      accessToken = globalSettings?.metaAccessToken ?? null;
 
       if (!accessToken) {
         // Final fallback to environment variable
-        accessToken = env.META_ACCESS_TOKEN;
+        accessToken = process.env.META_ACCESS_TOKEN ?? null;
       }
 
       if (accessToken) {
@@ -1393,20 +1458,10 @@ class CampaignOrchestratorService {
       }
     }
 
-    // Process Age
-    let ageMin = 18;
-    let ageMax = 65;
-    if (targetingSuggestions.ageGroups && targetingSuggestions.ageGroups.length > 0) {
-      // Parse first group (e.g., "25-45" or "18+")
-      const firstGroup = targetingSuggestions.ageGroups[0];
-      const parts = firstGroup.match(/(\d+)/g);
-      if (parts && parts.length > 0) {
-        ageMin = parseInt(parts[0]);
-        if (parts.length > 1) {
-          ageMax = parseInt(parts[1]);
-        }
-      }
-    }
+    // Process Age - ALWAYS use widest range (18-65) for maximum reach
+    // Per user request: Do NOT use AI-suggested age ranges
+    const ageMin = 18;
+    const ageMax = 65;
 
     // Process Language (Locales)
     // Map common language codes to Meta Locale IDs
@@ -1466,13 +1521,10 @@ class CampaignOrchestratorService {
       publisher_platforms: ['facebook', 'instagram', 'messenger'], // Explicitly set platforms
     };
 
-    // Only add optional targeting if they have values
-    if (targetInterests.length > 0) {
-      targetingSpec.interests = targetInterests;
-    }
-    if (targetBehaviors.length > 0) {
-      targetingSpec.behaviors = targetBehaviors;
-    }
+    // NOTE: Interests and behaviors are NOT added to targeting per user request
+    // This ensures the widest possible audience reach
+    // targetInterests and targetBehaviors are available but intentionally not used
+
     // IMPORTANT: Only add locales if we have a valid array with values
     if (targetLocales && targetLocales.length > 0) {
       targetingSpec.locales = targetLocales;
@@ -1496,7 +1548,7 @@ class CampaignOrchestratorService {
       daily_budget: !isCBO ? budgetInCents : undefined,
       bid_strategy: !isCBO ? 'LOWEST_COST_WITHOUT_CAP' : undefined,
 
-      start_time: new Date(platformConfig.startDate).toISOString(),
+      start_time: new Date(platformConfig.startDateTime || platformConfig.startDate).toISOString(),
       targeting: targetingSpec,
       status: 'PAUSED',
       promoted_object: {
@@ -1666,7 +1718,7 @@ class CampaignOrchestratorService {
       creative = await metaService.createAdCreative({
         name: `${campaign.name} - Video Creative`,
         object_story_spec: {
-          page_id: metaAccount.metaPageId,
+          page_id: platformConfig.metaPageId || metaAccount.metaPageId,
           ...(instagramActorId && { instagram_user_id: instagramActorId }),
           video_data: {
             video_id: videoId!,
@@ -1711,14 +1763,14 @@ class CampaignOrchestratorService {
       creative = await metaService.createAdCreative({
         name: `${campaign.name} - Carousel Creative`,
         object_story_spec: {
-          page_id: metaAccount.metaPageId,
+          page_id: platformConfig.metaPageId || metaAccount.metaPageId,
           ...(instagramActorId && { instagram_user_id: instagramActorId }),
           link_data: {
             link: finalLink,
             message: adCopy.primaryText,
             child_attachments: childAttachments,
             multi_share_optimized: true,
-          },
+          } as any, // Carousel-specific fields
         },
       }, adAccountId, accessToken);
 
@@ -1788,7 +1840,7 @@ class CampaignOrchestratorService {
         const videoCreative = await metaService.createAdCreative({
           name: `${campaign.name} - Video Creative ${idx + 1}`,
           object_story_spec: {
-            page_id: metaAccount.metaPageId,
+            page_id: platformConfig.metaPageId || metaAccount.metaPageId,
             ...(instagramActorId && { instagram_user_id: instagramActorId }),
             video_data: {
               video_id: uploadedVideoId,
@@ -1835,7 +1887,7 @@ class CampaignOrchestratorService {
         const imgCreative = await metaService.createAdCreative({
           name: `${campaign.name} - Creative ${idx + 1}`,
           object_story_spec: {
-            page_id: metaAccount.metaPageId,
+            page_id: platformConfig.metaPageId || metaAccount.metaPageId,
             ...(instagramActorId && { instagram_user_id: instagramActorId }),
             link_data: {
               link: finalLink,
@@ -1876,7 +1928,7 @@ class CampaignOrchestratorService {
       creative = await metaService.createAdCreative({
         name: `${campaign.name} - Creative`,
         object_story_spec: {
-          page_id: metaAccount.metaPageId,
+          page_id: platformConfig.metaPageId || metaAccount.metaPageId,
           ...(instagramActorId && { instagram_user_id: instagramActorId }),
           link_data: {
             link: finalLink,
@@ -2082,11 +2134,11 @@ class CampaignOrchestratorService {
         where: { id: 'global-settings' },
       });
 
-      accessToken = globalSettings?.tiktokAccessToken;
+      accessToken = globalSettings?.tiktokAccessToken ?? null;
 
       if (!accessToken) {
         // Final fallback to environment variable
-        accessToken = env.TIKTOK_ACCESS_TOKEN;
+        accessToken = process.env.TIKTOK_ACCESS_TOKEN ?? null;
       }
 
       if (accessToken) {
@@ -2144,26 +2196,16 @@ class CampaignOrchestratorService {
 
     // Map Age Groups to TikTok Enums
     // TikTok Age Groups: AGE_13_17, AGE_18_24, AGE_25_34, AGE_35_44, AGE_45_54, AGE_55_64, AGE_65_PLUS
-    const tiktokAgeGroups: string[] = [];
-
-    if (targetingSuggestions.ageGroups && targetingSuggestions.ageGroups.length > 0) {
-      // Parse first group (e.g., "25-45" or "18+")
-      const firstGroup = targetingSuggestions.ageGroups[0];
-      const parts = firstGroup.match(/(\d+)/g);
-
-      if (parts && parts.length > 0) {
-        const ageMin = parseInt(parts[0]);
-        const ageMax = parts.length > 1 ? parseInt(parts[1]) : 100;
-
-        if (ageMin <= 17) tiktokAgeGroups.push('AGE_13_17');
-        if (ageMin <= 24 && ageMax >= 18) tiktokAgeGroups.push('AGE_18_24');
-        if (ageMin <= 34 && ageMax >= 25) tiktokAgeGroups.push('AGE_25_34');
-        if (ageMin <= 44 && ageMax >= 35) tiktokAgeGroups.push('AGE_35_44');
-        if (ageMin <= 54 && ageMax >= 45) tiktokAgeGroups.push('AGE_45_54');
-        if (ageMin <= 64 && ageMax >= 55) tiktokAgeGroups.push('AGE_55_64');
-        if (ageMax >= 65) tiktokAgeGroups.push('AGE_65_PLUS');
-      }
-    }
+    // Per user request: ALWAYS use ALL age groups EXCEPT AGE_13_17 for widest reach
+    const tiktokAgeGroups: string[] = [
+      'AGE_18_24',
+      'AGE_25_34',
+      'AGE_35_44',
+      'AGE_45_54',
+      'AGE_55_64',
+      'AGE_65_PLUS'
+    ];
+    // NOTE: AI-suggested age groups are intentionally NOT used
 
     // Note: Interest mapping for TikTok requires Category IDs which are complex to map without fuzzy search.
     // We are skipping interest mapping for now and relying on broad targeting + pixel optimization.
@@ -2179,8 +2221,8 @@ class CampaignOrchestratorService {
     }
 
     // Create Ad Group (according to TikTok Ads API)
-    // Calculate end date (30 days from start date for default)
-    let startDate = new Date(platformConfig.startDate);
+    // Per user request: Use SCHEDULE_FROM_NOW (continuous, no end date)
+    let startDate = new Date(platformConfig.startDateTime || platformConfig.startDate);
     const now = new Date();
 
     // TikTok requires start time to be in the future (at least slightly)
@@ -2191,9 +2233,7 @@ class CampaignOrchestratorService {
       logger.info('tiktok', `⚠️ Start date ${startDate.toISOString()} is in the past or too soon. Adjusting to 15 mins from now.`);
       startDate = new Date(now.getTime() + 15 * 60 * 1000);
     }
-
-    const endDate = new Date(startDate);
-    endDate.setDate(endDate.getDate() + 30);
+    // NOTE: endDate is NOT used anymore - we use SCHEDULE_FROM_NOW (continuous)
 
     // Debug logging to understand the values
     // Nota: Con BID_TYPE_NO_BID, TikTok optimiza automáticamente (no necesitamos bid_price)
@@ -2216,9 +2256,10 @@ class CampaignOrchestratorService {
       // SIEMPRE usar PLACEMENT_TIKTOK (no usar Pangle ni automatic)
       placement_type: 'PLACEMENT_TYPE_NORMAL',
       placements: ['PLACEMENT_TIKTOK'],
-      schedule_type: 'SCHEDULE_START_END',
+      // SCHEDULE_FROM_NOW: Run continuously from start time with no end date
+      schedule_type: 'SCHEDULE_FROM_NOW',
       schedule_start_time: startDate.toISOString().replace('T', ' ').split('.')[0],
-      schedule_end_time: endDate.toISOString().replace('T', ' ').split('.')[0],
+      // NO schedule_end_time - campaign runs continuously
       budget_mode: 'BUDGET_MODE_DAY',
       budget: budgetInDollars, // TikTok API expects budget in DOLLARS (not cents!)
       // Configuración para CONVERSIONES (Sales)
@@ -2247,28 +2288,36 @@ class CampaignOrchestratorService {
     logger.success('tiktok', `TikTok ad group created with ID: ${adGroup.adgroup_id} `);
 
     // Get TikTok identity (OPTIONAL for non-Spark ads with custom identity/display_name)
+    // Per user request: Use identity selected by user in wizard if available
     let identityId: string | null = null;
     let identityType: string | null = null;
 
-    // Try to get custom identities if available (for Spark Ads)
-    try {
-      const identities = await tiktokService.getIdentities(advertiserId, accessToken);
-      logger.info('tiktok', `Identities response: ${JSON.stringify(identities)}`);
+    // Check if user selected an identity in the wizard
+    if (platformConfig.tiktokIdentityId) {
+      identityId = platformConfig.tiktokIdentityId;
+      identityType = platformConfig.tiktokIdentityType || 'CUSTOMIZED_USER';
+      logger.info('tiktok', `Using user-selected TikTok identity: ${identityId}, type: ${identityType}`);
+    } else {
+      // Fallback: Try to get custom identities if none was selected (for backwards compatibility)
+      try {
+        const identities = await tiktokService.getIdentities(advertiserId, accessToken);
+        logger.info('tiktok', `Identities response: ${JSON.stringify(identities)}`);
 
-      // Find an available CUSTOMIZED_USER identity
-      const availableIdentity = identities.identity_list?.find((identity: any) => {
-        return identity.identity_id && identity.identity_type === 'CUSTOMIZED_USER';
-      });
+        // Find an available CUSTOMIZED_USER identity
+        const availableIdentity = identities.identity_list?.find((identity: any) => {
+          return identity.identity_id && identity.identity_type === 'CUSTOMIZED_USER';
+        });
 
-      if (availableIdentity) {
-        identityId = availableIdentity.identity_id;
-        identityType = availableIdentity.identity_type;
-        logger.info('tiktok', `Using custom TikTok identity: ${availableIdentity.display_name} (${identityId}, type: ${identityType})`);
-      } else {
-        logger.info('tiktok', `No custom identity found. Will use display_name for non-Spark ads.`);
+        if (availableIdentity) {
+          identityId = availableIdentity.identity_id;
+          identityType = availableIdentity.identity_type;
+          logger.info('tiktok', `Using auto-selected TikTok identity: ${availableIdentity.display_name} (${identityId}, type: ${identityType})`);
+        } else {
+          logger.info('tiktok', `No custom identity found. Will use display_name for non-Spark ads.`);
+        }
+      } catch (identityError: any) {
+        logger.warn('tiktok', `Failed to fetch identities: ${identityError.message}. Will use display_name for non-Spark ads.`);
       }
-    } catch (identityError: any) {
-      logger.warn('tiktok', `Failed to fetch identities: ${identityError.message}. Will use display_name for non-Spark ads.`);
     }
 
     // FORMAT TONIC LINK

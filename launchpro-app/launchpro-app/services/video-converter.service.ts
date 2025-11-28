@@ -191,10 +191,10 @@ class VideoConverterService {
           // Add subtle zoom effect (Ken Burns effect) for engagement
           'zoompan=z=\'min(zoom+0.0005,1.1)\':x=\'iw/2-(iw/zoom/2)\':y=\'ih/2-(ih/zoom/2)\':d=450:s=1080x1920:fps=30',
         ])
-        .on('start', (commandLine) => {
+        .on('start', (commandLine: string) => {
           logger.info('VIDEO-CONVERTER', `FFmpeg command: ${commandLine}`);
         })
-        .on('progress', (progress) => {
+        .on('progress', (progress: { percent?: number }) => {
           if (progress.percent) {
             logger.info('VIDEO-CONVERTER', `Conversion progress: ${Math.round(progress.percent)}%`);
           }
@@ -203,7 +203,7 @@ class VideoConverterService {
           logger.success('VIDEO-CONVERTER', 'Video conversion completed');
           resolve();
         })
-        .on('error', (err) => {
+        .on('error', (err: Error) => {
           logger.error('VIDEO-CONVERTER', `FFmpeg error: ${err.message}`);
           reject(err);
         })

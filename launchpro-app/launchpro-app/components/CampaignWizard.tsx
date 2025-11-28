@@ -3,6 +3,14 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
+// Simple log interface for inline display
+interface LaunchLog {
+  id: string;
+  message: string;
+  status: 'pending' | 'in_progress' | 'success' | 'error';
+  timestamp: Date;
+}
+
 interface Offer {
   id: string;
   name: string;
@@ -31,7 +39,7 @@ interface PlatformConfig {
   accountId?: string;
   performanceGoal: string;
   budget: string;
-  startDate: string;
+  startDateTime: string;  // Changed from startDate to include time
   generateWithAI: boolean;
   uploadedImages?: UploadedFile[];
   uploadedVideos?: UploadedFile[];
@@ -42,6 +50,11 @@ interface PlatformConfig {
   manualPrimaryText?: string;
   // Manual Ad Copy fields (TikTok)
   manualTiktokAdText?: string;
+  // Fan Page for Meta (user selectable)
+  metaPageId?: string;
+  // Identity for TikTok (user selectable)
+  tiktokIdentityId?: string;
+  tiktokIdentityType?: string;
 }
 
 interface UploadedFile {
@@ -62,6 +75,13 @@ export default function CampaignWizard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Estado para logs inline durante el lanzamiento
+  const [isLaunching, setIsLaunching] = useState(false);
+  const [launchLogs, setLaunchLogs] = useState<LaunchLog[]>([]);
+  const [launchComplete, setLaunchComplete] = useState(false);
+  const [launchSuccess, setLaunchSuccess] = useState(false);
+  const [launchedCampaignId, setLaunchedCampaignId] = useState<string | null>(null);
+
   // Data from APIs
   const [offers, setOffers] = useState<Offer[]>([]);
   const [countries, setCountries] = useState<Country[]>([]);
@@ -72,6 +92,14 @@ export default function CampaignWizard() {
   // Ad accounts from Meta/TikTok APIs (not from local DB)
   const [metaAdAccounts, setMetaAdAccounts] = useState<any[]>([]);
   const [tiktokAdvertiserAccounts, setTiktokAdvertiserAccounts] = useState<any[]>([]);
+
+  // Fan Pages for Meta (loaded when Meta account is selected)
+  const [metaPages, setMetaPages] = useState<{ id: string; name: string }[]>([]);
+  const [loadingMetaPages, setLoadingMetaPages] = useState(false);
+
+  // Identities for TikTok (loaded when TikTok account is selected)
+  const [tiktokIdentities, setTiktokIdentities] = useState<{ id: string; name: string; type: string }[]>([]);
+  const [loadingTiktokIdentities, setLoadingTiktokIdentities] = useState(false);
 
   // Form data
   const [formData, setFormData] = useState({
@@ -190,16 +218,72 @@ export default function CampaignWizard() {
     }
   };
 
+  // Load Fan Pages for a Meta account
+  const loadMetaPages = async (accountId: string) => {
+    if (!accountId) {
+      setMetaPages([]);
+      return;
+    }
+
+    setLoadingMetaPages(true);
+    try {
+      const res = await fetch(`/api/accounts/${accountId}/pages`);
+      const data = await res.json();
+      if (data.success) {
+        setMetaPages(data.data || []);
+      } else {
+        console.error('Error loading Meta pages:', data.error);
+        setMetaPages([]);
+      }
+    } catch (err: any) {
+      console.error('Error loading Meta pages:', err);
+      setMetaPages([]);
+    } finally {
+      setLoadingMetaPages(false);
+    }
+  };
+
+  // Load Identities for a TikTok account
+  const loadTiktokIdentities = async (accountId: string) => {
+    if (!accountId) {
+      setTiktokIdentities([]);
+      return;
+    }
+
+    setLoadingTiktokIdentities(true);
+    try {
+      const res = await fetch(`/api/accounts/${accountId}/identities`);
+      const data = await res.json();
+      if (data.success) {
+        setTiktokIdentities(data.data || []);
+      } else {
+        console.error('Error loading TikTok identities:', data.error);
+        setTiktokIdentities([]);
+      }
+    } catch (err: any) {
+      console.error('Error loading TikTok identities:', err);
+      setTiktokIdentities([]);
+    } finally {
+      setLoadingTiktokIdentities(false);
+    }
+  };
+
   const handleInputChange = (field: string, value: any) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
   const addPlatform = (platform: 'META' | 'TIKTOK') => {
+    // Default to tomorrow at 6:00 AM UTC
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(6, 0, 0, 0);
+    const defaultDateTime = tomorrow.toISOString().slice(0, 16); // Format: YYYY-MM-DDTHH:mm
+
     const newPlatform: PlatformConfig = {
       platform,
       performanceGoal: platform === 'META' ? 'Lead Generation' : 'Lead Generation',
       budget: '100',
-      startDate: new Date().toISOString().split('T')[0],
+      startDateTime: defaultDateTime,
       generateWithAI: true,
       specialAdCategories: [],
     };
@@ -416,12 +500,37 @@ export default function CampaignWizard() {
     }));
   };
 
+  // Helper para agregar logs
+  const addLog = (message: string, status: LaunchLog['status'] = 'in_progress') => {
+    const log: LaunchLog = {
+      id: `${Date.now()}-${Math.random()}`,
+      message,
+      status,
+      timestamp: new Date(),
+    };
+    setLaunchLogs(prev => [...prev, log]);
+    return log.id;
+  };
+
+  // Helper para actualizar el status de un log
+  const updateLogStatus = (logId: string, status: LaunchLog['status']) => {
+    setLaunchLogs(prev => prev.map(log =>
+      log.id === logId ? { ...log, status } : log
+    ));
+  };
+
   const handleSubmit = async () => {
     setLoading(true);
     setError(null);
+    setIsLaunching(true);
+    setLaunchLogs([]);
+    setLaunchComplete(false);
+    setLaunchSuccess(false);
 
     try {
       // STEP 1: Create campaign
+      const logId1 = addLog('Creando campaña en base de datos...');
+
       const res = await fetch('/api/campaigns', {
         method: 'POST',
         headers: {
@@ -433,11 +542,16 @@ export default function CampaignWizard() {
       const data = await res.json();
 
       if (!data.success) {
-        setError(data.error || 'Error creating campaign');
+        updateLogStatus(logId1, 'error');
+        addLog(`Error: ${data.error || 'Error creating campaign'}`, 'error');
+        setLaunchComplete(true);
+        setLaunchSuccess(false);
         return;
       }
 
+      updateLogStatus(logId1, 'success');
       const campaignId = data.data.campaignId;
+      setLaunchedCampaignId(campaignId);
 
       // STEP 2: Upload manual files (if any)
       const tempFiles = (window as any).__tempFiles || {};
@@ -561,32 +675,53 @@ export default function CampaignWizard() {
         }
 
         console.log(`[Wizard] ✅ All ${fileIds.length} files uploaded successfully`);
-
-        // STEP 3: Launch campaign to platforms (now that media is uploaded)
-        console.log(`[Wizard] Launching campaign ${campaignId} to platforms...`);
-
-        const launchRes = await fetch(`/api/campaigns/${campaignId}/launch`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        });
-
-        const launchData = await launchRes.json();
-
-        if (!launchData.success) {
-          console.error(`[Wizard] Failed to launch campaign:`, launchData.error);
-          setError(`Failed to launch campaign: ${launchData.error}`);
-          return;
-        }
-
-        console.log(`[Wizard] ✅ Campaign launched successfully to platforms`);
       }
 
-      // STEP 4: Redirect to campaign page
-      router.push(`/campaigns/${campaignId}`);
+      // STEP 3: Launch campaign to platforms
+      const logId2 = addLog('Lanzando campaña a las plataformas...');
+
+      const launchRes = await fetch(`/api/campaigns/${campaignId}/launch`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const launchData = await launchRes.json();
+
+      if (!launchData.success) {
+        updateLogStatus(logId2, 'error');
+        addLog(`Error: ${launchData.error}`, 'error');
+        setLaunchComplete(true);
+        setLaunchSuccess(false);
+        return;
+      }
+
+      updateLogStatus(logId2, 'success');
+
+      // Mostrar detalles del lanzamiento
+      if (launchData.data?.tonicCampaignId) {
+        addLog(`Tonic: Campaña creada (ID: ${launchData.data.tonicCampaignId})`, 'success');
+      }
+
+      if (launchData.data?.platforms) {
+        for (const platform of launchData.data.platforms) {
+          if (platform.success) {
+            addLog(`${platform.platform}: Campaña creada exitosamente`, 'success');
+          } else {
+            addLog(`${platform.platform}: Error - ${platform.error || 'Unknown error'}`, 'error');
+          }
+        }
+      }
+
+      addLog('¡Campaña lanzada exitosamente!', 'success');
+      setLaunchComplete(true);
+      setLaunchSuccess(true);
+
     } catch (err: any) {
-      setError(err.message);
+      addLog(`Error inesperado: ${err.message}`, 'error');
+      setLaunchComplete(true);
+      setLaunchSuccess(false);
     } finally {
       setLoading(false);
     }
@@ -910,9 +1045,19 @@ export default function CampaignWizard() {
                       </label>
                       <select
                         value={platform.accountId || ''}
-                        onChange={(e) =>
-                          updatePlatform(index, 'accountId', e.target.value)
-                        }
+                        onChange={(e) => {
+                          const accountId = e.target.value;
+                          updatePlatform(index, 'accountId', accountId);
+                          // Clear and reload Fan Pages or Identities when account changes
+                          if (platform.platform === 'META') {
+                            updatePlatform(index, 'metaPageId', '');
+                            loadMetaPages(accountId);
+                          } else if (platform.platform === 'TIKTOK') {
+                            updatePlatform(index, 'tiktokIdentityId', '');
+                            updatePlatform(index, 'tiktokIdentityType', '');
+                            loadTiktokIdentities(accountId);
+                          }
+                        }}
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                         required
                       >
@@ -934,6 +1079,68 @@ export default function CampaignWizard() {
                           ))}
                       </select>
                     </div>
+
+                    {/* Fan Page Selector for Meta */}
+                    {platform.platform === 'META' && platform.accountId && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Facebook Fan Page *
+                        </label>
+                        {loadingMetaPages ? (
+                          <div className="text-sm text-gray-500 py-2">Loading Fan Pages...</div>
+                        ) : (
+                          <select
+                            value={platform.metaPageId || ''}
+                            onChange={(e) => updatePlatform(index, 'metaPageId', e.target.value)}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                            required
+                          >
+                            <option value="">Select a Fan Page...</option>
+                            {metaPages.map((page) => (
+                              <option key={page.id} value={page.id}>
+                                {page.name}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        <p className="text-xs text-gray-500 mt-1">
+                          The Facebook Page to use for Instagram placements.
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Identity Selector for TikTok */}
+                    {platform.platform === 'TIKTOK' && platform.accountId && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          TikTok Identity *
+                        </label>
+                        {loadingTiktokIdentities ? (
+                          <div className="text-sm text-gray-500 py-2">Loading Identities...</div>
+                        ) : (
+                          <select
+                            value={platform.tiktokIdentityId || ''}
+                            onChange={(e) => {
+                              const selectedIdentity = tiktokIdentities.find(i => i.id === e.target.value);
+                              updatePlatform(index, 'tiktokIdentityId', e.target.value);
+                              updatePlatform(index, 'tiktokIdentityType', selectedIdentity?.type || 'CUSTOMIZED_USER');
+                            }}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                            required
+                          >
+                            <option value="">Select an Identity...</option>
+                            {tiktokIdentities.map((identity) => (
+                              <option key={identity.id} value={identity.id}>
+                                {identity.name} ({identity.type})
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        <p className="text-xs text-gray-500 mt-1">
+                          The TikTok account to display in ads.
+                        </p>
+                      </div>
+                    )}
 
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -997,17 +1204,20 @@ export default function CampaignWizard() {
 
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Start Date
+                        Start Date & Time (UTC)
                       </label>
                       <input
-                        type="date"
-                        value={platform.startDate}
+                        type="datetime-local"
+                        value={platform.startDateTime}
                         onChange={(e) =>
-                          updatePlatform(index, 'startDate', e.target.value)
+                          updatePlatform(index, 'startDateTime', e.target.value)
                         }
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                         required
                       />
+                      <p className="text-xs text-gray-500 mt-1">
+                        Schedule when the campaign should start. Time is in UTC.
+                      </p>
                     </div>
 
                     <div className="flex items-center">
@@ -1401,6 +1611,14 @@ export default function CampaignWizard() {
                   (step === 2 &&
                     (formData.platforms.length === 0 ||
                       formData.platforms.some((p) => !p.accountId) ||
+                      // Meta requires Fan Page selection
+                      formData.platforms.some((p) =>
+                        p.platform === 'META' && !p.metaPageId
+                      ) ||
+                      // TikTok requires Identity selection
+                      formData.platforms.some((p) =>
+                        p.platform === 'TIKTOK' && !p.tiktokIdentityId
+                      ) ||
                       // Meta videos must have thumbnails
                       formData.platforms.some((p) =>
                         p.platform === 'META' &&
@@ -1452,6 +1670,82 @@ export default function CampaignWizard() {
           </div>
         </div>
       </div>
-    </div >
+
+      {/* Modal de logs durante el lanzamiento */}
+      {isLaunching && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-2xl max-w-lg w-full mx-4 max-h-[80vh] overflow-hidden">
+            {/* Header */}
+            <div className={`p-4 ${launchComplete ? (launchSuccess ? 'bg-green-600' : 'bg-red-600') : 'bg-blue-600'} text-white`}>
+              <h3 className="text-lg font-bold flex items-center gap-2">
+                {launchComplete ? (
+                  launchSuccess ? (
+                    <><span>✅</span> Lanzamiento Completado</>
+                  ) : (
+                    <><span>❌</span> Error en el Lanzamiento</>
+                  )
+                ) : (
+                  <><span className="animate-spin">⚙️</span> Lanzando Campaña...</>
+                )}
+              </h3>
+            </div>
+
+            {/* Logs */}
+            <div className="p-4 max-h-[50vh] overflow-y-auto">
+              <div className="space-y-2">
+                {launchLogs.map((log) => (
+                  <div
+                    key={log.id}
+                    className={`flex items-start gap-2 p-2 rounded ${
+                      log.status === 'error'
+                        ? 'bg-red-50 text-red-800'
+                        : log.status === 'success'
+                          ? 'bg-green-50 text-green-800'
+                          : 'bg-blue-50 text-blue-800'
+                    }`}
+                  >
+                    <span className="flex-shrink-0">
+                      {log.status === 'in_progress' && <span className="animate-spin inline-block">⏳</span>}
+                      {log.status === 'success' && '✅'}
+                      {log.status === 'error' && '❌'}
+                      {log.status === 'pending' && '⏳'}
+                    </span>
+                    <span className="text-sm">{log.message}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Footer con botones */}
+            {launchComplete && (
+              <div className="p-4 border-t bg-gray-50 flex gap-3">
+                <button
+                  onClick={() => {
+                    setIsLaunching(false);
+                    router.push('/campaigns');
+                  }}
+                  className="flex-1 px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 font-medium"
+                >
+                  Ver Campañas
+                </button>
+                {launchedCampaignId && (
+                  <button
+                    onClick={() => {
+                      setIsLaunching(false);
+                      router.push(`/campaigns/${launchedCampaignId}`);
+                    }}
+                    className={`flex-1 px-4 py-2 rounded-lg font-medium text-white ${
+                      launchSuccess ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'
+                    }`}
+                  >
+                    Ver Detalles
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

@@ -66,10 +66,10 @@ async function fetchAndUpdatePixels() {
                 const globalSettings = await prisma.globalSettings.findUnique({
                     where: { id: 'global-settings' },
                 });
-                accessToken = globalSettings?.tiktokAccessToken;
+                accessToken = globalSettings?.tiktokAccessToken ?? null;
 
                 if (!accessToken) {
-                    accessToken = process.env.TIKTOK_ACCESS_TOKEN;
+                    accessToken = process.env.TIKTOK_ACCESS_TOKEN ?? null;
                 }
 
                 if (accessToken) {

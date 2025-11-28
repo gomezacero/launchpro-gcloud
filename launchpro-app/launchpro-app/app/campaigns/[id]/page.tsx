@@ -19,6 +19,13 @@ interface Campaign {
   createdAt: string;
   updatedAt: string;
   launchedAt: string | null;
+  errorDetails?: {
+    step: string;
+    message: string;
+    timestamp: string;
+    platform?: string;
+    technicalDetails?: string;
+  };
   offer: {
     name: string;
     vertical: string;
@@ -50,6 +57,7 @@ export default function CampaignDetailPage() {
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
 
   useEffect(() => {
     async function fetchCampaign() {
@@ -177,6 +185,60 @@ export default function CampaignDetailPage() {
             </div>
           </div>
         </div>
+
+        {/* Error Details Section - Only shown when campaign failed */}
+        {campaign.status === 'FAILED' && campaign.errorDetails && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-6 mb-6">
+            <h2 className="text-xl font-bold text-red-800 mb-4 flex items-center gap-2">
+              <span className="text-2xl">⚠️</span>
+              Error en la Campaña
+            </h2>
+
+            <div className="space-y-3">
+              <div className="flex items-start gap-3">
+                <span className="text-red-600 font-medium min-w-[100px]">Paso:</span>
+                <span className="text-red-800">{campaign.errorDetails.step}</span>
+              </div>
+
+              <div className="flex items-start gap-3">
+                <span className="text-red-600 font-medium min-w-[100px]">Mensaje:</span>
+                <span className="text-red-800">{campaign.errorDetails.message}</span>
+              </div>
+
+              {campaign.errorDetails.platform && (
+                <div className="flex items-start gap-3">
+                  <span className="text-red-600 font-medium min-w-[100px]">Plataforma:</span>
+                  <span className="text-red-800">{campaign.errorDetails.platform}</span>
+                </div>
+              )}
+
+              <div className="flex items-start gap-3">
+                <span className="text-red-600 font-medium min-w-[100px]">Fecha:</span>
+                <span className="text-red-800">
+                  {new Date(campaign.errorDetails.timestamp).toLocaleString()}
+                </span>
+              </div>
+
+              {campaign.errorDetails.technicalDetails && (
+                <div className="mt-4 pt-4 border-t border-red-200">
+                  <button
+                    onClick={() => setShowTechnicalDetails(!showTechnicalDetails)}
+                    className="text-red-700 hover:text-red-900 font-medium flex items-center gap-2"
+                  >
+                    <span>{showTechnicalDetails ? '▼' : '▶'}</span>
+                    {showTechnicalDetails ? 'Ocultar' : 'Mostrar'} detalles técnicos
+                  </button>
+
+                  {showTechnicalDetails && (
+                    <pre className="mt-3 p-4 bg-red-100 rounded-lg text-xs text-red-900 overflow-x-auto whitespace-pre-wrap font-mono">
+                      {campaign.errorDetails.technicalDetails}
+                    </pre>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Tonic Info */}
         <div className="bg-white shadow rounded-lg p-6 mb-6">

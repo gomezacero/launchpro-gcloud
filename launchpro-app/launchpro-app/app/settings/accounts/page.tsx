@@ -215,8 +215,8 @@ export default function AccountsPage() {
                             <>
                               <td className="px-6 py-4">
                                 <code className="text-xs bg-gray-100 px-2 py-1 rounded">
-                                  {account.tonicApiKey
-                                    ? `${account.tonicApiKey.slice(0, 8)}...`
+                                  {account.tonicConsumerKey
+                                    ? `${account.tonicConsumerKey.slice(0, 8)}...`
                                     : 'Not configured'}
                                 </code>
                               </td>

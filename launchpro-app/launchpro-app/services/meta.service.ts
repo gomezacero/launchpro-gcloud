@@ -775,15 +775,18 @@ class MetaService {
 
   /**
    * Get pages accessible by the access token
+   * @param accessToken Optional access token to use instead of the default
+   * @returns Array of pages with id, name, and access_token
    */
-  async getPages() {
-    const response = await this.client.get('/me/accounts', {
+  async getPages(accessToken?: string): Promise<{ id: string; name: string; access_token?: string }[]> {
+    const client = this.getClient(accessToken);
+    const response = await client.get('/me/accounts', {
       params: {
         fields: 'id,name,access_token,instagram_business_account',
       },
     });
 
-    return response.data;
+    return response.data?.data || [];
   }
 
   /**
@@ -797,26 +800,6 @@ class MetaService {
     });
 
     return response.data;
-  }
-
-  /**
-   * Get Page Access Token for a specific page
-   * Required for certain page-level operations like page_backed_instagram_accounts
-   */
-  async getPageAccessToken(pageId: string, userAccessToken?: string): Promise<string | null> {
-    try {
-      const client = this.getClient(userAccessToken);
-      const response = await client.get(`/${pageId}`, {
-        params: {
-          fields: 'access_token',
-        },
-      });
-
-      return response.data?.access_token || null;
-    } catch (error: any) {
-      console.error('[META] Failed to get Page Access Token:', error.response?.data?.error || error.message);
-      return null;
-    }
   }
 
 }

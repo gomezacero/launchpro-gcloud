@@ -135,6 +135,9 @@ model Campaign {
   tonicArticleId    String?
   tonicTrackingLink String?
 
+  // Error details (when status is FAILED)
+  errorDetails      Json?              // { step, message, timestamp, platform?, technicalDetails? }
+
   // Metadata
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt

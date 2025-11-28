@@ -8,10 +8,10 @@ import { tiktokService } from '@/services/tiktok.service';
  */
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
+    const { id } = await params;
 
     // Fetch the account
     const account = await prisma.account.findUnique({
