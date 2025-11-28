@@ -629,6 +629,80 @@ class MetaService {
   }
 
   // ============================================
+  // INSTAGRAM IDENTITY
+  // ============================================
+
+  /**
+   * Get Page Access Token from User Access Token
+   * Required for certain page-level endpoints like page_backed_instagram_accounts
+   */
+  async getPageAccessToken(pageId: string, userAccessToken?: string): Promise<string | null> {
+    try {
+      const client = this.getClient(userAccessToken);
+      const response = await client.get(`/${pageId}`, {
+        params: {
+          fields: 'access_token',
+        },
+      });
+
+      if (response.data?.access_token) {
+        console.log(`[META] ✅ Got Page Access Token for page ${pageId}`);
+        return response.data.access_token;
+      }
+
+      console.log(`[META] ⚠️ No Page Access Token returned for page ${pageId}`);
+      return null;
+    } catch (error: any) {
+      console.error(`[META] ❌ Failed to get Page Access Token:`, error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Get the Page-backed Instagram Account ID for a Facebook Page
+   * This is used to set "Use Facebook Page as Instagram" in ads
+   * When a Page doesn't have a linked Instagram account, Meta creates a "shadow" account
+   * that can be used for Instagram ad placements
+   *
+   * IMPORTANT: This endpoint requires a Page Access Token, not a User Access Token
+   */
+  async getPageBackedInstagramAccount(pageId: string, userAccessToken?: string): Promise<string | null> {
+    try {
+      // Step 1: Get Page Access Token (required for this endpoint)
+      const pageAccessToken = await this.getPageAccessToken(pageId, userAccessToken);
+
+      if (!pageAccessToken) {
+        console.error(`[META] ❌ Cannot get page-backed Instagram account: No Page Access Token available`);
+        console.error(`[META] ℹ️ Make sure the app has 'pages_show_list' and 'pages_read_engagement' permissions`);
+        return null;
+      }
+
+      // Step 2: Use Page Access Token to fetch page_backed_instagram_accounts
+      const client = this.getClient(pageAccessToken);
+      const response = await client.get(`/${pageId}/page_backed_instagram_accounts`, {
+        params: {
+          fields: 'id,username',
+        },
+      });
+
+      if (response.data?.data?.[0]?.id) {
+        console.log(`[META] ✅ Found page-backed Instagram account: ${response.data.data[0].id} (username: ${response.data.data[0].username || 'N/A'})`);
+        return response.data.data[0].id;
+      }
+
+      console.log(`[META] ⚠️ No page-backed Instagram account found for page ${pageId}`);
+      return null;
+    } catch (error: any) {
+      console.error(`[META] ❌ Failed to get page-backed Instagram account:`, error.message);
+      // Log more details if available
+      if (error.response?.data?.error) {
+        console.error(`[META] Error details:`, JSON.stringify(error.response.data.error, null, 2));
+      }
+      return null;
+    }
+  }
+
+  // ============================================
   // INSIGHTS & REPORTING
   // ============================================
 
@@ -745,30 +819,6 @@ class MetaService {
     }
   }
 
-  /**
-   * Get Page-backed Instagram Account
-   * This is the "Use Facebook Page" option when no Instagram Business account is connected
-   * IMPORTANT: This endpoint requires a Page Access Token, not a User Access Token
-   * See: https://developers.facebook.com/docs/marketing-api/reference/page/page_backed_instagram_accounts
-   */
-  async getPageBackedInstagramAccount(pageId: string, userAccessToken?: string) {
-    // First, get the Page Access Token (required for this endpoint)
-    const pageAccessToken = await this.getPageAccessToken(pageId, userAccessToken);
-
-    if (!pageAccessToken) {
-      throw new Error('Unable to obtain Page Access Token. Ensure the app has pages_read_engagement permission.');
-    }
-
-    // Use Page Access Token to fetch page_backed_instagram_accounts
-    const client = this.getClient(pageAccessToken);
-    const response = await client.get(`/${pageId}/page_backed_instagram_accounts`, {
-      params: {
-        fields: 'id,username,profile_pic',
-      },
-    });
-
-    return response.data;
-  }
 }
 
 // Export singleton instance

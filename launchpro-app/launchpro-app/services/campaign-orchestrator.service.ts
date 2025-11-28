@@ -1416,25 +1416,28 @@ class CampaignOrchestratorService {
     logger.info('meta', `campaign.language raw value: "${campaign.language}"`);
     logger.info('meta', `campaign.language type: ${typeof campaign.language}`);
 
-    // Meta Locale IDs for targeting:
-    // For Spanish, we use multiple locale IDs to ensure Meta recognizes the targeting:
-    // 6 = Spanish (All), 23 = Spanish (Latin America), 24 = Spanish (Spain)
-    // Reference: https://developers.facebook.com/docs/marketing-api/audiences/reference/targeting-search/
+    // Meta Locale IDs for targeting (verified via Ads Manager):
+    // 6 = English (UK), 23 = Spanish, 24 = English (US)
+    // IMPORTANTE: Usar UN SOLO ID por idioma para evitar mezclar idiomas
     const localeMap: Record<string, number[]> = {
-      'es': [6, 23, 24], // Spanish - include all Spanish variants
-      'en': [1001], // English (US)
-      'pt': [1002], // Portuguese (Brazil)
-      'fr': [9], // French (All)
-      'de': [7], // German (All)
-      // Full names (from dropdown)
-      'español': [6, 23, 24], // Spanish - include all Spanish variants
-      'spanish': [6, 23, 24], // Spanish - include all Spanish variants
-      'english': [1001],
-      'inglés': [1001],
-      'portuguese': [1002],
-      'portugués': [1002],
+      // Español - SOLO ID 23
+      'es': [23],
+      'español': [23],
+      'spanish': [23],
+      // Inglés (EE.UU.) - ID 24
+      'en': [24],
+      'english': [24],
+      'inglés': [24],
+      // Portugués
+      'pt': [10],
+      'portuguese': [10],
+      'portugués': [10],
+      // Francés
+      'fr': [9],
       'french': [9],
       'francés': [9],
+      // Alemán
+      'de': [7],
       'german': [7],
       'alemán': [7],
     };
@@ -1611,9 +1614,22 @@ class CampaignOrchestratorService {
       throw new Error(`Meta Page ID not found for account ${metaAccount.name}.Please configure it in the Account settings.`);
     }
 
-    // Instagram Identity: Not specifying any Instagram ID
-    // Meta will automatically use "Use Facebook Page as Instagram" option
-    logger.info('meta', `Instagram identity: Using Facebook Page as Instagram (no instagram_user_id specified)`);
+    // Get Instagram actor ID for "Use Facebook Page as Instagram" option
+    // This is required to properly set the Instagram identity in ads
+    let instagramActorId: string | null = null;
+    try {
+      instagramActorId = await metaService.getPageBackedInstagramAccount(
+        metaAccount.metaPageId!,
+        accessToken
+      );
+      if (instagramActorId) {
+        logger.info('meta', `✅ Got Instagram actor ID: ${instagramActorId}`);
+      } else {
+        logger.warn('meta', `⚠️ No page-backed Instagram account found for page ${metaAccount.metaPageId}. Instagram identity will be empty.`);
+      }
+    } catch (error: any) {
+      logger.warn('meta', `Failed to get Instagram actor ID: ${error.message}. Continuing without it.`);
+    }
 
     // FORMAT TONIC LINK
     const finalLink = this.formatTonicLink(
@@ -1651,6 +1667,7 @@ class CampaignOrchestratorService {
         name: `${campaign.name} - Video Creative`,
         object_story_spec: {
           page_id: metaAccount.metaPageId,
+          ...(instagramActorId && { instagram_user_id: instagramActorId }),
           video_data: {
             video_id: videoId!,
             image_hash: imageHash!,
@@ -1695,6 +1712,7 @@ class CampaignOrchestratorService {
         name: `${campaign.name} - Carousel Creative`,
         object_story_spec: {
           page_id: metaAccount.metaPageId,
+          ...(instagramActorId && { instagram_user_id: instagramActorId }),
           link_data: {
             link: finalLink,
             message: adCopy.primaryText,
@@ -1771,6 +1789,7 @@ class CampaignOrchestratorService {
           name: `${campaign.name} - Video Creative ${idx + 1}`,
           object_story_spec: {
             page_id: metaAccount.metaPageId,
+            ...(instagramActorId && { instagram_user_id: instagramActorId }),
             video_data: {
               video_id: uploadedVideoId,
               image_hash: thumbHash,
@@ -1817,6 +1836,7 @@ class CampaignOrchestratorService {
           name: `${campaign.name} - Creative ${idx + 1}`,
           object_story_spec: {
             page_id: metaAccount.metaPageId,
+            ...(instagramActorId && { instagram_user_id: instagramActorId }),
             link_data: {
               link: finalLink,
               message: adCopy.primaryText,
@@ -1857,6 +1877,7 @@ class CampaignOrchestratorService {
         name: `${campaign.name} - Creative`,
         object_story_spec: {
           page_id: metaAccount.metaPageId,
+          ...(instagramActorId && { instagram_user_id: instagramActorId }),
           link_data: {
             link: finalLink,
             message: adCopy.primaryText,
