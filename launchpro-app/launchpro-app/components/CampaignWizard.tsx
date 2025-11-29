@@ -75,6 +75,9 @@ export default function CampaignWizard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Unique session ID to namespace temp files (prevents race conditions when creating multiple campaigns)
+  const [wizardSessionId, setWizardSessionId] = useState(() => `wizard-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`);
+
   // Estado para logs inline durante el lanzamiento
   const [isLaunching, setIsLaunching] = useState(false);
   const [launchLogs, setLaunchLogs] = useState<LaunchLog[]>([]);
@@ -119,6 +122,45 @@ export default function CampaignWizard() {
   // Local state for text inputs that need onBlur conversion
   const [keywordsText, setKeywordsText] = useState('');
   const [contentPhrasesText, setContentPhrasesText] = useState('');
+
+  // Helper functions to manage namespaced temp files (prevents race conditions)
+  const getTempFilesNamespace = () => {
+    if (!(window as any).__tempFiles) {
+      (window as any).__tempFiles = {};
+    }
+    if (!(window as any).__tempFiles[wizardSessionId]) {
+      (window as any).__tempFiles[wizardSessionId] = {};
+    }
+    return (window as any).__tempFiles[wizardSessionId];
+  };
+
+  const setTempFile = (fileId: string, file: File) => {
+    const namespace = getTempFilesNamespace();
+    namespace[fileId] = file;
+  };
+
+  const getTempFile = (fileId: string): File | undefined => {
+    const namespace = getTempFilesNamespace();
+    return namespace[fileId];
+  };
+
+  const deleteTempFile = (fileId: string) => {
+    const namespace = getTempFilesNamespace();
+    if (namespace[fileId]) {
+      delete namespace[fileId];
+    }
+  };
+
+  const getAllTempFileIds = (): string[] => {
+    const namespace = getTempFilesNamespace();
+    return Object.keys(namespace);
+  };
+
+  const clearTempFilesNamespace = () => {
+    if ((window as any).__tempFiles && (window as any).__tempFiles[wizardSessionId]) {
+      delete (window as any).__tempFiles[wizardSessionId];
+    }
+  };
 
   // Load offers and accounts on mount
   useEffect(() => {
@@ -354,11 +396,8 @@ export default function CampaignWizard() {
 
         uploadedFiles.push(tempFile);
 
-        // Store the actual File object for later upload
-        if (!(window as any).__tempFiles) {
-          (window as any).__tempFiles = {};
-        }
-        (window as any).__tempFiles[tempFile.id] = file;
+        // Store the actual File object for later upload (namespaced by session)
+        setTempFile(tempFile.id, file);
       }
 
       // Update platform with uploaded files
@@ -389,10 +428,10 @@ export default function CampaignWizard() {
    * Remove uploaded file from platform
    */
   const removeFile = (platformIndex: number, fileId: string, mediaType: 'IMAGE' | 'VIDEO') => {
-    // Clean up temporary file
-    if ((window as any).__tempFiles && (window as any).__tempFiles[fileId]) {
-      URL.revokeObjectURL((window as any).__tempFiles[fileId]);
-      delete (window as any).__tempFiles[fileId];
+    // Clean up temporary file (namespaced by session)
+    const file = getTempFile(fileId);
+    if (file) {
+      deleteTempFile(fileId);
     }
 
     // Update platform
@@ -440,11 +479,8 @@ export default function CampaignWizard() {
     const thumbnailId = `thumb-${Date.now()}-${Math.random()}`;
     const thumbnailUrl = URL.createObjectURL(file);
 
-    // Store the actual File object for later upload
-    if (!(window as any).__tempFiles) {
-      (window as any).__tempFiles = {};
-    }
-    (window as any).__tempFiles[thumbnailId] = file;
+    // Store the actual File object for later upload (namespaced by session)
+    setTempFile(thumbnailId, file);
 
     // Update the video with thumbnail info
     setFormData((prev) => ({
@@ -472,11 +508,8 @@ export default function CampaignWizard() {
    * Remove thumbnail from a video
    */
   const removeThumbnail = (platformIndex: number, videoId: string, thumbnailId: string) => {
-    // Clean up temporary file
-    if ((window as any).__tempFiles && (window as any).__tempFiles[thumbnailId]) {
-      URL.revokeObjectURL((window as any).__tempFiles[thumbnailId]);
-      delete (window as any).__tempFiles[thumbnailId];
-    }
+    // Clean up temporary file (namespaced by session)
+    deleteTempFile(thumbnailId);
 
     // Update the video to remove thumbnail
     setFormData((prev) => ({
@@ -563,19 +596,19 @@ export default function CampaignWizard() {
         addLog('El sistema la procesará automáticamente en unos minutos.', 'success');
       }
 
-      // STEP 2: Upload manual files (if any)
-      const tempFiles = (window as any).__tempFiles || {};
-      const fileIds = Object.keys(tempFiles);
+      // STEP 2: Upload manual files (if any) - uses namespaced temp files to prevent race conditions
+      const fileIds = getAllTempFileIds();
 
       if (fileIds.length > 0) {
-        console.log(`[Wizard] Uploading ${fileIds.length} manual files to campaign ${campaignId}...`);
+        console.log(`[Wizard] Uploading ${fileIds.length} manual files to campaign ${campaignId} (session: ${wizardSessionId})...`);
 
         // Track uploaded media IDs for linking thumbnails to videos
         const uploadedMediaMap: Record<string, string> = {}; // tempFileId -> serverMediaId
 
         // First pass: Upload all files (images and videos)
         for (const fileId of fileIds) {
-          const file = tempFiles[fileId];
+          const file = getTempFile(fileId);
+          if (!file) continue;
 
           // Skip thumbnails in first pass - they start with 'thumb-'
           if (fileId.startsWith('thumb-')) continue;
@@ -626,7 +659,8 @@ export default function CampaignWizard() {
         for (const fileId of fileIds) {
           if (!fileId.startsWith('thumb-')) continue;
 
-          const thumbnailFile = tempFiles[fileId];
+          const thumbnailFile = getTempFile(fileId);
+          if (!thumbnailFile) continue;
 
           // Find the video this thumbnail belongs to
           let videoInfo: { videoTempId: string; platform: string } | null = null;
@@ -676,15 +710,10 @@ export default function CampaignWizard() {
           }
         }
 
-        // Clean up temp files
-        for (const fileId of fileIds) {
-          if (tempFiles[fileId] && typeof tempFiles[fileId] === 'object' && 'name' in tempFiles[fileId]) {
-            URL.revokeObjectURL(URL.createObjectURL(tempFiles[fileId]));
-          }
-          delete tempFiles[fileId];
-        }
+        // Clean up temp files for this session only
+        clearTempFilesNamespace();
 
-        console.log(`[Wizard] ✅ All ${fileIds.length} files uploaded successfully`);
+        console.log(`[Wizard] ✅ All ${fileIds.length} files uploaded successfully (session: ${wizardSessionId})`);
         addLog('Archivos subidos correctamente.', 'success');
       }
 
@@ -1761,6 +1790,8 @@ export default function CampaignWizard() {
                     setKeywordsText('');
                     setContentPhrasesText('');
                     setError(null);
+                    // Generate new session ID for next campaign (prevents race conditions)
+                    setWizardSessionId(`wizard-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`);
                   }}
                   className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
                 >
