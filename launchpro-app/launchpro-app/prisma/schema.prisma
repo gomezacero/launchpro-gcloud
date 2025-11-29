@@ -197,6 +197,11 @@ model CampaignPlatform {
   // Manual Ad Copy (for TikTok)
   manualTiktokAdText String?  // Ad text/title for TikTok ads (optional, uses AI if empty)
 
+  // User-selected Fan Page/Identity (for wizard selection)
+  metaPageId         String?  // Facebook Fan Page ID selected by user in wizard
+  tiktokIdentityId   String?  // TikTok Identity ID selected by user in wizard
+  tiktokIdentityType String?  // TikTok Identity type (CUSTOMIZED_USER, BC_OWNED, etc.)
+
   // Platform-specific IDs after launch
   metaCampaignId     String?
   metaAdSetId        String?

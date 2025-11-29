@@ -68,12 +68,19 @@ export interface CreateCampaignParams {
     startDate: Date;
     generateWithAI: boolean; // Generate images/videos with AI?
     specialAdCategories?: string[];
+    // Fan Page for Meta (user selected in wizard)
+    metaPageId?: string;
+    // Identity for TikTok (user selected in wizard)
+    tiktokIdentityId?: string;
+    tiktokIdentityType?: string;
     // Manual Ad Copy (Meta only)
     manualAdCopy?: {
       adTitle?: string;
       description?: string;
       primaryText?: string;
     };
+    // Manual Ad Copy (TikTok only)
+    manualTiktokAdText?: string;
   }[];
 
   // Manual keywords (optional, will be AI-generated if not provided)
@@ -259,6 +266,12 @@ class CampaignOrchestratorService {
               manualAdTitle: p.manualAdCopy?.adTitle,
               manualDescription: p.manualAdCopy?.description,
               manualPrimaryText: p.manualAdCopy?.primaryText,
+              // Manual Ad Copy (for TikTok)
+              manualTiktokAdText: p.manualTiktokAdText,
+              // User-selected Fan Page/Identity
+              metaPageId: p.metaPageId,
+              tiktokIdentityId: p.tiktokIdentityId,
+              tiktokIdentityType: p.tiktokIdentityType,
             })),
           },
         },
@@ -1661,26 +1674,33 @@ class CampaignOrchestratorService {
     }
 
     // Create Ad Creative (according to Meta Ads API)
-    // Use the Page ID from the Account settings
-    if (!metaAccount.metaPageId) {
-      throw new Error(`Meta Page ID not found for account ${metaAccount.name}.Please configure it in the Account settings.`);
+    // Use the Page ID selected by user in wizard, or fall back to account default
+    const effectivePageId = platformConfig.metaPageId || metaAccount.metaPageId;
+    if (!effectivePageId) {
+      throw new Error(`Meta Page ID not found. Please select a Fan Page in the wizard or configure it in Account settings.`);
     }
+    logger.info('meta', `Using Fan Page ID: ${effectivePageId} (user-selected: ${!!platformConfig.metaPageId})`);
 
     // Get Instagram actor ID for "Use Facebook Page as Instagram" option
     // This is required to properly set the Instagram identity in ads
+    // IMPORTANT: Use the SAME page ID that was selected by the user
+    // NOTE: Page-backed Instagram accounts are special - they represent "Use Facebook Page as Instagram"
+    // and always work if you have access to the Fan Page. They do NOT need verification against
+    // /instagram_accounts because they are not real Instagram accounts.
     let instagramActorId: string | null = null;
     try {
       instagramActorId = await metaService.getPageBackedInstagramAccount(
-        metaAccount.metaPageId!,
+        effectivePageId,
         accessToken
       );
       if (instagramActorId) {
-        logger.info('meta', `✅ Got Instagram actor ID: ${instagramActorId}`);
+        logger.info('meta', `✅ Got page-backed Instagram actor ID: ${instagramActorId} for page ${effectivePageId}`);
+        logger.info('meta', `ℹ️ This represents "Use Facebook Page as Instagram" option`);
       } else {
-        logger.warn('meta', `⚠️ No page-backed Instagram account found for page ${metaAccount.metaPageId}. Instagram identity will be empty.`);
+        logger.warn('meta', `⚠️ No page-backed Instagram account found for page ${effectivePageId}. Instagram identity will be empty.`);
       }
     } catch (error: any) {
-      logger.warn('meta', `Failed to get Instagram actor ID: ${error.message}. Continuing without it.`);
+      logger.warn('meta', `Failed to get Instagram actor ID for page ${effectivePageId}: ${error.message}. Continuing without it.`);
     }
 
     // FORMAT TONIC LINK
@@ -1718,7 +1738,7 @@ class CampaignOrchestratorService {
       creative = await metaService.createAdCreative({
         name: `${campaign.name} - Video Creative`,
         object_story_spec: {
-          page_id: platformConfig.metaPageId || metaAccount.metaPageId,
+          page_id: effectivePageId,
           ...(instagramActorId && { instagram_user_id: instagramActorId }),
           video_data: {
             video_id: videoId!,
@@ -1763,7 +1783,7 @@ class CampaignOrchestratorService {
       creative = await metaService.createAdCreative({
         name: `${campaign.name} - Carousel Creative`,
         object_story_spec: {
-          page_id: platformConfig.metaPageId || metaAccount.metaPageId,
+          page_id: effectivePageId,
           ...(instagramActorId && { instagram_user_id: instagramActorId }),
           link_data: {
             link: finalLink,
@@ -1840,7 +1860,7 @@ class CampaignOrchestratorService {
         const videoCreative = await metaService.createAdCreative({
           name: `${campaign.name} - Video Creative ${idx + 1}`,
           object_story_spec: {
-            page_id: platformConfig.metaPageId || metaAccount.metaPageId,
+            page_id: effectivePageId,
             ...(instagramActorId && { instagram_user_id: instagramActorId }),
             video_data: {
               video_id: uploadedVideoId,
@@ -1887,7 +1907,7 @@ class CampaignOrchestratorService {
         const imgCreative = await metaService.createAdCreative({
           name: `${campaign.name} - Creative ${idx + 1}`,
           object_story_spec: {
-            page_id: platformConfig.metaPageId || metaAccount.metaPageId,
+            page_id: effectivePageId,
             ...(instagramActorId && { instagram_user_id: instagramActorId }),
             link_data: {
               link: finalLink,
@@ -1928,7 +1948,7 @@ class CampaignOrchestratorService {
       creative = await metaService.createAdCreative({
         name: `${campaign.name} - Creative`,
         object_story_spec: {
-          page_id: platformConfig.metaPageId || metaAccount.metaPageId,
+          page_id: effectivePageId,
           ...(instagramActorId && { instagram_user_id: instagramActorId }),
           link_data: {
             link: finalLink,
@@ -2195,15 +2215,15 @@ class CampaignOrchestratorService {
     });
 
     // Map Age Groups to TikTok Enums
-    // TikTok Age Groups: AGE_13_17, AGE_18_24, AGE_25_34, AGE_35_44, AGE_45_54, AGE_55_64, AGE_65_PLUS
+    // TikTok Age Groups: AGE_13_17, AGE_18_24, AGE_25_34, AGE_35_44, AGE_45_54, AGE_55_100
+    // NOTE: AGE_55_100 covers all users 55 and older (there is no AGE_55_64 or AGE_65_PLUS)
     // Per user request: ALWAYS use ALL age groups EXCEPT AGE_13_17 for widest reach
     const tiktokAgeGroups: string[] = [
       'AGE_18_24',
       'AGE_25_34',
       'AGE_35_44',
       'AGE_45_54',
-      'AGE_55_64',
-      'AGE_65_PLUS'
+      'AGE_55_100'
     ];
     // NOTE: AI-suggested age groups are intentionally NOT used
 
@@ -2614,6 +2634,12 @@ class CampaignOrchestratorService {
               description: platformConfig.manualDescription,
               primaryText: platformConfig.manualPrimaryText,
             },
+            // Manual Ad Copy for TikTok
+            manualTiktokAdText: platformConfig.manualTiktokAdText,
+            // User-selected Fan Page/Identity (loaded from DB)
+            metaPageId: platformConfig.metaPageId,
+            tiktokIdentityId: platformConfig.tiktokIdentityId,
+            tiktokIdentityType: platformConfig.tiktokIdentityType,
           };
 
           if (platformConfig.platform === Platform.META) {

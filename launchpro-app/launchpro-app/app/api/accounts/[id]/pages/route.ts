@@ -70,15 +70,34 @@ export async function GET(
     }
 
     // Fetch pages from Meta API
+    // If we have an Ad Account ID, get pages that can be promoted with that account
+    // This ensures we only show pages the ad account has permission to use
     console.log(`[API] Fetching Fan Pages for account ${account.name}`);
 
-    const pages = await metaService.getPages(accessToken);
+    let pages: { id: string; name: string }[] = [];
+
+    if (account.metaAdAccountId) {
+      // Use the ad account's promote_pages endpoint to get authorized pages
+      console.log(`[API] Using Ad Account ${account.metaAdAccountId} to get authorized pages`);
+      try {
+        pages = await metaService.getPromotePages(account.metaAdAccountId, accessToken);
+        console.log(`[API] Found ${pages.length} authorized page(s) for ad account`);
+      } catch (err: any) {
+        console.warn(`[API] Failed to get promote_pages, falling back to /me/accounts: ${err.message}`);
+        // Fallback to all pages if promote_pages fails
+        pages = await metaService.getPages(accessToken);
+      }
+    } else {
+      // No ad account ID, use fallback to get all accessible pages
+      console.log(`[API] No Ad Account ID, getting all accessible pages`);
+      pages = await metaService.getPages(accessToken);
+    }
 
     if (!pages || pages.length === 0) {
       return NextResponse.json(
         {
           success: false,
-          error: 'No Facebook Pages found for this account. Please ensure the user has admin access to at least one Page.',
+          error: 'No Facebook Pages found for this ad account. Please ensure the ad account has access to at least one Page.',
         },
         { status: 404 }
       );

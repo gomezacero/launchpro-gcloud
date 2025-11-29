@@ -790,6 +790,24 @@ class MetaService {
   }
 
   /**
+   * Get pages that can be promoted by a specific Ad Account
+   * This ensures we only return pages the ad account has permission to use
+   * @param adAccountId The Ad Account ID (e.g., "act_123456789")
+   * @param accessToken Optional access token
+   * @returns Array of pages authorized for this ad account
+   */
+  async getPromotePages(adAccountId: string, accessToken?: string): Promise<{ id: string; name: string }[]> {
+    const client = this.getClient(accessToken);
+    const response = await client.get(`/${adAccountId}/promote_pages`, {
+      params: {
+        fields: 'id,name',
+      },
+    });
+
+    return response.data?.data || [];
+  }
+
+  /**
    * Get Instagram business account
    */
   async getInstagramAccount(pageId: string) {
@@ -800,6 +818,48 @@ class MetaService {
     });
 
     return response.data;
+  }
+
+  /**
+   * Verify if an Ad Account has access to a specific Instagram account
+   * This checks against the ad account's authorized Instagram accounts
+   * @param adAccountId The Ad Account ID (e.g., "act_123456789")
+   * @param instagramAccountId The Instagram Account ID to verify
+   * @param accessToken Optional access token
+   * @returns true if the ad account has access, false otherwise
+   */
+  async verifyInstagramAccess(adAccountId: string, instagramAccountId: string, accessToken?: string): Promise<boolean> {
+    try {
+      const client = this.getClient(accessToken);
+
+      // Get all Instagram accounts the ad account has access to
+      const response = await client.get(`/${adAccountId}/instagram_accounts`, {
+        params: {
+          fields: 'id,username',
+        },
+      });
+
+      const authorizedAccounts = response.data?.data || [];
+
+      // Check if the requested Instagram account is in the authorized list
+      const hasAccess = authorizedAccounts.some((account: { id: string }) => account.id === instagramAccountId);
+
+      if (hasAccess) {
+        console.log(`[META] ✅ Ad account ${adAccountId} has access to Instagram account ${instagramAccountId}`);
+      } else {
+        console.log(`[META] ⚠️ Ad account ${adAccountId} does NOT have access to Instagram account ${instagramAccountId}`);
+        console.log(`[META] ℹ️ Authorized Instagram accounts:`, authorizedAccounts.map((a: { id: string; username?: string }) => `${a.id} (${a.username || 'N/A'})`).join(', ') || 'None');
+      }
+
+      return hasAccess;
+    } catch (error: any) {
+      console.error(`[META] ❌ Failed to verify Instagram access:`, error.message);
+      if (error.response?.data?.error) {
+        console.error(`[META] Error details:`, JSON.stringify(error.response.data.error, null, 2));
+      }
+      // If we can't verify, return false to be safe
+      return false;
+    }
   }
 
 }
