@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { Storage } from '@google-cloud/storage';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { getStorage } from '@/lib/gcs';
 
 /**
  * Upload media files (images/videos) for a campaign
@@ -15,9 +15,7 @@ import { logger } from '@/lib/logger';
  * - Complies with Meta/TikTok format requirements
  */
 
-const storage = new Storage({
-  projectId: env.GCP_PROJECT_ID,
-});
+const storage = getStorage();
 
 // Meta Ads Image Requirements:
 // - Format: JPG, PNG

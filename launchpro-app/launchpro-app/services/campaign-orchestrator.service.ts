@@ -11,6 +11,7 @@ import { waitForTrackingLink, formatPollingTime } from '@/lib/tracking-link-poll
 import { CampaignStatus, Platform, CampaignType, MediaType } from '@prisma/client';
 import { Storage } from '@google-cloud/storage';
 import sharp from 'sharp';
+import { getStorageBucket } from '@/lib/gcs';
 
 
 
@@ -151,7 +152,7 @@ class CampaignOrchestratorService {
         if (m.gcsPath) {
           try {
             // Delete from Google Cloud Storage
-            const bucket = new Storage({ projectId: process.env.GCP_PROJECT_ID }).bucket(process.env.GCP_STORAGE_BUCKET!);
+            const bucket = getStorageBucket();
             await bucket.file(m.gcsPath).delete();
             logger.info('system', `Deleted media file: ${m.gcsPath}`);
           } catch (err: any) {

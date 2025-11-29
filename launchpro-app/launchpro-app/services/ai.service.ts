@@ -4,6 +4,7 @@ import { Storage } from '@google-cloud/storage';
 import { env } from '@/lib/env';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger';
+import { getStorage } from '@/lib/gcs';
 
 /**
  * AI Service
@@ -79,9 +80,7 @@ class AIService {
       apiEndpoint: `${env.GCP_LOCATION}-aiplatform.googleapis.com`,
     });
 
-    this.storage = new Storage({
-      projectId: env.GCP_PROJECT_ID,
-    });
+    this.storage = getStorage();
   }
 
   // ============================================

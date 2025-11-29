@@ -8,6 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import axios from 'axios';
+import { getStorage } from '@/lib/gcs';
 
 // Handle module imports for CommonJS/ESM compatibility
 const ffmpeg = (ffmpegModule as any).default || ffmpegModule;
@@ -79,8 +80,8 @@ class VideoConverterService {
   private bucketName: string;
 
   constructor() {
-    this.storage = new Storage();
-    this.bucketName = process.env.GCS_BUCKET_NAME || 'launchpro-media';
+    this.storage = getStorage();
+    this.bucketName = process.env.GCP_STORAGE_BUCKET || process.env.GCS_BUCKET_NAME || 'launchpro-media';
   }
 
   /**
