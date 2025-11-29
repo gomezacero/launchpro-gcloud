@@ -17,7 +17,7 @@
       "maxDuration": 60
     },
     "app/api/cron/process-campaigns/route.ts": {
-      "maxDuration": 900
+      "maxDuration": 800
     }
   }
 }
