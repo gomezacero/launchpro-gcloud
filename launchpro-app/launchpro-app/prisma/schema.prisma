@@ -304,6 +304,9 @@ model GlobalSettings {
   // Shared TikTok credentials
   tiktokAccessToken       String?  @db.Text
 
+  // Email Notifications
+  notificationEmails      String?  // Comma-separated emails: "manager1@email.com, manager2@email.com"
+
   updatedAt               DateTime @updatedAt
 
   @@map("global_settings")

@@ -240,6 +240,26 @@ export default function CampaignDetailPage() {
           </div>
         )}
 
+        {/* Launching Status - Shown when campaign is being processed */}
+        {campaign.status === 'LAUNCHING' && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-6">
+            <div className="flex items-center gap-4">
+              <div className="animate-spin text-3xl">⚙️</div>
+              <div>
+                <h2 className="text-xl font-bold text-blue-800">
+                  Campaña en Proceso de Lanzamiento
+                </h2>
+                <p className="text-blue-700 mt-1">
+                  Tu campaña se está lanzando en segundo plano. Recibirás una notificación por email cuando esté lista.
+                </p>
+                <p className="text-blue-600 text-sm mt-2">
+                  Puedes cerrar esta página - el proceso continuará automáticamente.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Tonic Info */}
         <div className="bg-white shadow rounded-lg p-6 mb-6">
           <h2 className="text-xl font-bold text-gray-900 mb-4">

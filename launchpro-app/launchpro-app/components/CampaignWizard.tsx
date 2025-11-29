@@ -677,8 +677,8 @@ export default function CampaignWizard() {
         console.log(`[Wizard] ✅ All ${fileIds.length} files uploaded successfully`);
       }
 
-      // STEP 3: Launch campaign to platforms
-      const logId2 = addLog('Lanzando campaña a las plataformas...');
+      // STEP 3: Launch campaign to platforms (this request may take a while)
+      const logId2 = addLog('Lanzando campaña a las plataformas (esto puede tardar varios minutos)...');
 
       const launchRes = await fetch(`/api/campaigns/${campaignId}/launch`, {
         method: 'POST',
@@ -697,26 +697,29 @@ export default function CampaignWizard() {
         return;
       }
 
+      // Campaign launched successfully
       updateLogStatus(logId2, 'success');
 
-      // Mostrar detalles del lanzamiento
-      if (launchData.data?.tonicCampaignId) {
-        addLog(`Tonic: Campaña creada (ID: ${launchData.data.tonicCampaignId})`, 'success');
-      }
-
-      if (launchData.data?.platforms) {
-        for (const platform of launchData.data.platforms) {
-          if (platform.success) {
-            addLog(`${platform.platform}: Campaña creada exitosamente`, 'success');
+      // Show platform results
+      if (launchData.platforms) {
+        for (const p of launchData.platforms) {
+          if (p.success) {
+            addLog(`${p.platform}: Lanzado exitosamente`, 'success');
           } else {
-            addLog(`${platform.platform}: Error - ${platform.error || 'Unknown error'}`, 'error');
+            addLog(`${p.platform}: ${p.error || 'Error desconocido'}`, 'error');
           }
         }
       }
 
-      addLog('¡Campaña lanzada exitosamente!', 'success');
+      const allSuccess = launchData.platforms?.every((p: any) => p.success) ?? true;
+      if (allSuccess) {
+        addLog('¡Campaña lanzada exitosamente en todas las plataformas!', 'success');
+      } else {
+        addLog('Campaña lanzada con algunos errores. Revisa los detalles arriba.', 'error');
+      }
+
       setLaunchComplete(true);
-      setLaunchSuccess(true);
+      setLaunchSuccess(allSuccess);
 
     } catch (err: any) {
       addLog(`Error inesperado: ${err.message}`, 'error');
@@ -1674,24 +1677,24 @@ export default function CampaignWizard() {
       {/* Modal de logs durante el lanzamiento */}
       {isLaunching && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-2xl max-w-lg w-full mx-4 max-h-[80vh] overflow-hidden">
+          <div className="bg-white rounded-lg shadow-2xl max-w-lg w-full mx-4 max-h-[80vh] flex flex-col">
             {/* Header */}
-            <div className={`p-4 ${launchComplete ? (launchSuccess ? 'bg-green-600' : 'bg-red-600') : 'bg-blue-600'} text-white`}>
+            <div className={`p-4 flex-shrink-0 ${launchComplete ? (launchSuccess ? 'bg-green-600' : 'bg-red-600') : 'bg-blue-600'} text-white`}>
               <h3 className="text-lg font-bold flex items-center gap-2">
                 {launchComplete ? (
                   launchSuccess ? (
-                    <><span>✅</span> Lanzamiento Completado</>
+                    <><span>🚀</span> ¡Campaña Enviada!</>
                   ) : (
                     <><span>❌</span> Error en el Lanzamiento</>
                   )
                 ) : (
-                  <><span className="animate-spin">⚙️</span> Lanzando Campaña...</>
+                  <><span className="animate-spin">⚙️</span> Preparando Campaña...</>
                 )}
               </h3>
             </div>
 
-            {/* Logs */}
-            <div className="p-4 max-h-[50vh] overflow-y-auto">
+            {/* Logs - scrollable, takes remaining space */}
+            <div className="p-4 flex-1 overflow-y-auto min-h-0">
               <div className="space-y-2">
                 {launchLogs.map((log) => (
                   <div
@@ -1716,33 +1719,80 @@ export default function CampaignWizard() {
               </div>
             </div>
 
-            {/* Footer con botones */}
-            {launchComplete && (
-              <div className="p-4 border-t bg-gray-50 flex gap-3">
-                <button
-                  onClick={() => {
-                    setIsLaunching(false);
-                    router.push('/campaigns');
-                  }}
-                  className="flex-1 px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 font-medium"
-                >
-                  Ver Campañas
-                </button>
-                {launchedCampaignId && (
+            {/* Footer con botones - SIEMPRE visible, nunca se oculta */}
+            <div className="p-4 border-t bg-gray-50 flex-shrink-0">
+              {launchComplete && launchSuccess && (
+                <div className="text-center mb-4 p-3 bg-green-50 rounded-lg">
+                  <p className="text-green-800 text-sm">
+                    ¡Campaña lanzada exitosamente! Puedes ver el estado o lanzar otra campaña.
+                  </p>
+                </div>
+              )}
+              {launchComplete && !launchSuccess && (
+                <div className="text-center mb-4 p-3 bg-red-50 rounded-lg">
+                  <p className="text-red-800 text-sm">
+                    Hubo errores durante el lanzamiento. Revisa los detalles arriba.
+                  </p>
+                </div>
+              )}
+              {!launchComplete && (
+                <div className="text-center mb-4 p-3 bg-yellow-50 rounded-lg">
+                  <p className="text-yellow-800 text-sm">
+                    Puedes lanzar otra campaña mientras esta se procesa. El lanzamiento puede tardar varios minutos.
+                  </p>
+                </div>
+              )}
+              <div className="flex gap-3">
+                {launchedCampaignId ? (
                   <button
                     onClick={() => {
                       setIsLaunching(false);
                       router.push(`/campaigns/${launchedCampaignId}`);
                     }}
-                    className={`flex-1 px-4 py-2 rounded-lg font-medium text-white ${
-                      launchSuccess ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'
-                    }`}
+                    className="flex-1 px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 font-medium"
                   >
-                    Ver Detalles
+                    Ver Estado
+                  </button>
+                ) : (
+                  <button
+                    disabled
+                    className="flex-1 px-4 py-2 bg-gray-100 text-gray-400 rounded-lg font-medium cursor-not-allowed"
+                  >
+                    Ver Estado (esperando ID...)
                   </button>
                 )}
+                <button
+                  onClick={() => {
+                    // Reset form for new campaign
+                    setIsLaunching(false);
+                    setLaunchLogs([]);
+                    setLaunchComplete(false);
+                    setLaunchSuccess(false);
+                    setLaunchedCampaignId(null);
+                    setStep(1);
+                    setFormData({
+                      name: '',
+                      campaignType: 'CBO',
+                      tonicAccountId: '',
+                      offerId: '',
+                      country: '',
+                      language: 'en',
+                      copyMaster: '',
+                      communicationAngle: '',
+                      keywords: [],
+                      contentGenerationPhrases: [],
+                      platforms: [],
+                    });
+                    setKeywordsText('');
+                    setContentPhrasesText('');
+                    setError(null);
+                  }}
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
+                >
+                  Lanzar Otra Campaña
+                </button>
               </div>
-            )}
+            </div>
           </div>
         </div>
       )}
