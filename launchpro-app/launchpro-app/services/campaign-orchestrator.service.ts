@@ -1704,10 +1704,11 @@ class CampaignOrchestratorService {
     }
 
     // FORMAT TONIC LINK
+    // Use campaign.copyMaster (user-entered) instead of aiContent.copyMaster (AI-processed)
     const finalLink = this.formatTonicLink(
       campaign.tonicTrackingLink || 'https://example.com',
       'META',
-      aiContent.copyMaster
+      campaign.copyMaster
     );
 
     logger.info('meta', `Using formatted Tonic link: ${finalLink} `);
@@ -2341,10 +2342,11 @@ class CampaignOrchestratorService {
     }
 
     // FORMAT TONIC LINK
+    // Use campaign.copyMaster (user-entered) instead of aiContent.copyMaster (AI-processed)
     const finalLink = this.formatTonicLink(
       campaign.tonicTrackingLink || 'https://example.com',
       'TIKTOK',
-      aiContent.copyMaster
+      campaign.copyMaster
     );
 
     logger.info('tiktok', `Using formatted Tonic link: ${finalLink} `);
