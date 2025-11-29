@@ -15,8 +15,6 @@ import { getStorage } from '@/lib/gcs';
  * - Complies with Meta/TikTok format requirements
  */
 
-const storage = getStorage();
-
 // Meta Ads Image Requirements:
 // - Format: JPG, PNG
 // - Aspect Ratio: 1:1 (square), 4:5, 9:16
@@ -148,6 +146,7 @@ export async function POST(
     const fileName = `${folder}/${timestamp}-${randomString}.${extension}`;
 
     // Upload to Google Cloud Storage
+    const storage = getStorage();
     const bucket = storage.bucket(env.GCP_STORAGE_BUCKET);
     const gcsFile = bucket.file(fileName);
 
@@ -307,6 +306,7 @@ export async function DELETE(
 
     // Delete from Google Cloud Storage
     if (media.gcsPath) {
+      const storage = getStorage();
       const bucket = storage.bucket(env.GCP_STORAGE_BUCKET);
       const file = bucket.file(media.gcsPath);
       await file.delete();
