@@ -3072,6 +3072,8 @@ class CampaignOrchestratorService {
             campaign_id: parseInt(tonicCampaignId.toString()),
             pixel_id: platform.metaAccount.metaPixelId,
             access_token: process.env.META_ACCESS_TOKEN || platform.metaAccount.metaAccessToken || '',
+            event_name: 'Lead',
+            revenue_type: 'preestimated_revenue',
           });
           logger.success('tonic', 'Meta pixel configured');
         } catch (e: any) {
@@ -3085,6 +3087,8 @@ class CampaignOrchestratorService {
             campaign_id: parseInt(tonicCampaignId.toString()),
             pixel_id: platform.tiktokAccount.tiktokPixelId,
             access_token: process.env.TIKTOK_ACCESS_TOKEN || platform.tiktokAccount.tiktokAccessToken || '',
+            event_name: 'Lead',
+            revenue_type: 'preestimated_revenue',
           });
           logger.success('tonic', 'TikTok pixel configured');
         } catch (e: any) {
