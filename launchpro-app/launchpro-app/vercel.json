@@ -1,0 +1,13 @@
+{
+  "functions": {
+    "app/api/campaigns/route.ts": {
+      "maxDuration": 900
+    },
+    "app/api/campaigns/*/route.ts": {
+      "maxDuration": 900
+    },
+    "app/api/campaigns/*/*/route.ts": {
+      "maxDuration": 900
+    }
+  }
+}
