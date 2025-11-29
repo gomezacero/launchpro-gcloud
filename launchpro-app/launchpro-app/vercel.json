@@ -1,12 +1,22 @@
 {
+  "crons": [
+    {
+      "path": "/api/cron/check-articles",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/process-campaigns",
+      "schedule": "* * * * *"
+    }
+  ],
   "functions": {
     "app/api/campaigns/route.ts": {
-      "maxDuration": 900
+      "maxDuration": 60
     },
-    "app/api/campaigns/*/route.ts": {
-      "maxDuration": 900
+    "app/api/cron/check-articles/route.ts": {
+      "maxDuration": 60
     },
-    "app/api/campaigns/*/*/route.ts": {
+    "app/api/cron/process-campaigns/route.ts": {
       "maxDuration": 900
     }
   }

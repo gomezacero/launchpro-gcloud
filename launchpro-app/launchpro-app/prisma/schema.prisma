@@ -19,14 +19,16 @@ enum Platform {
 }
 
 enum CampaignStatus {
-  DRAFT           // Initial creation, not yet launched
-  GENERATING_AI   // AI is generating content
-  READY_TO_LAUNCH // AI content ready, waiting for launch
-  LAUNCHING       // In process of launching to platforms
-  ACTIVE          // Successfully launched and active
-  PAUSED          // Paused by user
-  COMPLETED       // Campaign finished
-  FAILED          // Failed during launch
+  DRAFT              // Initial creation, not yet launched
+  PENDING_ARTICLE    // Waiting for Tonic article approval (async)
+  ARTICLE_APPROVED   // Article approved, ready to continue processing
+  GENERATING_AI      // AI is generating content
+  READY_TO_LAUNCH    // AI content ready, waiting for launch
+  LAUNCHING          // In process of launching to platforms
+  ACTIVE             // Successfully launched and active
+  PAUSED             // Paused by user
+  COMPLETED          // Campaign finished
+  FAILED             // Failed during launch
 }
 
 enum MediaType {
@@ -131,9 +133,10 @@ model Campaign {
   media             Media[]
 
   // Tonic campaign data
-  tonicCampaignId   String?            @unique
-  tonicArticleId    String?
-  tonicTrackingLink String?
+  tonicCampaignId       String?            @unique
+  tonicArticleId        String?
+  tonicArticleRequestId String?            // Article request ID for async polling
+  tonicTrackingLink     String?
 
   // Error details (when status is FAILED)
   errorDetails      Json?              // { step, message, timestamp, platform?, technicalDetails? }

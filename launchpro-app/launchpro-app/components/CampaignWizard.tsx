@@ -528,8 +528,8 @@ export default function CampaignWizard() {
     setLaunchSuccess(false);
 
     try {
-      // STEP 1: Create campaign
-      const logId1 = addLog('Creando campaña en base de datos...');
+      // STEP 1: Create campaign (async mode - returns immediately)
+      const logId1 = addLog('Creando campaña...');
 
       const res = await fetch('/api/campaigns', {
         method: 'POST',
@@ -551,7 +551,17 @@ export default function CampaignWizard() {
 
       updateLogStatus(logId1, 'success');
       const campaignId = data.data.campaignId;
+      const campaignStatus = data.data.status;
       setLaunchedCampaignId(campaignId);
+
+      // Show status message
+      if (campaignStatus === 'PENDING_ARTICLE') {
+        addLog('Esperando aprobación de artículo en Tonic...', 'success');
+        addLog('El sistema verificará automáticamente cada minuto.', 'success');
+      } else if (campaignStatus === 'ARTICLE_APPROVED') {
+        addLog('Campaña lista para procesar.', 'success');
+        addLog('El sistema la procesará automáticamente en unos minutos.', 'success');
+      }
 
       // STEP 2: Upload manual files (if any)
       const tempFiles = (window as any).__tempFiles || {};
@@ -675,51 +685,16 @@ export default function CampaignWizard() {
         }
 
         console.log(`[Wizard] ✅ All ${fileIds.length} files uploaded successfully`);
+        addLog('Archivos subidos correctamente.', 'success');
       }
 
-      // STEP 3: Launch campaign to platforms (this request may take a while)
-      const logId2 = addLog('Lanzando campaña a las plataformas (esto puede tardar varios minutos)...');
-
-      const launchRes = await fetch(`/api/campaigns/${campaignId}/launch`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      const launchData = await launchRes.json();
-
-      if (!launchData.success) {
-        updateLogStatus(logId2, 'error');
-        addLog(`Error: ${launchData.error}`, 'error');
-        setLaunchComplete(true);
-        setLaunchSuccess(false);
-        return;
-      }
-
-      // Campaign launched successfully
-      updateLogStatus(logId2, 'success');
-
-      // Show platform results
-      if (launchData.platforms) {
-        for (const p of launchData.platforms) {
-          if (p.success) {
-            addLog(`${p.platform}: Lanzado exitosamente`, 'success');
-          } else {
-            addLog(`${p.platform}: ${p.error || 'Error desconocido'}`, 'error');
-          }
-        }
-      }
-
-      const allSuccess = launchData.platforms?.every((p: any) => p.success) ?? true;
-      if (allSuccess) {
-        addLog('¡Campaña lanzada exitosamente en todas las plataformas!', 'success');
-      } else {
-        addLog('Campaña lanzada con algunos errores. Revisa los detalles arriba.', 'error');
-      }
+      // Campaign created successfully (async mode - no launch step needed)
+      // The cron jobs will handle article approval and platform launch automatically
+      addLog('¡Campaña creada exitosamente!', 'success');
+      addLog('Puedes ver el progreso en la lista de campañas.', 'success');
 
       setLaunchComplete(true);
-      setLaunchSuccess(allSuccess);
+      setLaunchSuccess(true);
 
     } catch (err: any) {
       addLog(`Error inesperado: ${err.message}`, 'error');

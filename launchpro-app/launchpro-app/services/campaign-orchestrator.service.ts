@@ -2707,6 +2707,404 @@ class CampaignOrchestratorService {
       throw new Error(`Failed to launch campaign to platforms: ${error.message} `);
     }
   }
+
+  /**
+   * Create campaign quickly for async processing
+   *
+   * This method creates the campaign in DB and submits the article request to Tonic,
+   * but does NOT wait for approval. Returns immediately with PENDING_ARTICLE status.
+   *
+   * Used by the new async architecture where cron jobs handle the rest.
+   */
+  async createCampaignQuick(params: CreateCampaignParams): Promise<{
+    campaignId: string;
+    status: CampaignStatus;
+    articleRequestId?: number;
+  }> {
+    logger.info('system', '🚀 Creating campaign (quick async mode)...', {
+      name: params.name,
+      country: params.country,
+    });
+
+    // Get Tonic credentials
+    const tonicAccount = await prisma.account.findUnique({
+      where: { id: params.tonicAccountId },
+    });
+
+    if (!tonicAccount || !tonicAccount.tonicConsumerKey || !tonicAccount.tonicConsumerSecret) {
+      throw new Error(`Tonic account ${params.tonicAccountId} not found or missing credentials.`);
+    }
+
+    const credentials = {
+      consumer_key: tonicAccount.tonicConsumerKey,
+      consumer_secret: tonicAccount.tonicConsumerSecret,
+    };
+
+    // Get or create offer
+    let offer = await prisma.offer.findUnique({ where: { tonicId: params.offerId } });
+    if (!offer) {
+      // Fetch from Tonic and create
+      const tonicOffers = await tonicService.getOffers(credentials, 'display');
+      const tonicOffer = tonicOffers.find((o: any) => o.id == params.offerId);
+      if (!tonicOffer) {
+        throw new Error(`Offer ${params.offerId} not found in Tonic`);
+      }
+      offer = await prisma.offer.create({
+        data: {
+          tonicId: params.offerId,
+          name: tonicOffer.name,
+          vertical: tonicOffer.vertical || 'General',
+          description: tonicOffer.description,
+        },
+      });
+    }
+
+    // Detect campaign type (RSOC vs Display)
+    let campaignType: 'rsoc' | 'display' = 'display';
+    let rsocDomain: string | null = null;
+
+    if (tonicAccount.tonicSupportsRSOC && tonicAccount.tonicRSOCDomains) {
+      const rsocDomains = tonicAccount.tonicRSOCDomains as any[];
+      const compatibleDomain = rsocDomains.find((d: any) =>
+        d.languages?.includes(params.language.toLowerCase())
+      );
+      if (compatibleDomain) {
+        campaignType = 'rsoc';
+        rsocDomain = compatibleDomain.domain;
+      }
+    }
+
+    // Create campaign in DB
+    const campaign = await prisma.campaign.create({
+      data: {
+        name: params.name,
+        status: CampaignStatus.DRAFT,
+        campaignType: params.campaignType,
+        offerId: offer.id,
+        country: params.country,
+        language: params.language,
+        copyMaster: params.copyMaster,
+        communicationAngle: params.communicationAngle,
+        keywords: params.keywords || [],
+        platforms: {
+          create: params.platforms.map((p) => ({
+            platform: p.platform,
+            tonicAccountId: p.platform === 'TONIC' ? params.tonicAccountId : null,
+            metaAccountId: p.platform === 'META' ? p.accountId : null,
+            tiktokAccountId: p.platform === 'TIKTOK' ? p.accountId : null,
+            performanceGoal: p.performanceGoal,
+            budget: p.budget,
+            startDate: p.startDate,
+            generateWithAI: p.generateWithAI,
+            specialAdCategories: p.specialAdCategories || [],
+            metaPageId: p.metaPageId,
+            tiktokIdentityId: p.tiktokIdentityId,
+            tiktokIdentityType: p.tiktokIdentityType,
+            manualAdTitle: p.manualAdCopy?.adTitle,
+            manualDescription: p.manualAdCopy?.description,
+            manualPrimaryText: p.manualAdCopy?.primaryText,
+            manualTiktokAdText: p.manualTiktokAdText,
+          })),
+        },
+      },
+      include: { platforms: true },
+    });
+
+    // Also create TONIC platform entry for tracking
+    const hasTonicPlatform = campaign.platforms.some(p => p.platform === 'TONIC');
+    if (!hasTonicPlatform) {
+      await prisma.campaignPlatform.create({
+        data: {
+          campaignId: campaign.id,
+          platform: 'TONIC',
+          tonicAccountId: params.tonicAccountId,
+        },
+      });
+    }
+
+    logger.success('system', `Campaign created in DB: ${campaign.id}`);
+
+    // For RSOC campaigns, create article request (without waiting)
+    let articleRequestId: number | undefined;
+
+    if (campaignType === 'rsoc' && rsocDomain) {
+      logger.info('tonic', 'Creating RSOC article request (async mode)...');
+
+      // Generate content phrases and headline using AI
+      let contentPhrases = params.contentGenerationPhrases || [];
+      let headline = '';
+
+      if (contentPhrases.length === 0) {
+        // Generate article content with AI (includes headline and phrases)
+        const articleContent = await aiService.generateArticle({
+          offerName: offer.name,
+          copyMaster: params.copyMaster || `Discover the best deals on ${offer.name}`,
+          keywords: params.keywords || [],
+          country: params.country,
+          language: params.language,
+        });
+        contentPhrases = articleContent.contentGenerationPhrases;
+        headline = articleContent.headline;
+      } else {
+        // Manual phrases provided, just generate headline
+        const articleContent = await aiService.generateArticle({
+          offerName: offer.name,
+          copyMaster: params.copyMaster || `Discover the best deals on ${offer.name}`,
+          keywords: params.keywords || [],
+          country: params.country,
+          language: params.language,
+        });
+        headline = articleContent.headline;
+      }
+
+      // Create article request in Tonic (returns immediately)
+      articleRequestId = await tonicService.createArticleRequest(credentials, {
+        offer_id: parseInt(params.offerId),
+        country: params.country,
+        language: params.language,
+        domain: rsocDomain,
+        content_generation_phrases: contentPhrases,
+        headline: headline,
+      });
+
+      logger.success('tonic', `Article request created: ${articleRequestId}`);
+
+      // Update campaign with article request ID and set to PENDING
+      await prisma.campaign.update({
+        where: { id: campaign.id },
+        data: {
+          status: CampaignStatus.PENDING_ARTICLE,
+          tonicArticleRequestId: articleRequestId.toString(),
+        },
+      });
+
+      return {
+        campaignId: campaign.id,
+        status: CampaignStatus.PENDING_ARTICLE,
+        articleRequestId,
+      };
+    } else {
+      // Display campaign - no article needed, go straight to ARTICLE_APPROVED
+      await prisma.campaign.update({
+        where: { id: campaign.id },
+        data: { status: CampaignStatus.ARTICLE_APPROVED },
+      });
+
+      return {
+        campaignId: campaign.id,
+        status: CampaignStatus.ARTICLE_APPROVED,
+      };
+    }
+  }
+
+  /**
+   * Continue campaign processing after article approval
+   *
+   * Called by cron job when campaign transitions from PENDING_ARTICLE to ARTICLE_APPROVED.
+   * Handles: Tonic campaign creation, tracking link, AI content, platform launch.
+   */
+  async continueCampaignAfterArticle(campaignId: string): Promise<LaunchResult> {
+    logger.info('system', `🔄 Continuing campaign after article approval: ${campaignId}`);
+
+    // Get campaign with all related data
+    const campaign = await prisma.campaign.findUnique({
+      where: { id: campaignId },
+      include: {
+        platforms: {
+          include: {
+            tonicAccount: true,
+            metaAccount: true,
+            tiktokAccount: true,
+          },
+        },
+        offer: true,
+        media: true,
+      },
+    });
+
+    if (!campaign) {
+      throw new Error(`Campaign ${campaignId} not found`);
+    }
+
+    // Get Tonic credentials
+    const tonicPlatform = campaign.platforms.find(p => p.platform === 'TONIC');
+    const tonicAccount = tonicPlatform?.tonicAccount;
+
+    if (!tonicAccount || !tonicAccount.tonicConsumerKey || !tonicAccount.tonicConsumerSecret) {
+      throw new Error(`Campaign ${campaignId} missing Tonic credentials`);
+    }
+
+    const credentials = {
+      consumer_key: tonicAccount.tonicConsumerKey,
+      consumer_secret: tonicAccount.tonicConsumerSecret,
+    };
+
+    // Detect campaign type
+    let campaignType: 'rsoc' | 'display' = 'display';
+    if (campaign.tonicArticleId) {
+      campaignType = 'rsoc';
+    }
+
+    const errors: string[] = [];
+    let tonicCampaignId: string | number;
+
+    // ============================================
+    // STEP 1: Create Tonic campaign
+    // ============================================
+    logger.info('tonic', `Creating ${campaignType.toUpperCase()} campaign in Tonic...`);
+
+    const campaignParams = {
+      name: campaign.name,
+      offer: campaign.offer.name,
+      offer_id: campaign.offer.tonicId,
+      country: campaign.country,
+      type: campaignType,
+      return_type: 'id' as const,
+      ...(campaign.tonicArticleId && { headline_id: campaign.tonicArticleId }),
+    };
+
+    tonicCampaignId = await tonicService.createCampaign(credentials, campaignParams);
+    logger.success('tonic', `Tonic campaign created: ${tonicCampaignId}`);
+
+    // ============================================
+    // STEP 2: Wait for tracking link
+    // ============================================
+    logger.info('tonic', '⏳ Waiting for tracking link...');
+
+    const trackingLinkResult = await waitForTrackingLink(
+      credentials,
+      tonicCampaignId.toString(),
+      {
+        maxWaitMinutes: 15,
+        pollingIntervalSeconds: 30,
+      }
+    );
+
+    let trackingLink: string;
+    if (trackingLinkResult.success && trackingLinkResult.trackingLink) {
+      trackingLink = trackingLinkResult.trackingLink;
+
+      // Try to get Direct Link
+      try {
+        const campaignList = await tonicService.getCampaignList(credentials, 'active');
+        const tonicCampaign = campaignList.find((c: any) => c.id == tonicCampaignId);
+        if (tonicCampaign?.direct_link) {
+          trackingLink = tonicCampaign.direct_link;
+        }
+      } catch (e) {
+        // Use regular tracking link
+      }
+
+      logger.success('tonic', `Tracking link obtained: ${trackingLink}`);
+    } else {
+      trackingLink = `https://tonic-placeholder.com/campaign/${tonicCampaignId}`;
+      errors.push('Tracking link not available, using placeholder');
+    }
+
+    // Update campaign with Tonic info
+    await prisma.campaign.update({
+      where: { id: campaignId },
+      data: {
+        tonicCampaignId: tonicCampaignId.toString(),
+        tonicTrackingLink: trackingLink,
+      },
+    });
+
+    // ============================================
+    // STEP 3: Generate AI Content
+    // ============================================
+    logger.info('ai', 'Generating AI content...');
+
+    const aiContentResult: any = {};
+
+    // Generate Copy Master if not set
+    if (!campaign.copyMaster) {
+      aiContentResult.copyMaster = await aiService.generateCopyMaster({
+        offerName: campaign.offer.name,
+        offerDescription: campaign.offer.description || undefined,
+        vertical: campaign.offer.vertical,
+        country: campaign.country,
+        language: campaign.language,
+      });
+
+      await prisma.campaign.update({
+        where: { id: campaignId },
+        data: { copyMaster: aiContentResult.copyMaster },
+      });
+    } else {
+      aiContentResult.copyMaster = campaign.copyMaster;
+    }
+
+    // Generate Keywords if not set
+    if (!campaign.keywords || campaign.keywords.length === 0) {
+      aiContentResult.keywords = await aiService.generateKeywords({
+        offerName: campaign.offer.name,
+        copyMaster: aiContentResult.copyMaster,
+        count: 6,
+        country: campaign.country,
+      });
+
+      await prisma.campaign.update({
+        where: { id: campaignId },
+        data: { keywords: aiContentResult.keywords },
+      });
+    } else {
+      aiContentResult.keywords = campaign.keywords;
+    }
+
+    // Set keywords in Tonic
+    await tonicService.setKeywords(credentials, {
+      campaign_id: parseInt(tonicCampaignId.toString()),
+      keywords: aiContentResult.keywords,
+      keyword_amount: aiContentResult.keywords.length,
+    });
+
+    logger.success('ai', 'AI content generated and keywords set');
+
+    // ============================================
+    // STEP 4: Configure Pixels
+    // ============================================
+    for (const platform of campaign.platforms) {
+      if (platform.platform === 'META' && platform.metaAccount?.metaPixelId) {
+        try {
+          await tonicService.createPixel(credentials, 'facebook', {
+            campaign_id: parseInt(tonicCampaignId.toString()),
+            pixel_id: platform.metaAccount.metaPixelId,
+            access_token: process.env.META_ACCESS_TOKEN || platform.metaAccount.metaAccessToken || '',
+          });
+          logger.success('tonic', 'Meta pixel configured');
+        } catch (e: any) {
+          logger.warn('tonic', `Failed to configure Meta pixel: ${e.message}`);
+        }
+      }
+
+      if (platform.platform === 'TIKTOK' && platform.tiktokAccount?.tiktokPixelId) {
+        try {
+          await tonicService.createPixel(credentials, 'tiktok', {
+            campaign_id: parseInt(tonicCampaignId.toString()),
+            pixel_id: platform.tiktokAccount.tiktokPixelId,
+            access_token: process.env.TIKTOK_ACCESS_TOKEN || platform.tiktokAccount.tiktokAccessToken || '',
+          });
+          logger.success('tonic', 'TikTok pixel configured');
+        } catch (e: any) {
+          logger.warn('tonic', `Failed to configure TikTok pixel: ${e.message}`);
+        }
+      }
+    }
+
+    // ============================================
+    // STEP 5: Launch to Platforms (reuse existing method)
+    // ============================================
+    await prisma.campaign.update({
+      where: { id: campaignId },
+      data: { status: CampaignStatus.READY_TO_LAUNCH },
+    });
+
+    // Use existing launch method
+    const launchResult = await this.launchExistingCampaignToPlatforms(campaignId);
+
+    return launchResult;
+  }
 }
 
 // Export singleton instance

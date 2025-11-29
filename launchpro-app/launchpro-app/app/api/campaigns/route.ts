@@ -58,7 +58,10 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/campaigns
- * Create and launch a new campaign
+ * Create a new campaign (ASYNC mode - returns immediately)
+ *
+ * The campaign is created in DB and article request is submitted to Tonic.
+ * Cron jobs handle the rest of the processing (article approval, tracking link, launch).
  */
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
@@ -66,7 +69,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
-    logger.info('api', 'POST /api/campaigns - Creating new campaign', {
+    logger.info('api', 'POST /api/campaigns - Creating new campaign (async mode)', {
       name: body.name,
       campaignType: body.campaignType,
       country: body.country,
@@ -88,21 +91,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Determine if we need to skip platform launch (for manual media upload)
-    const hasManualUpload = body.platforms.some((p: any) => p.generateWithAI === false);
-
-    if (hasManualUpload) {
-      logger.info('api', '📤 Manual media upload detected - will skip platform launch', {
-        platforms: body.platforms.map((p: any) => ({ platform: p.platform, generateWithAI: p.generateWithAI })),
-      });
-    } else {
-      logger.info('api', 'Launching campaign with orchestrator...', {
-        platforms: body.platforms.map((p: any) => p.platform),
-      });
-    }
-
-    // Launch campaign (with optional skipPlatformLaunch)
-    const result = await campaignOrchestrator.launchCampaign({
+    // Create campaign quickly (async mode - returns immediately)
+    const result = await campaignOrchestrator.createCampaignQuick({
       name: body.name,
       campaignType: body.campaignType,
       tonicAccountId: body.tonicAccountId,
@@ -112,45 +102,44 @@ export async function POST(request: NextRequest) {
       copyMaster: body.copyMaster,
       communicationAngle: body.communicationAngle,
       keywords: body.keywords,
-      contentGenerationPhrases: body.contentGenerationPhrases, // Manual phrases for RSOC
+      contentGenerationPhrases: body.contentGenerationPhrases,
       platforms: body.platforms.map((p: any) => ({
         platform: p.platform,
         accountId: p.accountId,
         performanceGoal: p.performanceGoal,
         budget: parseFloat(p.budget),
-        startDate: new Date(p.startDateTime || p.startDate), // Support both datetime and date
+        startDate: new Date(p.startDateTime || p.startDate),
         generateWithAI: p.generateWithAI !== false,
         specialAdCategories: p.specialAdCategories,
-        // Fan Page for Meta (user selected)
         metaPageId: p.metaPageId,
-        // Identity for TikTok (user selected)
         tiktokIdentityId: p.tiktokIdentityId,
         tiktokIdentityType: p.tiktokIdentityType,
-        // Manual Ad Copy (Meta only)
         manualAdCopy: p.platform === 'META' ? {
           adTitle: p.manualAdTitle,
           description: p.manualDescription,
           primaryText: p.manualPrimaryText,
         } : undefined,
-        // Manual Ad Copy (TikTok only)
         manualTiktokAdText: p.manualTiktokAdText,
       })),
-      skipPlatformLaunch: hasManualUpload, // Skip if manual upload is needed
     });
 
     const duration = Date.now() - startTime;
-    logger.success('api', `Campaign created successfully: ${body.name}`, {
+    logger.success('api', `Campaign created (async): ${body.name}`, {
       campaignId: result.campaignId,
-      platforms: body.platforms.map((p: any) => p.platform),
+      status: result.status,
+      articleRequestId: result.articleRequestId,
     }, duration);
 
+    // Return immediately with pending status
     return NextResponse.json({
       success: true,
       data: {
         campaignId: result.campaignId,
-        tonicCampaignId: result.tonicCampaignId,
-        tonicTrackingLink: result.tonicTrackingLink,
-        success: result.success,
+        status: result.status,
+        articleRequestId: result.articleRequestId,
+        message: result.status === 'PENDING_ARTICLE'
+          ? 'Campaña creada. Esperando aprobación de artículo en Tonic...'
+          : 'Campaña creada. Procesando en background...',
       },
     });
   } catch (error: any) {
