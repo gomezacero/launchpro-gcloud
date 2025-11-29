@@ -19,7 +19,9 @@
       "Bash(python:*)",
       "Bash(del:*)",
       "Bash(npx prisma:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(node extract-accounts.js:*)",
+      "Bash(PGPASSWORD='Legolas9OD7A9SX!' psql:*)"
     ],
     "deny": [],
     "ask": []
