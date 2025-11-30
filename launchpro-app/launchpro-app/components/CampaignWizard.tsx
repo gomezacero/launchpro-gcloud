@@ -614,9 +614,81 @@ export default function CampaignWizard() {
 
       if (fileIds.length > 0) {
         console.log(`[Wizard] Uploading ${fileIds.length} manual files to campaign ${campaignId} (session: ${wizardSessionId})...`);
+        addLog('Subiendo archivos...', 'in_progress');
 
         // Track uploaded media IDs for linking thumbnails to videos
         const uploadedMediaMap: Record<string, string> = {}; // tempFileId -> serverMediaId
+
+        // Helper function to upload a single file using direct GCS upload
+        const uploadFileDirectToGCS = async (
+          file: File,
+          mediaType: 'IMAGE' | 'VIDEO',
+          platformName: string | null,
+          linkedVideoId?: string
+        ): Promise<string | null> => {
+          try {
+            // Step 1: Get signed URL for upload
+            console.log(`[Wizard] Getting upload URL for ${file.name}...`);
+            const urlRes = await fetch(`/api/campaigns/${campaignId}/media/upload-url`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                fileName: file.name,
+                fileType: file.type,
+                mediaType,
+                platform: platformName,
+              }),
+            });
+
+            const urlData = await urlRes.json();
+            if (!urlData.success) {
+              throw new Error(urlData.error || 'Failed to get upload URL');
+            }
+
+            const { uploadUrl, gcsPath } = urlData.data;
+
+            // Step 2: Upload directly to GCS
+            console.log(`[Wizard] Uploading ${file.name} directly to GCS...`);
+            const uploadRes = await fetch(uploadUrl, {
+              method: 'PUT',
+              headers: {
+                'Content-Type': file.type,
+              },
+              body: file,
+            });
+
+            if (!uploadRes.ok) {
+              throw new Error(`GCS upload failed: ${uploadRes.status} ${uploadRes.statusText}`);
+            }
+
+            // Step 3: Confirm upload and register in database
+            console.log(`[Wizard] Confirming upload for ${file.name}...`);
+            const confirmRes = await fetch(`/api/campaigns/${campaignId}/media/confirm`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                gcsPath,
+                fileName: file.name,
+                fileSize: file.size,
+                fileType: file.type,
+                mediaType,
+                platform: platformName,
+                linkedVideoId,
+              }),
+            });
+
+            const confirmData = await confirmRes.json();
+            if (!confirmData.success) {
+              throw new Error(confirmData.error || 'Failed to confirm upload');
+            }
+
+            console.log(`[Wizard] ✅ Uploaded ${file.name} successfully (ID: ${confirmData.data.mediaId})`);
+            return confirmData.data.mediaId;
+          } catch (err: any) {
+            console.error(`[Wizard] Error uploading ${file.name}:`, err.message);
+            throw err;
+          }
+        };
 
         // First pass: Upload all files (images and videos)
         for (const fileId of fileIds) {
@@ -636,33 +708,16 @@ export default function CampaignWizard() {
             (p.uploadedVideos?.some(vid => vid.id === fileId))
           );
 
-          // Create FormData for upload
-          const uploadFormData = new FormData();
-          uploadFormData.append('file', file);
-          uploadFormData.append('type', mediaType);
-          if (platform) {
-            uploadFormData.append('platform', platform.platform);
-          }
-
           try {
-            const uploadRes = await fetch(`/api/campaigns/${campaignId}/media`, {
-              method: 'POST',
-              body: uploadFormData,
-            });
-
-            const uploadData = await uploadRes.json();
-
-            if (!uploadData.success) {
-              console.error(`[Wizard] Failed to upload ${file.name}:`, uploadData.error);
-              setError(`Failed to upload ${file.name}: ${uploadData.error}`);
-              return;
+            const mediaId = await uploadFileDirectToGCS(
+              file,
+              mediaType,
+              platform?.platform || null
+            );
+            if (mediaId) {
+              uploadedMediaMap[fileId] = mediaId;
             }
-
-            // Store the mapping for linking thumbnails later
-            uploadedMediaMap[fileId] = uploadData.data?.mediaId || uploadData.data?.id;
-            console.log(`[Wizard] ✅ Uploaded ${file.name} successfully (ID: ${uploadedMediaMap[fileId]})`);
           } catch (uploadErr: any) {
-            console.error(`[Wizard] Error uploading ${file.name}:`, uploadErr.message);
             setError(`Error uploading ${file.name}: ${uploadErr.message}`);
             return;
           }
@@ -696,27 +751,13 @@ export default function CampaignWizard() {
             continue;
           }
 
-          // Upload thumbnail with video ID link
-          const uploadFormData = new FormData();
-          uploadFormData.append('file', thumbnailFile);
-          uploadFormData.append('type', 'IMAGE');
-          uploadFormData.append('platform', videoInfo.platform);
-          uploadFormData.append('linkedVideoId', videoServerId);
-
           try {
-            const uploadRes = await fetch(`/api/campaigns/${campaignId}/media`, {
-              method: 'POST',
-              body: uploadFormData,
-            });
-
-            const uploadData = await uploadRes.json();
-
-            if (!uploadData.success) {
-              console.error(`[Wizard] Failed to upload thumbnail:`, uploadData.error);
-              // Don't fail the whole operation for thumbnail failure
-            } else {
-              console.log(`[Wizard] ✅ Uploaded thumbnail for video ${videoServerId}`);
-            }
+            await uploadFileDirectToGCS(
+              thumbnailFile,
+              'IMAGE',
+              videoInfo.platform,
+              videoServerId
+            );
           } catch (uploadErr: any) {
             console.error(`[Wizard] Error uploading thumbnail:`, uploadErr.message);
             // Don't fail the whole operation for thumbnail failure
