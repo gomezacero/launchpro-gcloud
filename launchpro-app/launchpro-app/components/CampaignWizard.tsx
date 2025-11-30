@@ -398,6 +398,7 @@ export default function CampaignWizard() {
 
         // Store the actual File object for later upload (namespaced by session)
         setTempFile(tempFile.id, file);
+        console.log(`[Wizard] DEBUG: Stored file in session ${wizardSessionId}: ${tempFile.id} (${file.name})`);
       }
 
       // Update platform with uploaded files
@@ -598,6 +599,18 @@ export default function CampaignWizard() {
 
       // STEP 2: Upload manual files (if any) - uses namespaced temp files to prevent race conditions
       const fileIds = getAllTempFileIds();
+
+      // DEBUG: Log what's in the temp files storage
+      console.log(`[Wizard] DEBUG: Session ID = ${wizardSessionId}`);
+      console.log(`[Wizard] DEBUG: window.__tempFiles =`, JSON.stringify(Object.keys((window as any).__tempFiles || {})));
+      console.log(`[Wizard] DEBUG: fileIds from namespace =`, fileIds);
+      console.log(`[Wizard] DEBUG: formData.platforms =`, formData.platforms.map(p => ({
+        platform: p.platform,
+        images: p.uploadedImages?.length || 0,
+        videos: p.uploadedVideos?.length || 0,
+        imageIds: p.uploadedImages?.map(i => i.id),
+        videoIds: p.uploadedVideos?.map(v => v.id),
+      })));
 
       if (fileIds.length > 0) {
         console.log(`[Wizard] Uploading ${fileIds.length} manual files to campaign ${campaignId} (session: ${wizardSessionId})...`);
