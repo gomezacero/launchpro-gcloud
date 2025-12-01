@@ -169,41 +169,94 @@ Generate a compelling Copy Master that:
 
   /**
    * Generate Keywords for Tonic campaigns
+   * Optimized for BOFU (Bottom of Funnel) transactional intent
    */
   async generateKeywords(params: GenerateKeywordsParams): Promise<string[]> {
-    const count = params.count || 6;
+    const count = 10; // Always generate 10 keywords
 
-    const systemPrompt = `You are an expert SEO and PPC specialist. Generate high-performing keywords for digital advertising campaigns.
+    // Map country codes to full names and regional context
+    const countryContext: Record<string, { name: string; language: string; regionalNotes: string }> = {
+      'MX': { name: 'México', language: 'Spanish (Mexican)', regionalNotes: 'Use Mexican Spanish terminology. Example: "carro" instead of "coche", "computadora" instead of "ordenador". Include city references like Ciudad de México, Guadalajara, Monterrey when relevant.' },
+      'CO': { name: 'Colombia', language: 'Spanish (Colombian)', regionalNotes: 'Use Colombian Spanish terminology. Example: "carro" or "vehículo", "computador". Include city references like Bogotá, Medellín, Cali when relevant.' },
+      'AR': { name: 'Argentina', language: 'Spanish (Argentine)', regionalNotes: 'Use Argentine Spanish terminology. Example: "auto", "computadora". Include city references like Buenos Aires, Córdoba, Rosario when relevant.' },
+      'ES': { name: 'España', language: 'Spanish (European)', regionalNotes: 'Use European Spanish terminology. Example: "coche", "ordenador". Include city references like Madrid, Barcelona, Valencia when relevant.' },
+      'CL': { name: 'Chile', language: 'Spanish (Chilean)', regionalNotes: 'Use Chilean Spanish terminology. Include city references like Santiago, Valparaíso, Concepción when relevant.' },
+      'PE': { name: 'Perú', language: 'Spanish (Peruvian)', regionalNotes: 'Use Peruvian Spanish terminology. Include city references like Lima, Arequipa, Trujillo when relevant.' },
+      'US': { name: 'United States', language: 'Spanish (US Latino) or English', regionalNotes: 'For Spanish: Use neutral Latin American Spanish. For English: Use American English. Can reference major cities like Miami, Los Angeles, Houston, New York.' },
+      'BR': { name: 'Brasil', language: 'Portuguese (Brazilian)', regionalNotes: 'Use Brazilian Portuguese terminology. Include city references like São Paulo, Rio de Janeiro, Brasília when relevant.' },
+    };
 
-CRITICAL REQUIREMENTS:
-- Perfect spelling (zero tolerance for errors)
-- Relevant to the offer and copy master
-- Search-intent driven (what users actually search for)
-- Mix of broad and specific terms
-- Culturally appropriate for the target country
-- Use natural, common search terms (not promotional language)
-- NO exaggerated or misleading terms
-- Professional and realistic keywords
+    const context = countryContext[params.country] || {
+      name: params.country,
+      language: 'Local language',
+      regionalNotes: 'Adapt terminology to local market.'
+    };
 
-IMPORTANT: Return ONLY a valid JSON array, no markdown formatting, no code blocks, no explanations.`;
+    const systemPrompt = `You are an expert in SEO Strategy, PPC, and Growth Hacking, specialized in compliance policies and regional semantic adaptation with a focus on transactional and financial intent keywords.
 
-    const userPrompt = `Generate ${count} high-quality keywords for this advertising campaign:
+PRIMARY MISSION:
+Generate a list of exactly 10 high-conversion keywords, 100% compliant and culturally adapted, focused on the bottom of the funnel (BOFU). Keywords must be aggressive, commercial, and click-attractive, prioritizing purchase intent, hiring, or financial comparison.
 
-Offer: ${params.offerName}
-Copy Master: ${params.copyMaster}
-Target Country: ${params.country}
+CONTEXT:
+- Target Country: ${context.name}
+- Language: ${context.language}
+- Regional Adaptation: ${context.regionalNotes}
 
-Keywords must:
-- Have perfect spelling
-- Be realistic search terms users would actually type
-- Be appropriate for ${params.country}
-- Not include exaggerated claims
+WORKFLOW DIRECTIVES:
 
-Return format: ["keyword1", "keyword2", ...]`;
+🔹 Step 0 - Linguistic and Cultural Adaptation (PRIORITY)
+- Identify synonyms, regionalisms, and colloquial terms specific to ${context.name}.
+- Replace generic words with more natural and commercial local equivalents.
+- ${context.regionalNotes}
+
+🔹 Step 1 - Competitor Analysis
+- Consider 2-3 relevant competitors in ${context.name}.
+- Think about what transactional and financial keywords they use in their communication.
+
+🔹 Step 2 - List Generation (10 Keywords)
+Focus: maximum conversion intent, direct and commercial language.
+
+MANDATORY COMPOSITION:
+- Minimum 3 Direct Transactional Keywords → include verbs like: buy, hire, finance, quote, invest, price, payment (in the target language)
+- Minimum 2 Specific Action Long-Tails → start with verb + clear benefit + 6-10 words. Can include city/country name when relevant for conversion.
+- Remaining 5 Keywords: combination of:
+  * Commercial Research (vs, alternatives, best options)
+  * Decision Questions (how much does it cost, how to finance)
+  * Financial Angles (credit, leasing, investment, monthly payments)
+
+COMPLIANCE AND QUALITY RULES (MANDATORY):
+- Total Relevance: each keyword must be directly linked to the niche/offer.
+- No deception or false superlatives: exclude "free", "cheapest", "top deals", "guaranteed", "100%", etc.
+- No false interactivity: avoid "search here" or "click now".
+- Location references: use real city/state/country names only if it adds to conversion value.
+- Estimated search volume: >70 monthly.
+- Temporality: only use 2025 or 2026 if intentional and relevant.
+
+CRITICAL OUTPUT FORMAT:
+Return ONLY a valid JSON array with exactly 10 keywords. No markdown, no code blocks, no explanations, no numbering.
+Example format: ["keyword 1", "keyword 2", "keyword 3", ...]`;
+
+    const userPrompt = `Generate 10 high-conversion BOFU keywords for this advertising campaign:
+
+OFFER: ${params.offerName}
+COPY MASTER (Main Message): ${params.copyMaster}
+TARGET COUNTRY: ${context.name}
+LANGUAGE: ${context.language}
+
+REMEMBER:
+- ${context.regionalNotes}
+- Minimum 3 transactional keywords with action verbs
+- Minimum 2 long-tail keywords (6-10 words) with specific benefits
+- 5 mixed keywords (comparisons, questions, financial terms)
+- Use real city/country names from ${context.name} when it adds value
+- Perfect spelling in ${context.language}
+- NO false claims, NO "free", NO "guaranteed"
+
+Return ONLY a JSON array: ["keyword1", "keyword2", ..., "keyword10"]`;
 
     const message = await this.anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 300,
+      max_tokens: 600, // Increased for 10 longer keywords (long-tails)
       temperature: 0.8,
       system: systemPrompt,
       messages: [
@@ -216,7 +269,12 @@ Return format: ["keyword1", "keyword2", ...]`;
 
     const responseText = message.content[0].type === 'text' ? message.content[0].text : '[]';
     const cleanedResponse = this.cleanJsonResponse(responseText);
-    const keywords = JSON.parse(cleanedResponse);
+    let keywords = JSON.parse(cleanedResponse);
+
+    // Ensure we always return exactly 10 keywords
+    if (keywords.length > 10) {
+      keywords = keywords.slice(0, 10);
+    }
 
     // Save to database
     await this.saveAIContent({
