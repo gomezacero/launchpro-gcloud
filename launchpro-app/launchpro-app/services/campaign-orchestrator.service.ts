@@ -1412,7 +1412,7 @@ class CampaignOrchestratorService {
     const metaCampaign = await metaService.createCampaign({
       name: fullCampaignName,
       objective: 'OUTCOME_SALES', // Required for Purchase conversion event
-      status: 'PAUSED', // Always create as paused first
+      status: 'ACTIVE', // Campaign active, only ads are paused
       special_ad_categories: platformConfig.specialAdCategories && platformConfig.specialAdCategories.length > 0
         ? platformConfig.specialAdCategories
         : ['NONE'],
@@ -1564,7 +1564,7 @@ class CampaignOrchestratorService {
 
       start_time: new Date(platformConfig.startDateTime || platformConfig.startDate).toISOString(),
       targeting: targetingSpec,
-      status: 'PAUSED',
+      status: 'ACTIVE', // Ad Set active, only ads are paused
       promoted_object: {
         pixel_id: pixelId,
         custom_event_type: 'PURCHASE',
@@ -2203,7 +2203,7 @@ class CampaignOrchestratorService {
       objective_type: 'WEB_CONVERSIONS', // Para conversiones de ventas (Sales)
       budget_mode: 'BUDGET_MODE_DAY',
       budget: budgetInDollars, // TikTok API expects budget in DOLLARS (not cents!)
-      operation_status: 'DISABLE', // DISABLE = paused, ENABLE = active
+      operation_status: 'ENABLE', // Campaign active, only ads are paused
     }, accessToken);
 
     logger.success('tiktok', `TikTok campaign created with ID: ${tiktokCampaign.campaign_id} `);
@@ -2294,6 +2294,7 @@ class CampaignOrchestratorService {
       pixel_id: pixelId,
       optimization_event: 'SHOPPING', // Evento de compra/venta (TikTok usa 'SHOPPING', no 'COMPLETE_PAYMENT')
       location_ids: [locationId], // Use resolved Location ID
+      operation_status: 'ENABLE', // Ad Group active, only ads are paused
     };
 
     // Add optional fields only if they have values
@@ -2468,6 +2469,7 @@ class CampaignOrchestratorService {
             landing_page_url: finalLink,
             display_name: campaign.offer.name,
             video_id: videoId,
+            operation_status: 'DISABLE', // Ad paused (only ads are paused)
           };
 
           if (thumbnailImageId) {

@@ -69,6 +69,9 @@ export interface TikTokAdGroupParams {
   // Pixel
   pixel_id?: string;
   optimization_event?: string; // e.g., 'COMPLETE_PAYMENT', 'ADD_TO_CART'
+
+  // Status
+  operation_status?: 'ENABLE' | 'DISABLE'; // ENABLE = active, DISABLE = paused
 }
 
 export interface TikTokAdParams {
@@ -95,6 +98,9 @@ export interface TikTokAdParams {
   // Tracking
   tracking_pixel_id?: string;
   tracking_app_id?: string;
+
+  // Status
+  operation_status?: 'ENABLE' | 'DISABLE'; // ENABLE = active, DISABLE = paused
 }
 
 export interface TikTokVideoUploadParams {

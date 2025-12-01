@@ -1,8 +1,55 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
+
+// Mapeo de pasos técnicos a nombres amigables
+const STEP_NAMES: Record<string, { name: string; icon: string; description: string }> = {
+  'validation': { name: 'Validación', icon: '✓', description: 'Verificando configuración de la campaña' },
+  'tonic_article': { name: 'Artículo Tonic', icon: '📝', description: 'Creando artículo RSOC en Tonic' },
+  'tonic_approval': { name: 'Aprobación Tonic', icon: '⏳', description: 'Esperando aprobación del artículo' },
+  'tonic_campaign': { name: 'Campaña Tonic', icon: '🎯', description: 'Creando campaña en Tonic' },
+  'tracking_link': { name: 'Tracking Link', icon: '🔗', description: 'Obteniendo enlace de seguimiento' },
+  'keywords': { name: 'Keywords', icon: '🏷️', description: 'Configurando palabras clave' },
+  'pixel_meta': { name: 'Pixel Meta', icon: '📊', description: 'Configurando pixel de Meta' },
+  'pixel_tiktok': { name: 'Pixel TikTok', icon: '📊', description: 'Configurando pixel de TikTok' },
+  'meta_campaign': { name: 'Campaña Meta', icon: '📘', description: 'Creando campaña en Meta' },
+  'meta_adset': { name: 'Ad Set Meta', icon: '📘', description: 'Creando conjunto de anuncios en Meta' },
+  'meta_media': { name: 'Media Meta', icon: '🖼️', description: 'Subiendo media a Meta' },
+  'meta_ad': { name: 'Anuncio Meta', icon: '📘', description: 'Creando anuncio en Meta' },
+  'tiktok_campaign': { name: 'Campaña TikTok', icon: '🎵', description: 'Creando campaña en TikTok' },
+  'tiktok_video': { name: 'Video TikTok', icon: '🎬', description: 'Subiendo video a TikTok' },
+  'tiktok_ad': { name: 'Anuncio TikTok', icon: '🎵', description: 'Creando anuncio en TikTok' },
+  'complete': { name: 'Completado', icon: '✅', description: 'Campaña lanzada exitosamente' },
+  'error': { name: 'Error', icon: '❌', description: 'Error durante el lanzamiento' },
+};
+
+// Función para obtener sugerencias basadas en el error
+function getErrorSuggestion(step: string, message: string): string | null {
+  const lowerMessage = message.toLowerCase();
+
+  if (lowerMessage.includes('token') || lowerMessage.includes('access')) {
+    return 'Verifica que los tokens de acceso estén vigentes. Puede ser necesario re-autenticar la cuenta.';
+  }
+  if (lowerMessage.includes('permission') || lowerMessage.includes('forbidden')) {
+    return 'La cuenta no tiene permisos suficientes. Verifica los permisos de la aplicación.';
+  }
+  if (lowerMessage.includes('budget') || lowerMessage.includes('presupuesto')) {
+    return 'Verifica que el presupuesto cumpla con los mínimos requeridos por la plataforma.';
+  }
+  if (lowerMessage.includes('pixel')) {
+    return 'Verifica que el Pixel ID esté correctamente configurado en la cuenta.';
+  }
+  if (lowerMessage.includes('image') || lowerMessage.includes('video') || lowerMessage.includes('media')) {
+    return 'Hubo un problema con los archivos multimedia. Verifica el formato y tamaño de los archivos.';
+  }
+  if (step.includes('tonic')) {
+    return 'Error relacionado con Tonic. Verifica las credenciales y que la oferta esté activa.';
+  }
+
+  return null;
+}
 
 interface Campaign {
   id: string;
@@ -52,12 +99,18 @@ interface Campaign {
 
 export default function CampaignDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const campaignId = params.id as string;
 
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
+
+  // Función para ir al wizard con los datos precargados
+  const handleReconfigure = () => {
+    router.push(`/campaigns/new?clone=${campaignId}`);
+  };
 
   useEffect(() => {
     async function fetchCampaign() {
@@ -188,55 +241,86 @@ export default function CampaignDetailPage() {
 
         {/* Error Details Section - Only shown when campaign failed */}
         {campaign.status === 'FAILED' && campaign.errorDetails && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-6 mb-6">
-            <h2 className="text-xl font-bold text-red-800 mb-4 flex items-center gap-2">
-              <span className="text-2xl">⚠️</span>
-              Error en la Campaña
-            </h2>
-
-            <div className="space-y-3">
-              <div className="flex items-start gap-3">
-                <span className="text-red-600 font-medium min-w-[100px]">Paso:</span>
-                <span className="text-red-800">{campaign.errorDetails.step}</span>
-              </div>
-
-              <div className="flex items-start gap-3">
-                <span className="text-red-600 font-medium min-w-[100px]">Mensaje:</span>
-                <span className="text-red-800">{campaign.errorDetails.message}</span>
-              </div>
-
-              {campaign.errorDetails.platform && (
-                <div className="flex items-start gap-3">
-                  <span className="text-red-600 font-medium min-w-[100px]">Plataforma:</span>
-                  <span className="text-red-800">{campaign.errorDetails.platform}</span>
-                </div>
-              )}
-
-              <div className="flex items-start gap-3">
-                <span className="text-red-600 font-medium min-w-[100px]">Fecha:</span>
-                <span className="text-red-800">
-                  {new Date(campaign.errorDetails.timestamp).toLocaleString()}
-                </span>
-              </div>
-
-              {campaign.errorDetails.technicalDetails && (
-                <div className="mt-4 pt-4 border-t border-red-200">
-                  <button
-                    onClick={() => setShowTechnicalDetails(!showTechnicalDetails)}
-                    className="text-red-700 hover:text-red-900 font-medium flex items-center gap-2"
-                  >
-                    <span>{showTechnicalDetails ? '▼' : '▶'}</span>
-                    {showTechnicalDetails ? 'Ocultar' : 'Mostrar'} detalles técnicos
-                  </button>
-
-                  {showTechnicalDetails && (
-                    <pre className="mt-3 p-4 bg-red-100 rounded-lg text-xs text-red-900 overflow-x-auto whitespace-pre-wrap font-mono">
-                      {campaign.errorDetails.technicalDetails}
-                    </pre>
-                  )}
-                </div>
-              )}
+          <div className="bg-red-50 border-2 border-red-300 rounded-lg p-6 mb-6 shadow-sm">
+            <div className="flex justify-between items-start mb-4">
+              <h2 className="text-xl font-bold text-red-800 flex items-center gap-2">
+                <span className="text-2xl">❌</span>
+                Error en el Lanzamiento
+              </h2>
+              <button
+                onClick={handleReconfigure}
+                className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg font-semibold text-sm flex items-center gap-2 transition-colors"
+              >
+                <span>🔄</span>
+                Volver a Configurar
+              </button>
             </div>
+
+            {/* Paso donde falló */}
+            <div className="bg-white border border-red-200 rounded-lg p-4 mb-4">
+              <div className="flex items-center gap-3 mb-2">
+                <span className="text-2xl">
+                  {STEP_NAMES[campaign.errorDetails.step]?.icon || '❓'}
+                </span>
+                <div>
+                  <p className="font-semibold text-red-800">
+                    Falló en: {STEP_NAMES[campaign.errorDetails.step]?.name || campaign.errorDetails.step}
+                  </p>
+                  <p className="text-sm text-red-600">
+                    {STEP_NAMES[campaign.errorDetails.step]?.description || 'Paso del proceso'}
+                  </p>
+                </div>
+                {campaign.errorDetails.platform && (
+                  <span className="ml-auto bg-red-100 text-red-700 px-3 py-1 rounded-full text-sm font-medium">
+                    {campaign.errorDetails.platform}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Mensaje de error */}
+            <div className="bg-red-100 border-l-4 border-red-500 p-4 mb-4">
+              <p className="font-medium text-red-800 mb-1">Mensaje de Error:</p>
+              <p className="text-red-700">{campaign.errorDetails.message}</p>
+            </div>
+
+            {/* Sugerencia de solución */}
+            {getErrorSuggestion(campaign.errorDetails.step, campaign.errorDetails.message) && (
+              <div className="bg-yellow-50 border-l-4 border-yellow-500 p-4 mb-4">
+                <p className="font-medium text-yellow-800 mb-1">💡 Sugerencia:</p>
+                <p className="text-yellow-700">
+                  {getErrorSuggestion(campaign.errorDetails.step, campaign.errorDetails.message)}
+                </p>
+              </div>
+            )}
+
+            {/* Timestamp */}
+            <div className="text-sm text-red-600 mb-4">
+              <span className="font-medium">Fecha del error:</span>{' '}
+              {new Date(campaign.errorDetails.timestamp).toLocaleString('es-ES', {
+                dateStyle: 'medium',
+                timeStyle: 'medium'
+              })}
+            </div>
+
+            {/* Detalles técnicos */}
+            {campaign.errorDetails.technicalDetails && (
+              <div className="border-t border-red-200 pt-4">
+                <button
+                  onClick={() => setShowTechnicalDetails(!showTechnicalDetails)}
+                  className="text-red-700 hover:text-red-900 font-medium flex items-center gap-2 mb-3"
+                >
+                  <span className="text-lg">{showTechnicalDetails ? '▼' : '▶'}</span>
+                  {showTechnicalDetails ? 'Ocultar' : 'Ver'} detalles técnicos (para desarrolladores)
+                </button>
+
+                {showTechnicalDetails && (
+                  <pre className="p-4 bg-gray-900 text-green-400 rounded-lg text-xs overflow-x-auto whitespace-pre-wrap font-mono max-h-96 overflow-y-auto">
+                    {campaign.errorDetails.technicalDetails}
+                  </pre>
+                )}
+              </div>
+            )}
           </div>
         )}
 

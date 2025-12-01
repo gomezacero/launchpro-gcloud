@@ -69,11 +69,16 @@ interface UploadedFile {
   thumbnailFileName?: string;
 }
 
-export default function CampaignWizard() {
+interface CampaignWizardProps {
+  cloneFromId?: string;
+}
+
+export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
   const router = useRouter();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadingClone, setLoadingClone] = useState(!!cloneFromId);
 
   // Unique session ID to namespace temp files (prevents race conditions when creating multiple campaigns)
   const [wizardSessionId, setWizardSessionId] = useState(() => `wizard-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`);
@@ -208,6 +213,85 @@ export default function CampaignWizard() {
       handleInputChange('language', defaultLang);
     }
   }, [formData.country]);
+
+  // Load campaign data when cloning
+  useEffect(() => {
+    if (!cloneFromId) return;
+
+    const loadCampaignToClone = async () => {
+      try {
+        setLoadingClone(true);
+        const res = await fetch(`/api/campaigns/${cloneFromId}`);
+        const data = await res.json();
+
+        if (!data.success || !data.data) {
+          console.error('Failed to load campaign for cloning');
+          setLoadingClone(false);
+          return;
+        }
+
+        const campaign = data.data;
+
+        // Find the Tonic account that was used
+        const tonicAccountMatch = tonicAccounts.find(acc =>
+          acc.id === campaign.tonicAccountId
+        );
+
+        // Build platforms config from campaign platforms
+        const platformsConfig: PlatformConfig[] = campaign.platforms?.map((p: any) => ({
+          platform: p.platform as 'META' | 'TIKTOK',
+          accountId: p.platform === 'META' ? p.metaAccountId : p.tiktokAccountId,
+          performanceGoal: p.performanceGoal || 'leads',
+          budget: p.budget?.toString() || '50',
+          startDateTime: new Date().toISOString().slice(0, 16), // Use current time for new launch
+          generateWithAI: true,
+          specialAdCategories: p.specialAdCategories || [],
+          manualAdTitle: p.manualAdTitle || '',
+          manualDescription: p.manualDescription || '',
+          manualPrimaryText: p.manualPrimaryText || '',
+          manualTiktokAdText: p.manualTiktokAdText || '',
+          metaPageId: p.metaPageId || '',
+          tiktokIdentityId: p.tiktokIdentityId || '',
+          tiktokIdentityType: p.tiktokIdentityType || '',
+        })) || [];
+
+        // Update form data with campaign data
+        setFormData({
+          name: `${campaign.name} - Copia`,
+          campaignType: campaign.campaignType || 'CBO',
+          tonicAccountId: campaign.tonicAccountId || tonicAccountMatch?.id || '',
+          offerId: campaign.offer?.tonicId || '',
+          country: campaign.country || '',
+          language: campaign.language || 'en',
+          copyMaster: campaign.copyMaster || '',
+          communicationAngle: campaign.communicationAngle || '',
+          keywords: campaign.keywords || [],
+          contentGenerationPhrases: campaign.contentGenerationPhrases || [],
+          platforms: platformsConfig,
+        });
+
+        // Update text inputs for keywords
+        if (campaign.keywords && campaign.keywords.length > 0) {
+          setKeywordsText(campaign.keywords.join(', '));
+        }
+
+        // Update content phrases
+        if (campaign.contentGenerationPhrases && campaign.contentGenerationPhrases.length > 0) {
+          setContentPhrasesText(campaign.contentGenerationPhrases.join('\n'));
+        }
+
+        setLoadingClone(false);
+      } catch (err) {
+        console.error('Error loading campaign to clone:', err);
+        setLoadingClone(false);
+      }
+    };
+
+    // Wait for accounts to load first
+    if (tonicAccounts.length > 0) {
+      loadCampaignToClone();
+    }
+  }, [cloneFromId, tonicAccounts]);
 
   const loadOffers = async () => {
     try {
@@ -788,16 +872,32 @@ export default function CampaignWizard() {
     }
   };
 
+  // Show loading screen while loading campaign data for cloning
+  if (loadingClone) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Cargando datos de la campaña...</p>
+          <p className="mt-2 text-sm text-gray-500">Preparando configuración para reintento</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold text-gray-900 mb-2">
-            🚀 Launch New Campaign
+            {cloneFromId ? '🔄 Reconfigurar Campaña' : '🚀 Launch New Campaign'}
           </h1>
           <p className="text-gray-600">
-            Create campaigns across Tonic, Meta, and TikTok with AI-powered content
+            {cloneFromId
+              ? 'Los datos de la campaña anterior han sido precargados. Modifica lo necesario y vuelve a lanzar.'
+              : 'Create campaigns across Tonic, Meta, and TikTok with AI-powered content'
+            }
           </p>
         </div>
 
@@ -1320,11 +1420,10 @@ export default function CampaignWizard() {
                               value={platform.manualAdTitle || ''}
                               onChange={(e) => updatePlatform(index, 'manualAdTitle', e.target.value)}
                               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                              placeholder="Max 40 characters..."
-                              maxLength={40}
+                              placeholder="Enter ad headline..."
                             />
                             <p className="text-xs text-gray-500 mt-1">
-                              {(platform.manualAdTitle || '').length}/40 characters
+                              {(platform.manualAdTitle || '').length} characters
                             </p>
                           </div>
 
