@@ -147,6 +147,7 @@ export async function POST(request: NextRequest) {
     logger.error('api', `Error creating campaign: ${error.message}`, {
       stack: error.stack,
       error: error.message,
+      tonicData: error.tonicData,
       duration,
     });
 
@@ -161,11 +162,15 @@ export async function POST(request: NextRequest) {
       details += `\n\nCause: ${error.cause}`;
     }
 
+    // Include Tonic data field (contains clearest error message)
+    const tonicData = error.tonicData || null;
+
     return NextResponse.json(
       {
         success: false,
         error: error.message,
         details: details,
+        tonicData: tonicData, // The clear error message from Tonic API
         technicalDetails: process.env.NODE_ENV === 'development' ? error.stack : details,
       },
       { status: 500 }

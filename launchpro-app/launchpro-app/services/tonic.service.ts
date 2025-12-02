@@ -392,7 +392,27 @@ class TonicService {
         requestParams: params,
       });
 
-      throw new Error(`RSOC article creation failed: ${error.response?.data?.message || error.message}`);
+      // Extract the clear error message from Tonic's 'data' field
+      // Tonic returns errors in data array like: ['Content generation phrases have to be unique. [Root=...]']
+      let tonicDataMessage = '';
+      if (error.response?.data) {
+        if (Array.isArray(error.response.data)) {
+          tonicDataMessage = error.response.data.join('; ');
+        } else if (typeof error.response.data === 'object') {
+          tonicDataMessage = JSON.stringify(error.response.data);
+        } else {
+          tonicDataMessage = String(error.response.data);
+        }
+      }
+
+      // Create a rich error with all details
+      const errorMessage = `RSOC article creation failed: ${error.response?.data?.message || error.message}`;
+      const enrichedError = new Error(errorMessage) as any;
+      enrichedError.tonicData = tonicDataMessage;
+      enrichedError.status = error.response?.status;
+      enrichedError.statusText = error.response?.statusText;
+
+      throw enrichedError;
     }
   }
 

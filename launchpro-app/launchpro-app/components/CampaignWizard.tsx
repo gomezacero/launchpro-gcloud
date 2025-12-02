@@ -89,8 +89,15 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
   const [launchComplete, setLaunchComplete] = useState(false);
   const [launchSuccess, setLaunchSuccess] = useState(false);
   const [launchedCampaignId, setLaunchedCampaignId] = useState<string | null>(null);
-  const [errorDetails, setErrorDetails] = useState<{ message: string; details?: string; suggestion?: string } | null>(null);
+  const [errorDetails, setErrorDetails] = useState<{ message: string; details?: string; suggestion?: string; tonicData?: string } | null>(null);
   const [showErrorDetails, setShowErrorDetails] = useState(false);
+
+  // Content phrases validation state
+  const [phrasesValidation, setPhrasesValidation] = useState<{
+    status: 'idle' | 'validating' | 'valid' | 'invalid';
+    message?: string;
+    errors?: string[];
+  }>({ status: 'idle' });
 
   // Data from APIs
   const [offers, setOffers] = useState<Offer[]>([]);
@@ -400,6 +407,73 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
+  /**
+   * Validate content generation phrases
+   * - Must have 3-5 phrases
+   * - Phrases must be unique (no duplicates)
+   */
+  const validateContentPhrases = () => {
+    setPhrasesValidation({ status: 'validating' });
+
+    // Parse phrases from text
+    const phrases = contentPhrasesText
+      ? contentPhrasesText.split(',').map(p => p.trim()).filter(p => p)
+      : [];
+
+    const errors: string[] = [];
+
+    // Check if empty (it's optional, so empty is valid)
+    if (phrases.length === 0) {
+      setPhrasesValidation({
+        status: 'valid',
+        message: 'Frases vacías - se generarán con AI automáticamente.',
+      });
+      return;
+    }
+
+    // Check count (3-5 required)
+    if (phrases.length < 3) {
+      errors.push(`Se requieren al menos 3 frases. Actualmente: ${phrases.length}`);
+    } else if (phrases.length > 5) {
+      errors.push(`Máximo 5 frases permitidas. Actualmente: ${phrases.length}`);
+    }
+
+    // Check for duplicates (case-insensitive)
+    const lowerPhrases = phrases.map(p => p.toLowerCase());
+    const uniquePhrases = new Set(lowerPhrases);
+    if (uniquePhrases.size !== phrases.length) {
+      // Find which phrases are duplicated
+      const seen = new Set<string>();
+      const duplicates: string[] = [];
+      lowerPhrases.forEach((phrase, index) => {
+        if (seen.has(phrase)) {
+          duplicates.push(phrases[index]);
+        }
+        seen.add(phrase);
+      });
+      errors.push(`Frases duplicadas encontradas: ${duplicates.join(', ')}`);
+    }
+
+    // Check minimum phrase length
+    const shortPhrases = phrases.filter(p => p.length < 5);
+    if (shortPhrases.length > 0) {
+      errors.push(`Frases muy cortas (mínimo 5 caracteres): ${shortPhrases.join(', ')}`);
+    }
+
+    if (errors.length > 0) {
+      setPhrasesValidation({
+        status: 'invalid',
+        message: 'Validación fallida',
+        errors,
+      });
+    } else {
+      setPhrasesValidation({
+        status: 'valid',
+        message: `${phrases.length} frases válidas y únicas.`,
+      });
+    }
+  };
+
   const addPlatform = (platform: 'META' | 'TIKTOK') => {
     // Default to tomorrow at 6:00 AM UTC
     const tomorrow = new Date();
@@ -683,6 +757,7 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
           message: errorMessage,
           details: data.details || data.technicalDetails || JSON.stringify(data, null, 2),
           suggestion: suggestion || 'Revisa los logs del servidor para más información.',
+          tonicData: data.tonicData || undefined,
         });
         setLaunchComplete(true);
         setLaunchSuccess(false);
@@ -1141,7 +1216,13 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
                 </label>
                 <textarea
                   value={contentPhrasesText}
-                  onChange={(e) => setContentPhrasesText(e.target.value)}
+                  onChange={(e) => {
+                    setContentPhrasesText(e.target.value);
+                    // Reset validation when text changes
+                    if (phrasesValidation.status !== 'idle') {
+                      setPhrasesValidation({ status: 'idle' });
+                    }
+                  }}
                   onBlur={() => {
                     const phrasesArray = contentPhrasesText
                       ? contentPhrasesText.split(',').map(p => p.trim()).filter(p => p)
@@ -1152,14 +1233,40 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
                   rows={3}
                   placeholder="e.g., best car loan rates, quick approval process, flexible payment options..."
                 />
-                <p className="text-xs text-gray-500 mt-1">
-                  Separate phrases with commas. AI will generate 3-5 phrases if left empty. These are used by Tonic for RSOC article generation.
-                </p>
+                <div className="flex items-center justify-between mt-2">
+                  <p className="text-xs text-gray-500">
+                    Separate phrases with commas. AI will generate 3-5 phrases if left empty. These are used by Tonic for RSOC article generation.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={validateContentPhrases}
+                    disabled={phrasesValidation.status === 'validating'}
+                    className="ml-2 px-3 py-1 text-xs font-medium bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 border border-gray-300 whitespace-nowrap"
+                  >
+                    {phrasesValidation.status === 'validating' ? 'Validando...' : 'Validar Frases'}
+                  </button>
+                </div>
                 {formData.contentGenerationPhrases.length > 0 &&
                  (formData.contentGenerationPhrases.length < 3 || formData.contentGenerationPhrases.length > 5) && (
                   <p className="text-xs text-red-600 mt-1 font-medium">
                     Must have between 3 and 5 phrases. Currently: {formData.contentGenerationPhrases.length}
                   </p>
+                )}
+                {/* Validation result */}
+                {phrasesValidation.status === 'valid' && (
+                  <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded-lg">
+                    <p className="text-xs text-green-700 font-medium flex items-center gap-1">
+                      <span>✓</span> {phrasesValidation.message}
+                    </p>
+                  </div>
+                )}
+                {phrasesValidation.status === 'invalid' && (
+                  <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-lg">
+                    <p className="text-xs text-red-700 font-medium mb-1">✗ {phrasesValidation.message}</p>
+                    {phrasesValidation.errors && phrasesValidation.errors.map((error, i) => (
+                      <p key={i} className="text-xs text-red-600 pl-4">• {error}</p>
+                    ))}
+                  </div>
                 )}
               </div>
             </div>
@@ -1918,6 +2025,13 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
                   <p className="text-red-800 text-sm mb-2">
                     Hubo errores durante el lanzamiento.
                   </p>
+                  {/* Tonic Data - Most clear error message */}
+                  {errorDetails?.tonicData && (
+                    <div className="mt-3 p-3 bg-red-100 rounded-lg border border-red-300">
+                      <p className="text-red-900 text-sm font-semibold mb-1">Error de Tonic:</p>
+                      <p className="text-red-800 text-sm">{errorDetails.tonicData}</p>
+                    </div>
+                  )}
                   {errorDetails?.details && (
                     <div className="mt-2">
                       <button
@@ -1986,6 +2100,7 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
                     });
                     setKeywordsText('');
                     setContentPhrasesText('');
+                    setPhrasesValidation({ status: 'idle' });
                     setError(null);
                     setErrorDetails(null);
                     setShowErrorDetails(false);
