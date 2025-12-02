@@ -1431,6 +1431,8 @@ class CampaignOrchestratorService {
       special_ad_categories: platformConfig.specialAdCategories && platformConfig.specialAdCategories.length > 0
         ? platformConfig.specialAdCategories
         : ['NONE'],
+      // Required when special_ad_categories is not NONE - pass the campaign country
+      special_ad_category_country: hasRestrictedCategory ? [campaign.country] : undefined,
       // CBO: Set budget at campaign level
       // ABO: Do NOT set budget at campaign level
       daily_budget: isCBO ? budgetInCents : undefined,

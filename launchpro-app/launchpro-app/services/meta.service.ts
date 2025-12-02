@@ -19,6 +19,7 @@ export interface MetaCampaignParams {
   | 'OUTCOME_TRAFFIC';
   status?: 'ACTIVE' | 'PAUSED';
   special_ad_categories?: string[]; // e.g., ['NONE'] or ['HOUSING', 'EMPLOYMENT', 'CREDIT']
+  special_ad_category_country?: string[]; // Required when special_ad_categories is not NONE, e.g., ['US']
   daily_budget?: number; // in cents (for CBO - Campaign Budget Optimization)
   lifetime_budget?: number; // in cents (for CBO)
   bid_strategy?: 'LOWEST_COST_WITHOUT_CAP' | 'LOWEST_COST_WITH_BID_CAP' | 'COST_CAP';
@@ -168,6 +169,10 @@ class MetaService {
       objective: params.objective,
       status: params.status || 'PAUSED',
       special_ad_categories: params.special_ad_categories || [],
+      // Required when special_ad_categories is not NONE/empty
+      ...(params.special_ad_category_country && params.special_ad_category_country.length > 0 && {
+        special_ad_category_country: params.special_ad_category_country,
+      }),
       // Only include bid_strategy if defined (ABO mode doesn't use it at campaign level)
       ...(params.bid_strategy && { bid_strategy: params.bid_strategy }),
     };
