@@ -215,26 +215,26 @@ export default function CampaignDetailPage() {
 
           <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
             <div>
-              <p className="text-sm text-gray-500">Campaign Type</p>
-              <p className="font-semibold">{campaign.campaignType}</p>
+              <p className="text-sm text-gray-600 font-medium">Campaign Type</p>
+              <p className="font-semibold text-gray-900">{campaign.campaignType}</p>
             </div>
             <div>
-              <p className="text-sm text-gray-500">Created</p>
-              <p className="font-semibold">
+              <p className="text-sm text-gray-600 font-medium">Created</p>
+              <p className="font-semibold text-gray-900">
                 {new Date(campaign.createdAt).toLocaleDateString()}
               </p>
             </div>
             <div>
-              <p className="text-sm text-gray-500">Launched</p>
-              <p className="font-semibold">
+              <p className="text-sm text-gray-600 font-medium">Launched</p>
+              <p className="font-semibold text-gray-900">
                 {campaign.launchedAt
                   ? new Date(campaign.launchedAt).toLocaleDateString()
                   : 'Not launched'}
               </p>
             </div>
             <div>
-              <p className="text-sm text-gray-500">Vertical</p>
-              <p className="font-semibold">{campaign.offer.vertical}</p>
+              <p className="text-sm text-gray-600 font-medium">Vertical</p>
+              <p className="font-semibold text-gray-900">{campaign.offer.vertical}</p>
             </div>
           </div>
         </div>
@@ -351,14 +351,14 @@ export default function CampaignDetailPage() {
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <p className="text-sm text-gray-500">Tonic Campaign ID</p>
-              <p className="font-mono text-sm bg-gray-100 p-2 rounded">
+              <p className="text-sm font-medium text-blue-600">Tonic Campaign ID</p>
+              <p className="font-mono text-sm bg-gray-100 p-2 rounded text-gray-800">
                 {campaign.tonicCampaignId || 'Not created'}
               </p>
             </div>
             <div>
-              <p className="text-sm text-gray-500">Tracking Link</p>
-              <p className="font-mono text-xs bg-gray-100 p-2 rounded break-all">
+              <p className="text-sm font-medium text-blue-600">Tracking Link</p>
+              <p className="font-mono text-xs bg-gray-100 p-2 rounded break-all text-gray-800">
                 {campaign.tonicTrackingLink || 'Not available'}
               </p>
             </div>
@@ -377,7 +377,7 @@ export default function CampaignDetailPage() {
                 className="border rounded-lg p-4"
               >
                 <div className="flex justify-between items-center mb-3">
-                  <h3 className="text-lg font-semibold">
+                  <h3 className="text-lg font-semibold text-gray-900">
                     {platform.platform === 'META'
                       ? 'Meta (Facebook/Instagram)'
                       : 'TikTok'}
@@ -396,26 +396,26 @@ export default function CampaignDetailPage() {
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                   <div>
-                    <p className="text-gray-500">Budget</p>
-                    <p className="font-semibold">${platform.budget}</p>
+                    <p className="text-gray-600 font-medium">Budget</p>
+                    <p className="font-semibold text-gray-900">${platform.budget}</p>
                   </div>
                   {platform.platform === 'META' && (
                     <>
                       <div>
-                        <p className="text-gray-500">Campaign ID</p>
-                        <p className="font-mono text-xs">
+                        <p className="text-gray-600 font-medium">Campaign ID</p>
+                        <p className="font-mono text-xs text-gray-800">
                           {platform.metaCampaignId || '-'}
                         </p>
                       </div>
                       <div>
-                        <p className="text-gray-500">Ad Set ID</p>
-                        <p className="font-mono text-xs">
+                        <p className="text-gray-600 font-medium">Ad Set ID</p>
+                        <p className="font-mono text-xs text-gray-800">
                           {platform.metaAdSetId || '-'}
                         </p>
                       </div>
                       <div>
-                        <p className="text-gray-500">Ad ID</p>
-                        <p className="font-mono text-xs">
+                        <p className="text-gray-600 font-medium">Ad ID</p>
+                        <p className="font-mono text-xs text-gray-800">
                           {platform.metaAdId || '-'}
                         </p>
                       </div>
@@ -424,20 +424,20 @@ export default function CampaignDetailPage() {
                   {platform.platform === 'TIKTOK' && (
                     <>
                       <div>
-                        <p className="text-gray-500">Campaign ID</p>
-                        <p className="font-mono text-xs">
+                        <p className="text-gray-600 font-medium">Campaign ID</p>
+                        <p className="font-mono text-xs text-gray-800">
                           {platform.tiktokCampaignId || '-'}
                         </p>
                       </div>
                       <div>
-                        <p className="text-gray-500">Ad Group ID</p>
-                        <p className="font-mono text-xs">
+                        <p className="text-gray-600 font-medium">Ad Group ID</p>
+                        <p className="font-mono text-xs text-gray-800">
                           {platform.tiktokAdGroupId || '-'}
                         </p>
                       </div>
                       <div>
-                        <p className="text-gray-500">Ad ID</p>
-                        <p className="font-mono text-xs">
+                        <p className="text-gray-600 font-medium">Ad ID</p>
+                        <p className="font-mono text-xs text-gray-800">
                           {platform.tiktokAdId || '-'}
                         </p>
                       </div>
@@ -471,12 +471,12 @@ export default function CampaignDetailPage() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {campaign.media.map((media) => (
                 <div key={media.id} className="border rounded-lg p-3">
-                  <p className="text-sm font-semibold mb-2">
+                  <p className="text-sm font-semibold mb-2 text-gray-800">
                     {media.fileName}
                   </p>
-                  <p className="text-xs text-gray-500 mb-2">
+                  <p className="text-xs text-gray-600 mb-2">
                     Type: {media.type} |{' '}
-                    {media.generatedByAI ? 'AI Generated' : 'Manual Upload'}
+                    <span className="text-blue-600">{media.generatedByAI ? 'AI Generated' : 'Manual Upload'}</span>
                   </p>
                   {media.type === 'IMAGE' ? (
                     <img
