@@ -405,7 +405,8 @@ export default function CampaignDetailPage() {
                           if (campaign.copyMaster) {
                             url.searchParams.set('adtitle', campaign.copyMaster.substring(0, 100).trim().replace(/\n/g, ' ').replace(/\s+/g, ' '));
                           }
-                          url.searchParams.set('ad_id', '__AID__');
+                          url.searchParams.set('ad_id', '__CID__');
+                          url.searchParams.set('ttclid', '__CLICKID__');
                           url.searchParams.set('dpco', '1');
                           return url.toString();
                         } catch {

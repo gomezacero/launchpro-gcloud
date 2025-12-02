@@ -977,87 +977,23 @@ class CampaignOrchestratorService {
 
           } else if (platformConfig.platform === Platform.TIKTOK) {
             campaignLogger.startStep(campaign.id, 'pixel_tiktok', 'Configurando pixel de TikTok...');
-            // Get TikTok account to fetch pixel ID and access token
-            const tiktokAccount = await prisma.account.findUnique({
-              where: { id: platformConfig.accountId },
+
+            // Use the hardcoded TikTok pixel constants for Tonic
+            // IMPORTANT: These are DIFFERENT from the TikTok API access token!
+            // - TIKTOK_PIXEL_ID: The pixel ID for Tonic tracking
+            // - TIKTOK_ACCESS_TOKEN: The specific token for this pixel (NOT the API token)
+            const pixelId = TIKTOK_PIXEL_ID;
+            const pixelAccessToken = TIKTOK_ACCESS_TOKEN;
+
+            logger.info('tonic', `Configuring TikTok pixel ${pixelId} for campaign ${tonicCampaignId}...`, {
+              pixelId,
+              accessTokenPreview: pixelAccessToken.substring(0, 10) + '...',
             });
-
-            if (!tiktokAccount) {
-              throw new Error(`TikTok account ${platformConfig.accountId} not found`);
-            }
-
-            let pixelId = tiktokAccount.tiktokPixelId;
-            let accessToken = tiktokAccount.tiktokAccessToken;
-
-            // FALLBACK: If account doesn't have access token, use global settings
-            if (!accessToken) {
-              logger.warn('tiktok', `⚠️  No access token in account "${tiktokAccount.name}". Trying global settings...`);
-
-              const globalSettings = await prisma.globalSettings.findUnique({
-                where: { id: 'global-settings' },
-              });
-
-              accessToken = globalSettings?.tiktokAccessToken ?? null;
-
-              if (!accessToken) {
-                // Final fallback to environment variable
-                accessToken = process.env.TIKTOK_ACCESS_TOKEN ?? null;
-              }
-
-              if (accessToken) {
-                logger.info('tiktok', `✅ Using global TikTok access token for account "${tiktokAccount.name}"`);
-              } else {
-                throw new Error(
-                  `No access token found for TikTok account "${tiktokAccount.name}". ` +
-                  `Please configure it in the Account settings, Global Settings, or .env file.`
-                );
-              }
-            }
-
-            // AUTO-FETCH PIXEL ID: If not configured, try to fetch from TikTok API
-            if (!pixelId) {
-              logger.warn('tiktok', `⚠️  No pixel ID configured for TikTok account "${tiktokAccount.name}". Attempting auto-fetch...`);
-
-              try {
-                const tiktokService = (await import('./tiktok.service')).default;
-                const pixels = await tiktokService.listPixels(
-                  tiktokAccount.tiktokAdvertiserId || undefined,
-                  accessToken
-                );
-
-                if (pixels && pixels.length > 0) {
-                  pixelId = pixels[0].pixel_id;
-                  logger.info('tiktok', `✅ Auto-fetched pixel ID: ${pixelId} for account "${tiktokAccount.name}"`);
-
-                  // Save to database for future use
-                  await prisma.account.update({
-                    where: { id: tiktokAccount.id },
-                    data: { tiktokPixelId: pixelId },
-                  });
-
-                  logger.success('tiktok', `💾 Saved pixel ID ${pixelId} to database for account "${tiktokAccount.name}"`);
-                } else {
-                  throw new Error(
-                    `No pixels found for TikTok account "${tiktokAccount.name}" (Advertiser ID: ${tiktokAccount.tiktokAdvertiserId}). ` +
-                    `Please create a pixel in your TikTok Ads Manager or configure it manually in the Account settings.`
-                  );
-                }
-              } catch (fetchError: any) {
-                logger.error('tiktok', `❌ Failed to auto-fetch pixel ID:`, fetchError.message);
-                throw new Error(
-                  `No pixel ID found for TikTok account "${tiktokAccount.name}". ` +
-                  `Auto-fetch failed: ${fetchError.message}. ` +
-                  `Please configure it in the Account settings.`
-                );
-              }
-            }
-
-            logger.info('tonic', `Configuring TikTok pixel ${pixelId} for campaign ${tonicCampaignId}...`);
 
             await tonicService.createPixel(credentials, 'tiktok', {
               campaign_id: parseInt(tonicCampaignId.toString()),
-              pixel_id: pixelId!, // REQUIRED - verified non-null above
-              access_token: accessToken!, // REQUIRED - verified non-null above
+              pixel_id: pixelId,
+              access_token: pixelAccessToken,
               revenue_type: 'preestimated_revenue',
             });
 
@@ -1270,12 +1206,17 @@ class CampaignOrchestratorService {
     }
 
     // 4. ad_id (Platform Macro)
-    // Meta: {{ad.id}}
-    // TikTok: __AID__ (Ad ID)
-    const adIdMacro = platform === 'META' ? '{{ad.id}}' : '__AID__';
+    // Meta: {{ad.id}} (Ad ID)
+    // TikTok: __CID__ (Campaign ID)
+    const adIdMacro = platform === 'META' ? '{{ad.id}}' : '__CID__';
     url.searchParams.set('ad_id', adIdMacro);
 
-    // 5. dpco (Always 1)
+    // 5. TikTok-specific: ttclid (Click ID for conversion tracking)
+    if (platform === 'TIKTOK') {
+      url.searchParams.set('ttclid', '__CLICKID__');
+    }
+
+    // 6. dpco (Always 1)
     url.searchParams.set('dpco', '1');
 
     return url.toString();
