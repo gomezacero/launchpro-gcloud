@@ -1408,50 +1408,39 @@ class CampaignOrchestratorService {
       budgetInCents,
     });
 
-    // Determine if we have restricted Special Ad Categories (CREDIT, HOUSING, EMPLOYMENT)
-    // These categories ONLY apply to certain countries: US, CA, and EU countries
-    // For other countries (like LATAM), we must NOT use these categories
-    const restrictedCategories = ['CREDIT', 'HOUSING', 'EMPLOYMENT'];
-    const specialAdCategoryCountries = [
-      'US', 'CA', // North America
-      'AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR', 'DE', 'GR', 'HU',
-      'IE', 'IT', 'LV', 'LT', 'LU', 'MT', 'NL', 'PL', 'PT', 'RO', 'SK', 'SI', 'ES', 'SE', // EU
-      'GB', 'UK', // UK
-    ];
-
-    const userSelectedRestrictedCategory = platformConfig.specialAdCategories?.some(
+    // Determine if we have restricted Special Ad Categories (CREDIT/FINANCIAL_PRODUCTS_SERVICES, HOUSING, EMPLOYMENT)
+    // These categories require specific objectives and country parameter
+    const restrictedCategories = ['CREDIT', 'HOUSING', 'EMPLOYMENT', 'FINANCIAL_PRODUCTS_SERVICES'];
+    const hasRestrictedCategory = platformConfig.specialAdCategories?.some(
       (cat: string) => restrictedCategories.includes(cat)
     );
-
-    // Only apply special ad categories if the country supports them
-    const countrySupportsSpecialAdCategories = specialAdCategoryCountries.includes(campaign.country);
-    const hasRestrictedCategory = userSelectedRestrictedCategory && countrySupportsSpecialAdCategories;
-
-    // Log warning if user selected a restricted category but country doesn't support it
-    if (userSelectedRestrictedCategory && !countrySupportsSpecialAdCategories) {
-      logger.warn('meta', `Special Ad Category selected but country ${campaign.country} does not support it. Using NONE instead.`, {
-        selectedCategories: platformConfig.specialAdCategories,
-        country: campaign.country,
-        supportedCountries: 'US, CA, EU countries',
-      });
-    }
 
     // Use OUTCOME_LEADS for restricted categories, OUTCOME_SALES otherwise
     const campaignObjective = hasRestrictedCategory ? 'OUTCOME_LEADS' : 'OUTCOME_SALES';
 
     logger.info('meta', `Campaign objective: ${campaignObjective}`, {
       hasRestrictedCategory,
-      userSelectedRestrictedCategory,
-      countrySupportsSpecialAdCategories,
       country: campaign.country,
       specialAdCategories: platformConfig.specialAdCategories,
     });
 
     // Create Campaign (according to Meta Ads API)
-    // Only pass special_ad_categories if country supports them, otherwise use NONE
-    const effectiveSpecialAdCategories = hasRestrictedCategory
-      ? platformConfig.specialAdCategories
+    // Transform special ad categories to Meta's current API values
+    // Note: Meta renamed 'CREDIT' to 'FINANCIAL_PRODUCTS_SERVICES' in 2025
+    const transformSpecialAdCategory = (cat: string): string => {
+      if (cat === 'CREDIT') return 'FINANCIAL_PRODUCTS_SERVICES';
+      return cat;
+    };
+
+    // Transform and pass special_ad_categories if user selected them
+    const effectiveSpecialAdCategories = platformConfig.specialAdCategories && platformConfig.specialAdCategories.length > 0
+      ? platformConfig.specialAdCategories.map(transformSpecialAdCategory)
       : ['NONE'];
+
+    logger.info('meta', 'Special Ad Categories transformation:', {
+      original: platformConfig.specialAdCategories,
+      transformed: effectiveSpecialAdCategories,
+    });
 
     const metaCampaign = await metaService.createCampaign({
       name: fullCampaignName,

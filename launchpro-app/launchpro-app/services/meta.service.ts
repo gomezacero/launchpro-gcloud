@@ -205,13 +205,19 @@ class MetaService {
       return response.data;
     } catch (error: any) {
       const metaError = error.response?.data?.error || {};
+      // Log the COMPLETE error response for debugging
+      console.error('[META] ❌ Campaign creation failed - FULL ERROR:', JSON.stringify(error.response?.data, null, 2));
       console.error('[META] ❌ Campaign creation failed:', {
         accountId,
         message: metaError.message || error.message,
+        error_user_msg: metaError.error_user_msg, // This often has the actual problem
+        error_user_title: metaError.error_user_title,
         type: metaError.type,
         code: metaError.code,
         error_subcode: metaError.error_subcode,
         fbtrace_id: metaError.fbtrace_id,
+        is_transient: metaError.is_transient,
+        error_data: metaError.error_data, // Additional error details
         payload,
       });
       throw error;
