@@ -509,14 +509,46 @@ export default function CampaignDetailPage() {
           </div>
         )}
 
+        {/* Draft Campaign Notice */}
+        {campaign.status === 'DRAFT' && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 mb-6">
+            <div className="flex justify-between items-start">
+              <div>
+                <h2 className="text-lg font-bold text-yellow-800 flex items-center gap-2">
+                  <span>📝</span> Campaña en Borrador
+                </h2>
+                <p className="text-yellow-700 mt-1">
+                  Esta campaña no ha sido lanzada todavía. Puedes modificar la configuración y volver a intentar.
+                </p>
+              </div>
+              <button
+                onClick={handleReconfigure}
+                className="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-lg font-semibold text-sm flex items-center gap-2 transition-colors"
+              >
+                <span>🔄</span>
+                Configurar y Lanzar
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Actions */}
-        <div className="flex gap-4">
+        <div className="flex flex-wrap gap-4">
           <Link
             href="/campaigns"
             className="bg-gray-200 text-gray-800 px-6 py-3 rounded-lg font-semibold hover:bg-gray-300 transition-colors"
           >
             Back to Campaigns
           </Link>
+          {(campaign.status === 'DRAFT' || campaign.status === 'FAILED') && (
+            <button
+              onClick={handleReconfigure}
+              className="bg-orange-500 text-white px-6 py-3 rounded-lg font-semibold hover:bg-orange-600 transition-colors flex items-center gap-2"
+            >
+              <span>🔄</span>
+              Volver a Configurar
+            </button>
+          )}
           <Link
             href="/campaigns/new"
             className="bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors"

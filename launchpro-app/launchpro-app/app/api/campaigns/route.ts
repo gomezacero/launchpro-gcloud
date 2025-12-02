@@ -150,11 +150,23 @@ export async function POST(request: NextRequest) {
       duration,
     });
 
+    // Extract more details from the error if available
+    let details = error.message;
+    if (error.response?.data) {
+      details = typeof error.response.data === 'string'
+        ? error.response.data
+        : JSON.stringify(error.response.data, null, 2);
+    }
+    if (error.cause) {
+      details += `\n\nCause: ${error.cause}`;
+    }
+
     return NextResponse.json(
       {
         success: false,
         error: error.message,
-        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
+        details: details,
+        technicalDetails: process.env.NODE_ENV === 'development' ? error.stack : details,
       },
       { status: 500 }
     );

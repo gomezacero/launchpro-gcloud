@@ -89,6 +89,8 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
   const [launchComplete, setLaunchComplete] = useState(false);
   const [launchSuccess, setLaunchSuccess] = useState(false);
   const [launchedCampaignId, setLaunchedCampaignId] = useState<string | null>(null);
+  const [errorDetails, setErrorDetails] = useState<{ message: string; details?: string; suggestion?: string } | null>(null);
+  const [showErrorDetails, setShowErrorDetails] = useState(false);
 
   // Data from APIs
   const [offers, setOffers] = useState<Offer[]>([]);
@@ -661,7 +663,27 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
 
       if (!data.success) {
         updateLogStatus(logId1, 'error');
-        addLog(`Error: ${data.error || 'Error creating campaign'}`, 'error');
+        const errorMessage = data.error || 'Error creating campaign';
+        addLog(`Error: ${errorMessage}`, 'error');
+
+        // Guardar detalles del error para mostrar en el modal
+        let suggestion = '';
+        const lowerError = errorMessage.toLowerCase();
+        if (lowerError.includes('content generation phrases')) {
+          suggestion = 'Las frases de generación de contenido deben ser únicas. Verifica que no haya frases repetidas.';
+        } else if (lowerError.includes('token') || lowerError.includes('access')) {
+          suggestion = 'Verifica que los tokens de acceso estén vigentes.';
+        } else if (lowerError.includes('400')) {
+          suggestion = 'Error de validación. Revisa que todos los campos estén correctamente configurados.';
+        } else if (lowerError.includes('401') || lowerError.includes('403')) {
+          suggestion = 'Error de autenticación. Verifica las credenciales de la cuenta.';
+        }
+
+        setErrorDetails({
+          message: errorMessage,
+          details: data.details || data.technicalDetails || JSON.stringify(data, null, 2),
+          suggestion: suggestion || 'Revisa los logs del servidor para más información.',
+        });
         setLaunchComplete(true);
         setLaunchSuccess(false);
         return;
@@ -1886,10 +1908,32 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
                 </div>
               )}
               {launchComplete && !launchSuccess && (
-                <div className="text-center mb-4 p-3 bg-red-50 rounded-lg">
-                  <p className="text-red-800 text-sm">
-                    Hubo errores durante el lanzamiento. Revisa los detalles arriba.
+                <div className="mb-4 p-4 bg-red-50 rounded-lg border border-red-200">
+                  {errorDetails?.suggestion && (
+                    <div className="flex items-start gap-2 mb-3 p-2 bg-yellow-50 rounded border-l-4 border-yellow-400">
+                      <span className="text-yellow-600">💡</span>
+                      <p className="text-yellow-800 text-sm">{errorDetails.suggestion}</p>
+                    </div>
+                  )}
+                  <p className="text-red-800 text-sm mb-2">
+                    Hubo errores durante el lanzamiento.
                   </p>
+                  {errorDetails?.details && (
+                    <div className="mt-2">
+                      <button
+                        onClick={() => setShowErrorDetails(!showErrorDetails)}
+                        className="text-red-700 hover:text-red-900 text-sm font-medium flex items-center gap-1"
+                      >
+                        <span>{showErrorDetails ? '▼' : '▶'}</span>
+                        {showErrorDetails ? 'Ocultar' : 'Ver'} detalles técnicos
+                      </button>
+                      {showErrorDetails && (
+                        <pre className="mt-2 p-3 bg-gray-900 text-green-400 rounded text-xs overflow-x-auto max-h-40 overflow-y-auto font-mono">
+                          {errorDetails.details}
+                        </pre>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
               {!launchComplete && (
@@ -1943,6 +1987,8 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
                     setKeywordsText('');
                     setContentPhrasesText('');
                     setError(null);
+                    setErrorDetails(null);
+                    setShowErrorDetails(false);
                     // Generate new session ID for next campaign (prevents race conditions)
                     setWizardSessionId(`wizard-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`);
                   }}
