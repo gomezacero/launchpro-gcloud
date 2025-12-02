@@ -168,7 +168,8 @@ class MetaService {
       objective: params.objective,
       status: params.status || 'PAUSED',
       special_ad_categories: params.special_ad_categories || [],
-      bid_strategy: params.bid_strategy,
+      // Only include bid_strategy if defined (ABO mode doesn't use it at campaign level)
+      ...(params.bid_strategy && { bid_strategy: params.bid_strategy }),
     };
 
     // Add budget if CBO (Campaign Budget Optimization)
