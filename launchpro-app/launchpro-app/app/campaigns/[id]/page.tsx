@@ -349,7 +349,7 @@ export default function CampaignDetailPage() {
           <h2 className="text-xl font-bold text-gray-900 mb-4">
             Tonic Integration
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div>
               <p className="text-sm font-medium text-blue-600">Tonic Campaign ID</p>
               <p className="font-mono text-sm bg-gray-100 p-2 rounded text-gray-800">
@@ -357,12 +357,67 @@ export default function CampaignDetailPage() {
               </p>
             </div>
             <div>
-              <p className="text-sm font-medium text-blue-600">Tracking Link</p>
+              <p className="text-sm font-medium text-blue-600">Tracking Link (Base)</p>
               <p className="font-mono text-xs bg-gray-100 p-2 rounded break-all text-gray-800">
                 {campaign.tonicTrackingLink || 'Not available'}
               </p>
             </div>
           </div>
+
+          {/* Parameterized Tracking Links */}
+          {campaign.tonicTrackingLink && (
+            <div className="border-t pt-4">
+              <p className="text-sm font-medium text-gray-700 mb-3">Links Parametrizados (usados en ads):</p>
+              <div className="space-y-3">
+                {/* Meta Link */}
+                {campaign.platforms.some(p => p.platform === 'META') && (
+                  <div>
+                    <p className="text-xs font-medium text-blue-600 mb-1">Meta (Facebook/Instagram):</p>
+                    <p className="font-mono text-xs bg-blue-50 p-2 rounded break-all text-gray-800 border border-blue-200">
+                      {(() => {
+                        try {
+                          const url = new URL(campaign.tonicTrackingLink);
+                          url.searchParams.set('network', 'facebook');
+                          url.searchParams.set('site', 'direct');
+                          if (campaign.copyMaster) {
+                            url.searchParams.set('adtitle', campaign.copyMaster.substring(0, 100).trim().replace(/\n/g, ' ').replace(/\s+/g, ' '));
+                          }
+                          url.searchParams.set('ad_id', '{{ad.id}}');
+                          url.searchParams.set('dpco', '1');
+                          return url.toString();
+                        } catch {
+                          return campaign.tonicTrackingLink;
+                        }
+                      })()}
+                    </p>
+                  </div>
+                )}
+                {/* TikTok Link */}
+                {campaign.platforms.some(p => p.platform === 'TIKTOK') && (
+                  <div>
+                    <p className="text-xs font-medium text-pink-600 mb-1">TikTok:</p>
+                    <p className="font-mono text-xs bg-pink-50 p-2 rounded break-all text-gray-800 border border-pink-200">
+                      {(() => {
+                        try {
+                          const url = new URL(campaign.tonicTrackingLink);
+                          url.searchParams.set('network', 'tiktok');
+                          url.searchParams.set('site', 'direct');
+                          if (campaign.copyMaster) {
+                            url.searchParams.set('adtitle', campaign.copyMaster.substring(0, 100).trim().replace(/\n/g, ' ').replace(/\s+/g, ' '));
+                          }
+                          url.searchParams.set('ad_id', '__AID__');
+                          url.searchParams.set('dpco', '1');
+                          return url.toString();
+                        } catch {
+                          return campaign.tonicTrackingLink;
+                        }
+                      })()}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Platforms */}

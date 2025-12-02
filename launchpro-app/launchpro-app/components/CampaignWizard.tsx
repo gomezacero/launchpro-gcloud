@@ -247,12 +247,18 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
         );
 
         // Build platforms config from campaign platforms
+        // Default to tomorrow at 1:00 AM UTC
+        const tomorrowUTC = new Date();
+        tomorrowUTC.setUTCDate(tomorrowUTC.getUTCDate() + 1);
+        tomorrowUTC.setUTCHours(1, 0, 0, 0);
+        const defaultStartDateTime = tomorrowUTC.toISOString().slice(0, 16);
+
         const platformsConfig: PlatformConfig[] = campaign.platforms?.map((p: any) => ({
           platform: p.platform as 'META' | 'TIKTOK',
           accountId: p.platform === 'META' ? p.metaAccountId : p.tiktokAccountId,
           performanceGoal: p.performanceGoal || 'leads',
           budget: p.budget?.toString() || '50',
-          startDateTime: new Date().toISOString().slice(0, 16), // Use current time for new launch
+          startDateTime: defaultStartDateTime, // Tomorrow 1:00 AM UTC
           generateWithAI: true,
           specialAdCategories: p.specialAdCategories || [],
           manualAdTitle: p.manualAdTitle || '',
@@ -475,10 +481,10 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
   };
 
   const addPlatform = (platform: 'META' | 'TIKTOK') => {
-    // Default to tomorrow at 6:00 AM UTC
+    // Default to tomorrow at 1:00 AM UTC
     const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(6, 0, 0, 0);
+    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+    tomorrow.setUTCHours(1, 0, 0, 0);
     const defaultDateTime = tomorrow.toISOString().slice(0, 16); // Format: YYYY-MM-DDTHH:mm
 
     const newPlatform: PlatformConfig = {

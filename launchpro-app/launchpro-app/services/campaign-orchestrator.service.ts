@@ -968,7 +968,7 @@ class CampaignOrchestratorService {
               campaign_id: parseInt(tonicCampaignId.toString()),
               pixel_id: pixelId, // REQUIRED
               access_token: accessToken, // REQUIRED for Facebook Conversion API
-              event_name: 'Lead',
+              event_name: 'Purchase',
               revenue_type: 'preestimated_revenue',
             });
 
@@ -1551,27 +1551,37 @@ class CampaignOrchestratorService {
     logger.info('meta', JSON.stringify(targetingSpec, null, 2));
     logger.info('meta', `=== END TARGETING SPEC ===`);
 
-    // Create Ad Set (according to Meta Ads API)
-    const adSet = await metaService.createAdSet({
-      campaign_id: metaCampaign.id,
-      name: `${fullCampaignName} - AdSet`,
-      optimization_goal: 'OFFSITE_CONVERSIONS', // Correct goal for Website Leads (Pixel)
-      billing_event: 'IMPRESSIONS', // Standard for lead gen
+    // Helper function to create an ad set (used for both CBO single ad set and ABO multiple ad sets)
+    const createMetaAdSet = async (adSetNameSuffix: string = 'AdSet', adSetBudget?: number) => {
+      return await metaService.createAdSet({
+        campaign_id: metaCampaign.id,
+        name: `${fullCampaignName} - ${adSetNameSuffix}`,
+        optimization_goal: 'OFFSITE_CONVERSIONS', // Correct goal for Website Leads (Pixel)
+        billing_event: 'IMPRESSIONS', // Standard for lead gen
 
-      // ABO Logic: Set budget and bid strategy at Ad Set level if NOT CBO
-      daily_budget: !isCBO ? budgetInCents : undefined,
-      bid_strategy: !isCBO ? 'LOWEST_COST_WITHOUT_CAP' : undefined,
+        // ABO Logic: Set budget and bid strategy at Ad Set level if NOT CBO
+        daily_budget: !isCBO ? (adSetBudget || budgetInCents) : undefined,
+        bid_strategy: !isCBO ? 'LOWEST_COST_WITHOUT_CAP' : undefined,
 
-      start_time: new Date(platformConfig.startDateTime || platformConfig.startDate).toISOString(),
-      targeting: targetingSpec,
-      status: 'ACTIVE', // Ad Set active, only ads are paused
-      promoted_object: {
-        pixel_id: pixelId,
-        custom_event_type: 'PURCHASE',
-      },
-    }, adAccountId, accessToken);
+        start_time: new Date(platformConfig.startDateTime || platformConfig.startDate).toISOString(),
+        targeting: targetingSpec,
+        status: 'ACTIVE', // Ad Set active, only ads are paused
+        promoted_object: {
+          pixel_id: pixelId,
+          custom_event_type: 'PURCHASE',
+        },
+      }, adAccountId, accessToken);
+    };
 
-    logger.success('meta', `Meta ad set created with ID: ${adSet.id}`);
+    // For CBO: Create a single Ad Set upfront (all ads go in this ad set)
+    // For ABO: Ad sets are created in the loop below (one per media)
+    let adSet: any = null;
+    if (isCBO) {
+      adSet = await createMetaAdSet('AdSet');
+      logger.success('meta', `CBO: Single ad set created with ID: ${adSet.id}`);
+    } else {
+      logger.info('meta', `ABO: Ad sets will be created per media item`);
+    }
     let imageHash: string | undefined;
     let videoId: string | undefined;
     // Array to store uploaded image hashes for carousel/multiple ads
@@ -1733,10 +1743,16 @@ class CampaignOrchestratorService {
 
     let creative: any;
     let ad: any;
-    const createdAds: Array<{ adId: string; creativeId: string }> = [];
+    const createdAds: Array<{ adId: string; creativeId: string; adSetId?: string }> = [];
 
     if (useVideo && !hasMultipleVideos) {
       // VIDEO AD - Single video with thumbnail
+      // ABO: Need to create an ad set (for CBO it was created at the start)
+      if (!isCBO && !adSet) {
+        adSet = await createMetaAdSet('AdSet_Video');
+        logger.success('meta', `ABO: Created single video ad set: ${adSet.id}`);
+      }
+
       creative = await metaService.createAdCreative({
         name: `${campaign.name} - Video Creative`,
         object_story_spec: {
@@ -1811,14 +1827,28 @@ class CampaignOrchestratorService {
       logger.success('meta', `Carousel ad created with ID: ${ad.id}`);
 
     } else if (hasMultipleVideos) {
-      // ABO MULTIPLE VIDEO ADS - One ad per video with its thumbnail
-      // This handles the case when we have multiple videos in ABO mode
-      logger.info('meta', `Creating ${videos.length} individual Video Ads (ABO mode)`);
+      // MULTIPLE VIDEO ADS - Handle differently for CBO vs ABO
+      // CBO: One ad set with multiple video ads
+      // ABO: Each video gets its OWN ad set with FULL budget
+
+      if (isCBO) {
+        logger.info('meta', `Creating ${videos.length} Video Ads in single Ad Set (CBO mode)`);
+      } else {
+        logger.info('meta', `Creating ${videos.length} Video Ad Sets + Ads (ABO mode - each ad set gets full budget)`);
+      }
 
       const axios = require('axios');
 
       for (let idx = 0; idx < videos.length; idx++) {
         const video = videos[idx];
+
+        // ABO: Create a separate ad set for THIS video with FULL budget
+        // CBO: Use the single ad set created at the start
+        let videoAdSet = adSet;
+        if (!isCBO) {
+          videoAdSet = await createMetaAdSet(`AdSet_Video_${idx + 1}`);
+          logger.success('meta', `ABO: Created ad set ${idx + 1}/${videos.length} for video: ${videoAdSet.id}`);
+        }
 
         // Upload video
         logger.info('meta', `Uploading video ${idx + 1}/${videos.length}: ${video.fileName}`);
@@ -1877,34 +1907,45 @@ class CampaignOrchestratorService {
           },
         }, adAccountId, accessToken);
 
-        // Create ad
+        // Create ad in THIS video's ad set
         const videoAd = await metaService.createAd({
           name: `${getTomorrowDate()}_${idx + 1}`,
-          adset_id: adSet.id,
+          adset_id: videoAdSet.id, // Use the ad set created for THIS video
           creative: { creative_id: videoCreative.id },
           status: 'PAUSED',
         }, adAccountId, accessToken);
 
-        createdAds.push({ adId: videoAd.id, creativeId: videoCreative.id });
-        logger.success('meta', `Video Ad ${idx + 1}/${videos.length} created`, {
+        createdAds.push({ adId: videoAd.id, creativeId: videoCreative.id, adSetId: videoAdSet.id });
+        logger.success('meta', `Video Ad ${idx + 1}/${videos.length} created${!isCBO ? ' in its own ad set' : ''}`, {
+          adSetId: videoAdSet.id,
           adId: videoAd.id,
           videoId: uploadedVideoId,
           thumbnailHash: thumbHash,
         });
+
+        // Keep track of the last ad set for backwards compatibility
+        if (!isCBO) {
+          adSet = videoAdSet;
+        }
       }
 
       // Use the last created ad/creative for return value
       creative = { id: createdAds[createdAds.length - 1].creativeId };
       ad = { id: createdAds[createdAds.length - 1].adId };
 
-      logger.success('meta', `All ${createdAds.length} video ads created successfully (ABO mode)`);
+      logger.success('meta', `All ${createdAds.length} video ads created successfully (${isCBO ? 'CBO' : 'ABO'} mode)`);
 
     } else if (useMultipleAds) {
-      // ABO MULTIPLE IMAGE ADS - One ad per image in the same Ad Set
-      logger.info('meta', `Creating ${uploadedImageHashes.length} individual Ads (ABO mode)`);
+      // ABO MULTIPLE IMAGE ADS - One ad set + one ad per image
+      // Each image gets its OWN ad set with FULL budget (ABO mode)
+      logger.info('meta', `Creating ${uploadedImageHashes.length} individual Image Ad Sets + Ads (ABO mode - each ad set gets full budget)`);
 
       for (let idx = 0; idx < uploadedImageHashes.length; idx++) {
         const imgData = uploadedImageHashes[idx];
+
+        // ABO: Create a separate ad set for THIS image with FULL budget
+        const imageAdSet = await createMetaAdSet(`AdSet_Image_${idx + 1}`);
+        logger.success('meta', `ABO: Created ad set ${idx + 1}/${uploadedImageHashes.length} for image: ${imageAdSet.id}`);
 
         const imgCreative = await metaService.createAdCreative({
           name: `${campaign.name} - Creative ${idx + 1}`,
@@ -1925,28 +1966,39 @@ class CampaignOrchestratorService {
           },
         }, adAccountId, accessToken);
 
+        // Create ad in THIS image's ad set
         const imgAd = await metaService.createAd({
           name: `${getTomorrowDate()}_${idx + 1}`,
-          adset_id: adSet.id,
+          adset_id: imageAdSet.id, // Use the ad set created for THIS image
           creative: { creative_id: imgCreative.id },
           status: 'PAUSED',
         }, adAccountId, accessToken);
 
-        createdAds.push({ adId: imgAd.id, creativeId: imgCreative.id });
-        logger.success('meta', `Ad ${idx + 1}/${uploadedImageHashes.length} created`, {
+        createdAds.push({ adId: imgAd.id, creativeId: imgCreative.id, adSetId: imageAdSet.id });
+        logger.success('meta', `Image Ad ${idx + 1}/${uploadedImageHashes.length} created in its own ad set`, {
+          adSetId: imageAdSet.id,
           adId: imgAd.id,
           creativeId: imgCreative.id,
         });
+
+        // Keep track of the last ad set for backwards compatibility
+        adSet = imageAdSet;
       }
 
       // Use the last created ad/creative for return value
       creative = { id: createdAds[createdAds.length - 1].creativeId };
       ad = { id: createdAds[createdAds.length - 1].adId };
 
-      logger.success('meta', `All ${createdAds.length} ads created successfully (ABO mode)`);
+      logger.success('meta', `All ${createdAds.length} image ad sets + ads created successfully (ABO mode)`);
 
     } else {
       // SINGLE IMAGE AD - Standard single image ad
+      // ABO: Need to create an ad set (for CBO it was created at the start)
+      if (!isCBO && !adSet) {
+        adSet = await createMetaAdSet('AdSet_Image');
+        logger.success('meta', `ABO: Created single image ad set: ${adSet.id}`);
+      }
+
       creative = await metaService.createAdCreative({
         name: `${campaign.name} - Creative`,
         object_story_spec: {
@@ -2645,6 +2697,8 @@ class CampaignOrchestratorService {
             metaPageId: platformConfig.metaPageId,
             tiktokIdentityId: platformConfig.tiktokIdentityId,
             tiktokIdentityType: platformConfig.tiktokIdentityType,
+            // Special Ad Categories for Meta
+            specialAdCategories: platformConfig.specialAdCategories || [],
           };
 
           if (platformConfig.platform === Platform.META) {
@@ -3074,7 +3128,7 @@ class CampaignOrchestratorService {
             campaign_id: parseInt(tonicCampaignId.toString()),
             pixel_id: platform.metaAccount.metaPixelId,
             access_token: process.env.META_ACCESS_TOKEN || platform.metaAccount.metaAccessToken || '',
-            event_name: 'Lead',
+            event_name: 'Purchase',
             revenue_type: 'preestimated_revenue',
           });
           logger.success('tonic', 'Meta pixel configured');
@@ -3089,7 +3143,7 @@ class CampaignOrchestratorService {
             campaign_id: parseInt(tonicCampaignId.toString()),
             pixel_id: platform.tiktokAccount.tiktokPixelId,
             access_token: process.env.TIKTOK_ACCESS_TOKEN || platform.tiktokAccount.tiktokAccessToken || '',
-            event_name: 'Lead',
+            event_name: 'Purchase',
             revenue_type: 'preestimated_revenue',
           });
           logger.success('tonic', 'TikTok pixel configured');
