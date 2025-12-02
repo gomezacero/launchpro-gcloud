@@ -31,6 +31,7 @@ export async function GET() {
         hasGcpConfig: !!settings.gcpProjectId && !!settings.gcpServiceAccountKey,
         hasMetaConfig: !!settings.metaAccessToken,
         hasTiktokConfig: !!settings.tiktokAccessToken,
+        hasResendKey: !!process.env.RESEND_API_KEY,
       }
     });
   } catch (error: any) {

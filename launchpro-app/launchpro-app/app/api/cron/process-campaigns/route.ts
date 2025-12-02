@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger';
 import { campaignOrchestrator } from '@/services/campaign-orchestrator.service';
+import { emailService } from '@/services/email.service';
 import { CampaignStatus } from '@prisma/client';
 
 /**
@@ -70,6 +71,28 @@ export async function GET(request: NextRequest) {
         platforms: result.platforms,
       });
 
+      // Get updated campaign with all relations for email
+      const updatedCampaign = await prisma.campaign.findUnique({
+        where: { id: campaign.id },
+        include: { platforms: true, offer: true },
+      });
+
+      // Send success or partial failure email
+      if (updatedCampaign) {
+        const allSuccess = result.platforms.every((p: any) => p.success);
+        try {
+          if (allSuccess) {
+            await emailService.sendCampaignSuccess(updatedCampaign);
+          } else {
+            const failedPlatforms = result.platforms.filter((p: any) => !p.success);
+            const errorMsg = failedPlatforms.map((p: any) => `${p.platform}: ${p.error || 'Unknown error'}`).join('; ');
+            await emailService.sendCampaignFailed(updatedCampaign, errorMsg);
+          }
+        } catch (emailError) {
+          logger.error('email', `Failed to send campaign email: ${emailError}`);
+        }
+      }
+
       return NextResponse.json({
         success: true,
         message: `Campaign "${campaign.name}" processed successfully`,
@@ -80,7 +103,7 @@ export async function GET(request: NextRequest) {
 
     } catch (processError: any) {
       // Mark campaign as failed
-      await prisma.campaign.update({
+      const failedCampaign = await prisma.campaign.update({
         where: { id: campaign.id },
         data: {
           status: CampaignStatus.FAILED,
@@ -91,9 +114,17 @@ export async function GET(request: NextRequest) {
             technicalDetails: processError.stack,
           },
         },
+        include: { platforms: true, offer: true },
       });
 
       logger.error('system', `❌ [CRON] Failed to process campaign "${campaign.name}": ${processError.message}`);
+
+      // Send failure email
+      try {
+        await emailService.sendCampaignFailed(failedCampaign, processError.message);
+      } catch (emailError) {
+        logger.error('email', `Failed to send failure email: ${emailError}`);
+      }
 
       return NextResponse.json({
         success: false,

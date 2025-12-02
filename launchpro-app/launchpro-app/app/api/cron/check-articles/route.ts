@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger';
 import { tonicService } from '@/services/tonic.service';
+import { emailService } from '@/services/email.service';
 import { CampaignStatus } from '@prisma/client';
 
 /**
@@ -125,6 +126,14 @@ export async function GET(request: NextRequest) {
           });
 
           logger.warn('system', `❌ [CRON] Campaign "${campaign.name}" article rejected: ${articleStatus.rejection_reason}`);
+
+          // Send email notification for rejected article
+          try {
+            await emailService.sendArticleRejected(campaign, articleStatus.rejection_reason || 'No reason provided');
+          } catch (emailError) {
+            logger.error('email', `Failed to send article rejected email: ${emailError}`);
+          }
+
           results.push({
             campaignId: campaign.id,
             campaignName: campaign.name,
@@ -152,6 +161,14 @@ export async function GET(request: NextRequest) {
             });
 
             logger.warn('system', `⏰ [CRON] Campaign "${campaign.name}" timed out waiting for article approval (${hoursElapsed.toFixed(1)} hours)`);
+
+            // Send email notification for timeout
+            try {
+              await emailService.sendArticleTimeout(campaign);
+            } catch (emailError) {
+              logger.error('email', `Failed to send article timeout email: ${emailError}`);
+            }
+
             results.push({
               campaignId: campaign.id,
               campaignName: campaign.name,

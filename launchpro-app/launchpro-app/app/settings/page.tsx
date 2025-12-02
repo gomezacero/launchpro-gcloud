@@ -9,12 +9,14 @@ interface Settings {
   hasGcpConfig: boolean;
   hasMetaConfig: boolean;
   hasTiktokConfig: boolean;
+  hasResendKey: boolean;
 }
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [testingEmail, setTestingEmail] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -69,6 +71,31 @@ export default function SettingsPage() {
       setError(err.message);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleTestEmail = async () => {
+    try {
+      setTestingEmail(true);
+      setError(null);
+      setSuccess(null);
+
+      const response = await fetch('/api/settings/test-email', {
+        method: 'POST',
+      });
+
+      const result = await response.json();
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to send test email');
+      }
+
+      setSuccess(`Test email sent to: ${result.recipients?.join(', ') || 'configured recipients'}`);
+      setTimeout(() => setSuccess(null), 5000);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setTestingEmail(false);
     }
   };
 
@@ -149,13 +176,24 @@ export default function SettingsPage() {
             </p>
           </div>
 
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="px-6 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {saving ? 'Saving...' : 'Save Settings'}
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="px-6 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {saving ? 'Saving...' : 'Save Settings'}
+            </button>
+
+            <button
+              onClick={handleTestEmail}
+              disabled={testingEmail || !settings?.hasResendKey || !notificationEmails}
+              className="px-6 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed border border-gray-300"
+              title={!settings?.hasResendKey ? 'RESEND_API_KEY not configured' : !notificationEmails ? 'Add email addresses first' : 'Send a test email'}
+            >
+              {testingEmail ? 'Sending...' : 'Send Test Email'}
+            </button>
+          </div>
         </div>
 
         {/* Configuration Status Section */}
@@ -220,6 +258,22 @@ export default function SettingsPage() {
                 </span>
               )}
             </div>
+
+            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg md:col-span-2">
+              <div>
+                <span className="font-medium text-gray-700">Resend (Email)</span>
+                <p className="text-xs text-gray-500 mt-1">For sending campaign notifications</p>
+              </div>
+              {settings?.hasResendKey ? (
+                <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-sm font-semibold">
+                  Configured
+                </span>
+              ) : (
+                <span className="px-2 py-1 bg-yellow-100 text-yellow-800 rounded text-sm font-semibold">
+                  Not Set
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
@@ -228,16 +282,19 @@ export default function SettingsPage() {
           <h3 className="font-semibold text-blue-900 mb-2">About Email Notifications</h3>
           <ul className="text-sm text-blue-800 space-y-1">
             <li>
-              • <strong>Success Emails:</strong> Sent when a campaign is successfully launched to all platforms
+              <strong>Campaign Success:</strong> Sent when a campaign is successfully launched to all platforms
             </li>
             <li>
-              • <strong>Failure Emails:</strong> Sent when a campaign fails during the launch process
+              <strong>Campaign Failed:</strong> Sent when a campaign fails during the launch process
             </li>
             <li>
-              • <strong>Resend API:</strong> Requires RESEND_API_KEY environment variable to be set
+              <strong>Article Rejected:</strong> Sent when Tonic rejects the article request
             </li>
             <li>
-              • <strong>Background Processing:</strong> Campaigns launch in the background, allowing multiple simultaneous launches
+              <strong>Article Timeout:</strong> Sent when article approval takes more than 24 hours
+            </li>
+            <li className="pt-2 border-t border-blue-200 mt-2">
+              <strong>Resend API:</strong> Requires RESEND_API_KEY environment variable to be set in Vercel
             </li>
           </ul>
         </div>
