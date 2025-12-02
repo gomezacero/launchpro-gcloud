@@ -1408,10 +1408,25 @@ class CampaignOrchestratorService {
       budgetInCents,
     });
 
-    // Create Campaign (according to Meta Ads API - OUTCOME_LEADS for lead generation)
+    // Determine if we have restricted Special Ad Categories (CREDIT, HOUSING, EMPLOYMENT)
+    // These categories have restrictions on campaign objectives - OUTCOME_SALES is NOT compatible
+    const restrictedCategories = ['CREDIT', 'HOUSING', 'EMPLOYMENT'];
+    const hasRestrictedCategory = platformConfig.specialAdCategories?.some(
+      (cat: string) => restrictedCategories.includes(cat)
+    );
+
+    // Use OUTCOME_LEADS for restricted categories, OUTCOME_SALES otherwise
+    const campaignObjective = hasRestrictedCategory ? 'OUTCOME_LEADS' : 'OUTCOME_SALES';
+
+    logger.info('meta', `Campaign objective: ${campaignObjective}`, {
+      hasRestrictedCategory,
+      specialAdCategories: platformConfig.specialAdCategories,
+    });
+
+    // Create Campaign (according to Meta Ads API)
     const metaCampaign = await metaService.createCampaign({
       name: fullCampaignName,
-      objective: 'OUTCOME_SALES', // Required for Purchase conversion event
+      objective: campaignObjective,
       status: 'ACTIVE', // Campaign active, only ads are paused
       special_ad_categories: platformConfig.specialAdCategories && platformConfig.specialAdCategories.length > 0
         ? platformConfig.specialAdCategories
@@ -1551,6 +1566,10 @@ class CampaignOrchestratorService {
     logger.info('meta', JSON.stringify(targetingSpec, null, 2));
     logger.info('meta', `=== END TARGETING SPEC ===`);
 
+    // Determine the conversion event type based on campaign objective
+    // OUTCOME_LEADS uses 'LEAD', OUTCOME_SALES uses 'PURCHASE'
+    const conversionEventType = hasRestrictedCategory ? 'LEAD' : 'PURCHASE';
+
     // Helper function to create an ad set (used for both CBO single ad set and ABO multiple ad sets)
     const createMetaAdSet = async (adSetNameSuffix: string = 'AdSet', adSetBudget?: number) => {
       return await metaService.createAdSet({
@@ -1568,7 +1587,7 @@ class CampaignOrchestratorService {
         status: 'ACTIVE', // Ad Set active, only ads are paused
         promoted_object: {
           pixel_id: pixelId,
-          custom_event_type: 'PURCHASE',
+          custom_event_type: conversionEventType,
         },
       }, adAccountId, accessToken);
     };
