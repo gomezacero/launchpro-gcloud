@@ -510,6 +510,120 @@ Return JSON:
   }
 
   /**
+   * Generate 5 Copy Master suggestions following CopyBot 7.1 RSOC compliance rules
+   */
+  async generateCopyMasterSuggestions(params: {
+    offerName: string;
+    offerDescription?: string;
+    vertical?: string;
+    country: string;
+    language: string;
+  }): Promise<string[]> {
+    const systemPrompt = `Eres 'CopyBot 7.1', un creador, productor y estratega de contenido publicitario profesional y copywriter especializado en el ecosistema de Arbitraje de Búsqueda (Search Arbitrage - RSOC).
+
+Tu misión: Crear copys para plataformas publicitarias como Meta Ads o TikTok que cumplan las políticas de monetización de Google AdSense y toda su Política de cumplimiento RAF. Tu objetivo es generar una "brecha de curiosidad" que impulse clics de alta intención de usuarios genuinamente interesados, buscando una conversión informada, sin una venta directa.
+
+## 8 Políticas de Cumplimiento Obligatorio
+
+Regla #1: Relevancia entre copys para Meta Ads, TikTok y copys de la landing page. Los copys que el usuario ve en el anuncio deben representar con precisión el contenido de la página de destino. Si el contenido de la landing de destino solo ofrece información, los copys solo pueden prometer información.
+
+Regla #2: La Promesa es de contenido e informativa, NO Comercial o de venta.
+
+Regla #3: Prohibido Afirmaciones Engañosas, Ambiguas, Deceptivas, Irreales o exageradas. Evita falsas promesas laborales, de salud o financieras, de crédito, ofertas, promociones. No hables en nombre de una empresa, marca o elementos que puedan confundirse con una marca oficial (Ejemplo: Samsung, TikTok, Apple).
+
+Regla #4: Prohibido Clics Incentivados o Clickbait Manipulador. No ofrezcas recompensas por clics ni uses llamadas a la acción manipuladoras como: Toca aquí, compra aquí, pide gratis, reclámalo ahora.
+
+Regla #5: Prohibido Contenido Inapropiado. Cero tolerancia con discursos de odio, violencia o contenido para adultos, drogas, armas, juegos de azar, político, discriminación, violencia, productos peligrosos, promesas falsas, antes/después, cannabis, ropa interior, disfunción eréctil, donación de óvulos, etc.
+
+Regla #6: Palabras/términos/frases PROHIBIDAS - NO UTILIZAR:
+- Términos de empleo: empleo, job
+- Promesas de precio: gratis, oferta, promesas
+- Términos de salud sensibles: cura, previene
+- Términos financieros agresivos: garantizado, préstamo, inmediato, gratis
+- Llamadas a la acción: Haz clic, Compra, clic aquí, Explora alternativas, ver precio, última hora, reclama ahora
+- Comparaciones: comparar, comparaciones, antes y después
+- Términos de cercanía: cerca de mí, en zona cercana
+- Alternativas: alternativas, opciones
+- Términos de tiempo: último minuto, rápido, hoy mismo
+
+Regla #7: Call-to-actions PERMITIDOS (úsalos):
+- "Aprende cómo..."
+- "Lo que debería saber de..."
+- "Descubre cómo..."
+- "Aprende Más"
+- "Más información"
+
+## Ejemplos de Copys
+
+❌ Prohibido: "Obtén préstamos en minutos"
+✅ Permitido: "Aprende cómo es el proceso de solicitud de préstamos"
+
+❌ Prohibido: "Estamos contratando choferes CDL hoy"
+✅ Permitido: "Descubre cómo los conductores CDL construyen su carrera"
+
+❌ Prohibido: "Teléfonos gratis para adultos mayores"
+✅ Permitido: "Lo que debería saber sobre los programas de descuentos en teléfonos para adultos mayores"
+
+## CTAs Prohibidos vs Permitidos
+❌ Prohibidos: "Aplica ahora", "Reclama aquí", "Compra ya"
+✅ Permitidos: "Aprende Más", "Más información"`;
+
+    const userPrompt = `Genera exactamente 5 copys diferentes para el siguiente producto/oferta:
+
+Oferta: ${params.offerName}
+${params.offerDescription ? `Descripción: ${params.offerDescription}` : ''}
+${params.vertical ? `Vertical: ${params.vertical}` : ''}
+País objetivo: ${params.country}
+Idioma: ${params.language}
+
+Requisitos OBLIGATORIOS:
+- Cada copy debe tener 2-3 oraciones máximo
+- Debe generar curiosidad informativa, NO vender
+- Usar CTAs permitidos (Aprende cómo, Descubre, Lo que debería saber, Más información)
+- Ser culturalmente relevante para el país ${params.country}
+- NO usar NINGUNA palabra prohibida de la lista
+- Variar el enfoque/ángulo en cada sugerencia
+- Gramática y ortografía perfecta en ${params.language}
+- Tono formal o semi-formal
+
+Responde SOLO con un JSON array de exactamente 5 strings, sin explicaciones ni markdown:
+["copy1", "copy2", "copy3", "copy4", "copy5"]`;
+
+    const message = await this.anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1500,
+      temperature: 0.8,
+      system: systemPrompt,
+      messages: [
+        {
+          role: 'user',
+          content: userPrompt,
+        },
+      ],
+    });
+
+    const responseText = message.content[0].type === 'text' ? message.content[0].text : '[]';
+    const cleanedResponse = this.cleanJsonResponse(responseText);
+    let suggestions: string[] = JSON.parse(cleanedResponse);
+
+    // Ensure we have exactly 5 suggestions
+    if (suggestions.length > 5) {
+      suggestions = suggestions.slice(0, 5);
+    }
+
+    // Save to database for tracking
+    await this.saveAIContent({
+      contentType: 'copy_master_suggestions',
+      content: { suggestions },
+      model: 'claude-sonnet-4',
+      prompt: userPrompt,
+      tokensUsed: message.usage.input_tokens + message.usage.output_tokens,
+    });
+
+    return suggestions;
+  }
+
+  /**
    * Generate targeting suggestions based on offer and copy
    */
   async generateTargetingSuggestions(params: {

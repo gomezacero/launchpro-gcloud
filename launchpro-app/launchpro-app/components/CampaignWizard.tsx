@@ -137,6 +137,11 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
   const [keywordsText, setKeywordsText] = useState('');
   const [contentPhrasesText, setContentPhrasesText] = useState('');
 
+  // Copy Master suggestions state
+  const [copySuggestions, setCopySuggestions] = useState<string[]>([]);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+  const [suggestionsError, setSuggestionsError] = useState<string | null>(null);
+
   // Helper functions to manage namespaced temp files (prevents race conditions)
   const getTempFilesNamespace = () => {
     if (!(window as any).__tempFiles) {
@@ -411,6 +416,52 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
 
   const handleInputChange = (field: string, value: any) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
+  };
+
+  /**
+   * Generate 5 Copy Master suggestions using AI (CopyBot 7.1)
+   */
+  const generateCopySuggestions = async () => {
+    if (!formData.offerId || !formData.country || !formData.language) {
+      setSuggestionsError('Selecciona primero una Oferta, País e Idioma');
+      return;
+    }
+
+    setLoadingSuggestions(true);
+    setSuggestionsError(null);
+    setCopySuggestions([]);
+
+    try {
+      const response = await fetch('/api/ai/copy-suggestions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          offerId: formData.offerId,
+          country: formData.country,
+          language: formData.language,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to generate suggestions');
+      }
+
+      setCopySuggestions(result.data.suggestions);
+    } catch (error: any) {
+      setSuggestionsError(error.message);
+    } finally {
+      setLoadingSuggestions(false);
+    }
+  };
+
+  /**
+   * Select a Copy Master suggestion and fill the textarea
+   */
+  const selectCopySuggestion = (suggestion: string) => {
+    handleInputChange('copyMaster', suggestion);
+    setCopySuggestions([]); // Hide suggestions after selecting
   };
 
   /**
@@ -1171,6 +1222,80 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
                   rows={3}
                   placeholder="e.g., Get approved for your dream car with low interest rates..."
                 />
+
+                {/* Generate Suggestions Button */}
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    onClick={generateCopySuggestions}
+                    disabled={loadingSuggestions || !formData.offerId || !formData.country || !formData.language}
+                    className="inline-flex items-center px-4 py-2 text-sm font-medium text-purple-700 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {loadingSuggestions ? (
+                      <>
+                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-purple-700" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <span className="mr-2">✨</span>
+                        Generate 5 Suggestions
+                      </>
+                    )}
+                  </button>
+
+                  {(!formData.offerId || !formData.country || !formData.language) && (
+                    <p className="mt-1 text-xs text-gray-500">
+                      Select Offer, Country, and Language first to generate suggestions
+                    </p>
+                  )}
+                </div>
+
+                {/* Error Message */}
+                {suggestionsError && (
+                  <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-lg">
+                    <p className="text-sm text-red-700">{suggestionsError}</p>
+                  </div>
+                )}
+
+                {/* Suggestions List */}
+                {copySuggestions.length > 0 && (
+                  <div className="mt-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium text-gray-700">
+                        ✨ Click to select a suggestion:
+                      </p>
+                      <button
+                        type="button"
+                        onClick={generateCopySuggestions}
+                        disabled={loadingSuggestions}
+                        className="text-xs text-purple-600 hover:text-purple-800 disabled:opacity-50"
+                      >
+                        🔄 Regenerate
+                      </button>
+                    </div>
+                    {copySuggestions.map((suggestion, index) => (
+                      <button
+                        key={index}
+                        type="button"
+                        onClick={() => selectCopySuggestion(suggestion)}
+                        className="w-full text-left p-3 bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-lg hover:from-purple-100 hover:to-blue-100 hover:border-purple-300 transition-all group"
+                      >
+                        <div className="flex items-start gap-2">
+                          <span className="flex-shrink-0 w-6 h-6 bg-purple-600 text-white rounded-full flex items-center justify-center text-xs font-bold">
+                            {index + 1}
+                          </span>
+                          <p className="text-sm text-gray-700 group-hover:text-gray-900">
+                            {suggestion}
+                          </p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div>
