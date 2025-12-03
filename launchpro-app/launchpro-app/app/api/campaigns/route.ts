@@ -103,24 +103,38 @@ export async function POST(request: NextRequest) {
       communicationAngle: body.communicationAngle,
       keywords: body.keywords,
       contentGenerationPhrases: body.contentGenerationPhrases,
-      platforms: body.platforms.map((p: any) => ({
-        platform: p.platform,
-        accountId: p.accountId,
-        performanceGoal: p.performanceGoal,
-        budget: parseFloat(p.budget),
-        startDate: new Date(p.startDateTime || p.startDate),
-        generateWithAI: p.generateWithAI !== false,
-        specialAdCategories: p.specialAdCategories,
-        metaPageId: p.metaPageId,
-        tiktokIdentityId: p.tiktokIdentityId,
-        tiktokIdentityType: p.tiktokIdentityType,
-        manualAdCopy: p.platform === 'META' ? {
-          adTitle: p.manualAdTitle,
-          description: p.manualDescription,
-          primaryText: p.manualPrimaryText,
-        } : undefined,
-        manualTiktokAdText: p.manualTiktokAdText,
-      })),
+      platforms: body.platforms.map((p: any) => {
+        // Parse startDateTime as UTC (the UI says "Time is in UTC")
+        // datetime-local gives format YYYY-MM-DDTHH:mm without timezone
+        // Adding 'Z' ensures it's interpreted as UTC, not local time
+        const startDateStr = p.startDateTime || p.startDate;
+        let startDate: Date;
+        if (typeof startDateStr === 'string' && !startDateStr.includes('Z') && !startDateStr.includes('+')) {
+          // String without timezone indicator - treat as UTC
+          startDate = new Date(startDateStr + ':00Z'); // Add seconds and Z for UTC
+        } else {
+          startDate = new Date(startDateStr);
+        }
+
+        return {
+          platform: p.platform,
+          accountId: p.accountId,
+          performanceGoal: p.performanceGoal,
+          budget: parseFloat(p.budget),
+          startDate,
+          generateWithAI: p.generateWithAI !== false,
+          specialAdCategories: p.specialAdCategories,
+          metaPageId: p.metaPageId,
+          tiktokIdentityId: p.tiktokIdentityId,
+          tiktokIdentityType: p.tiktokIdentityType,
+          manualAdCopy: p.platform === 'META' ? {
+            adTitle: p.manualAdTitle,
+            description: p.manualDescription,
+            primaryText: p.manualPrimaryText,
+          } : undefined,
+          manualTiktokAdText: p.manualTiktokAdText,
+        };
+      }),
     });
 
     const duration = Date.now() - startTime;

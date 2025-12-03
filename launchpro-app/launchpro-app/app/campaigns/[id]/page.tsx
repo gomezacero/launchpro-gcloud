@@ -384,7 +384,8 @@ export default function CampaignDetailPage() {
                           }
                           url.searchParams.set('ad_id', '{{ad.id}}');
                           url.searchParams.set('dpco', '1');
-                          return url.toString();
+                          // Decode to show readable URL ({{ad.id}} instead of %7B%7Bad.id%7D%7D)
+                          return decodeURIComponent(url.toString());
                         } catch {
                           return campaign.tonicTrackingLink;
                         }
@@ -408,7 +409,8 @@ export default function CampaignDetailPage() {
                           url.searchParams.set('ad_id', '__CID__');
                           url.searchParams.set('ttclid', '__CLICKID__');
                           url.searchParams.set('dpco', '1');
-                          return url.toString();
+                          // Decode to show readable URL
+                          return decodeURIComponent(url.toString());
                         } catch {
                           return campaign.tonicTrackingLink;
                         }

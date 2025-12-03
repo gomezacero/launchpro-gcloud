@@ -49,6 +49,8 @@ interface GenerateAdCopyParams {
   platform: 'META' | 'TIKTOK';
   adFormat: 'IMAGE' | 'VIDEO' | 'CAROUSEL';
   targetAudience?: string;
+  country: string;
+  language: string;
 }
 
 interface GenerateImageParams {
@@ -91,25 +93,63 @@ class AIService {
    * Generate Copy Master - the main communication angle aligned with the offer
    */
   async generateCopyMaster(params: GenerateCopyMasterParams): Promise<string> {
-    // Map countries to their specific dialect rules
-    const countryDialectRules: Record<string, string> = {
+    // Determine the base language from the language parameter
+    const lang = params.language.toLowerCase();
+    const isEnglish = lang === 'en' || lang === 'english';
+    const isPortuguese = lang === 'pt' || lang === 'portuguese';
+    const isSpanish = lang === 'es' || lang === 'spanish' || (!isEnglish && !isPortuguese);
+
+    // Map countries to their specific dialect rules (Spanish)
+    const spanishDialectRules: Record<string, string> = {
       'MX': 'Mexican Spanish: Use "tú/usted" forms. Never use "vos" or Argentine forms.',
       'CO': 'Colombian Spanish: Use "tú/usted" forms. Formal and clear.',
       'AR': 'Argentine Spanish: Use "vos" forms (e.g., "querés", "podés").',
       'ES': 'European Spanish: Use "tú/vosotros" forms.',
       'CL': 'Chilean Spanish: Use "tú" forms.',
       'PE': 'Peruvian Spanish: Use "tú/usted" forms.',
-      'US': 'US Spanish (Neutral Latin American): Use "tú" forms.',
-      'BR': 'Brazilian Portuguese: Use standard Brazilian Portuguese.',
+      'VE': 'Venezuelan Spanish: Use "tú/usted" forms.',
+      'EC': 'Ecuadorian Spanish: Use "tú/usted" forms.',
     };
 
-    const dialectRule = countryDialectRules[params.country] || 'Use neutral, formal language.';
+    // English dialect rules
+    const englishDialectRules: Record<string, string> = {
+      'US': 'American English: Use US spelling (e.g., "color", "organize").',
+      'UK': 'British English: Use UK spelling (e.g., "colour", "organise").',
+      'GB': 'British English: Use UK spelling (e.g., "colour", "organise").',
+      'AU': 'Australian English: Use Australian conventions.',
+      'CA': 'Canadian English: Mix of US/UK spelling.',
+    };
+
+    // Portuguese dialect rules
+    const portugueseDialectRules: Record<string, string> = {
+      'BR': 'Brazilian Portuguese: Use standard Brazilian Portuguese.',
+      'PT': 'European Portuguese: Use European Portuguese.',
+    };
+
+    // Determine the dialect rule based on language and country
+    let dialectRule: string;
+    let languageInstruction: string;
+
+    if (isEnglish) {
+      dialectRule = englishDialectRules[params.country] || 'American English: Use US spelling.';
+      languageInstruction = 'WRITE IN ENGLISH.';
+    } else if (isPortuguese) {
+      dialectRule = portugueseDialectRules[params.country] || 'Brazilian Portuguese: Use standard Brazilian Portuguese.';
+      languageInstruction = 'WRITE IN PORTUGUESE.';
+    } else {
+      // Default to Spanish
+      dialectRule = spanishDialectRules[params.country] || 'Neutral Spanish: Use "tú/usted" forms.';
+      languageInstruction = 'WRITE IN SPANISH.';
+    }
+
+    logger.info('ai', `Generating copy master in ${isEnglish ? 'English' : isPortuguese ? 'Portuguese' : 'Spanish'} for country ${params.country}`);
 
     const systemPrompt = `You are an expert digital marketing copywriter specialized in creating compelling copy masters for advertising campaigns.
 
 A Copy Master is the central communication message that defines the angle and tone of an advertising campaign.
 
 CRITICAL REQUIREMENTS:
+- ${languageInstruction}
 - Perfect spelling and grammar (zero tolerance for errors)
 - ${dialectRule}
 - Use formal or semi-formal tone (NEVER informal/casual)
@@ -131,9 +171,10 @@ ${params.vertical ? `Vertical: ${params.vertical}` : ''}
 Target Country: ${params.country}
 Language: ${params.language}
 
-CRITICAL: ${dialectRule}
+CRITICAL LANGUAGE REQUIREMENT: ${languageInstruction} ${dialectRule}
 
 Generate a compelling Copy Master that:
+- Is written ENTIRELY in ${isEnglish ? 'English' : isPortuguese ? 'Portuguese' : 'Spanish'}
 - Uses perfect grammar for ${params.country}
 - Uses formal/semi-formal tone
 - Makes NO exaggerated claims
@@ -296,25 +337,67 @@ Return ONLY a JSON array: ["keyword1", "keyword2", ..., "keyword10"]`;
     teaser: string;
     contentGenerationPhrases: string[];
   }> {
+    // Determine the base language from the language parameter
+    const lang = params.language.toLowerCase();
+    const isEnglish = lang === 'en' || lang === 'english';
+    const isPortuguese = lang === 'pt' || lang === 'portuguese';
+    const isSpanish = lang === 'es' || lang === 'spanish' || (!isEnglish && !isPortuguese);
+
     // Map countries to their specific Spanish dialect rules
-    const countryDialectRules: Record<string, string> = {
-      'MX': 'Mexican Spanish: Use "tú/usted" forms (e.g., "sueñas", "quieres", "puedes"). Never use "vos" or Argentine forms like "soñás", "querés", "podés".',
+    const spanishDialectRules: Record<string, string> = {
+      'MX': 'Mexican Spanish: Use "tú/usted" forms (e.g., "sueñas", "quieres", "puedes"). Never use "vos" or Argentine forms.',
       'CO': 'Colombian Spanish: Use "tú/usted" forms (e.g., "sueñas", "quieres", "puedes"). Formal and clear language.',
       'AR': 'Argentine Spanish: Use "vos" forms (e.g., "soñás", "querés", "podés"). Informal but professional tone.',
       'ES': 'European Spanish: Use "tú/vosotros" forms (e.g., "sueñas", "soñáis"). Use "vosotros" for plural informal.',
       'CL': 'Chilean Spanish: Use "tú" forms (e.g., "sueñas", "quieres"). Avoid excessive Chilean slang.',
       'PE': 'Peruvian Spanish: Use "tú/usted" forms (e.g., "sueñas", "quieres"). Formal and respectful.',
-      'US': 'US Spanish (Neutral Latin American): Use "tú" forms (e.g., "sueñas", "quieres"). Neutral, clear vocabulary.',
-      'BR': 'Brazilian Portuguese: Use standard Brazilian Portuguese conjugations.',
+      'VE': 'Venezuelan Spanish: Use "tú/usted" forms. Formal and clear.',
+      'EC': 'Ecuadorian Spanish: Use "tú/usted" forms. Formal and respectful.',
     };
 
-    const dialectRule = countryDialectRules[params.country] || 'Use neutral, formal language appropriate for the target country.';
+    // English dialect rules
+    const englishDialectRules: Record<string, string> = {
+      'US': 'American English: Use US spelling (e.g., "color", "organize"). Clear, professional language.',
+      'UK': 'British English: Use UK spelling (e.g., "colour", "organise").',
+      'GB': 'British English: Use UK spelling (e.g., "colour", "organise").',
+      'AU': 'Australian English: Use Australian conventions.',
+      'CA': 'Canadian English: Mix of US/UK spelling.',
+    };
+
+    // Portuguese dialect rules
+    const portugueseDialectRules: Record<string, string> = {
+      'BR': 'Brazilian Portuguese: Use standard Brazilian Portuguese conjugations.',
+      'PT': 'European Portuguese: Use European Portuguese.',
+    };
+
+    // Determine the dialect rule based on language and country
+    let dialectRule: string;
+    let languageInstruction: string;
+    let languageName: string;
+
+    if (isEnglish) {
+      dialectRule = englishDialectRules[params.country] || 'American English: Use US spelling.';
+      languageInstruction = 'WRITE ENTIRELY IN ENGLISH.';
+      languageName = 'English';
+    } else if (isPortuguese) {
+      dialectRule = portugueseDialectRules[params.country] || 'Brazilian Portuguese: Use standard Brazilian Portuguese.';
+      languageInstruction = 'WRITE ENTIRELY IN PORTUGUESE.';
+      languageName = 'Portuguese';
+    } else {
+      // Default to Spanish
+      dialectRule = spanishDialectRules[params.country] || 'Neutral Spanish: Use "tú/usted" forms.';
+      languageInstruction = 'WRITE ENTIRELY IN SPANISH.';
+      languageName = 'Spanish';
+    }
+
+    logger.info('ai', `Generating article in ${languageName} for country ${params.country}`);
 
     const systemPrompt = `You are an expert content writer specialized in creating high-quality articles for native advertising that pass strict editorial review.
 
 CRITICAL REQUIREMENTS (Article will be REJECTED if these are violated):
 
 1. LANGUAGE & GRAMMAR:
+   - ${languageInstruction}
    - Perfect spelling and grammar - zero tolerance for errors
    - ${dialectRule}
    - Use formal or semi-formal tone - NEVER informal/casual language
@@ -344,11 +427,14 @@ IMPORTANT: Return ONLY valid JSON, no markdown formatting, no code blocks, no ex
 Offer: ${params.offerName}
 Copy Master: ${params.copyMaster}
 Keywords: ${params.keywords.join(', ')}
-Country: ${params.country} (CRITICAL: Use the EXACT dialect for ${params.country})
+Country: ${params.country}
 Language: ${params.language}
 
+CRITICAL LANGUAGE REQUIREMENT: ${languageInstruction} ${dialectRule}
+
+ALL CONTENT (headline, teaser, contentGenerationPhrases) MUST BE IN ${languageName.toUpperCase()}.
+
 REMEMBER:
-- ${dialectRule}
 - Perfect grammar and spelling
 - NO invented data or exaggerated claims
 - Formal/semi-formal tone only
@@ -357,9 +443,9 @@ REMEMBER:
 
 Return a JSON object with:
 {
-  "headline": "engaging headline (max 256 characters)",
-  "teaser": "compelling opening paragraph (250-1000 characters)",
-  "contentGenerationPhrases": ["phrase1", "phrase2", "phrase3", "phrase4"]
+  "headline": "engaging headline in ${languageName} (max 256 characters)",
+  "teaser": "compelling opening paragraph in ${languageName} (250-1000 characters)",
+  "contentGenerationPhrases": ["phrase1 in ${languageName}", "phrase2", "phrase3", "phrase4"]
 }
 
 IMPORTANT: The contentGenerationPhrases array MUST contain between 3 and 5 items. If you generate more than 5 or less than 3, the request will be REJECTED by Tonic.`;
@@ -421,6 +507,28 @@ IMPORTANT: The contentGenerationPhrases array MUST contain between 3 and 5 items
     description: string;
     callToAction: string;
   }> {
+    // Determine the base language from the language parameter
+    const lang = params.language.toLowerCase();
+    const isEnglish = lang === 'en' || lang === 'english';
+    const isPortuguese = lang === 'pt' || lang === 'portuguese';
+    const isSpanish = lang === 'es' || lang === 'spanish' || (!isEnglish && !isPortuguese);
+
+    let languageInstruction: string;
+    let languageName: string;
+
+    if (isEnglish) {
+      languageInstruction = 'WRITE ENTIRELY IN ENGLISH.';
+      languageName = 'English';
+    } else if (isPortuguese) {
+      languageInstruction = 'WRITE ENTIRELY IN PORTUGUESE.';
+      languageName = 'Portuguese';
+    } else {
+      languageInstruction = 'WRITE ENTIRELY IN SPANISH.';
+      languageName = 'Spanish';
+    }
+
+    logger.info('ai', `Generating ad copy in ${languageName} for ${params.platform}`);
+
     const platformGuidelines = {
       META: {
         primaryTextMax: 125,
@@ -453,6 +561,7 @@ Guidelines for ${params.platform}:
 - Description: max ${guidelines.descriptionMax} characters
 
 CRITICAL REQUIREMENTS:
+- ${languageInstruction}
 - Perfect spelling and grammar (zero tolerance for errors)
 - Formal or semi-formal tone (NO informal/casual language)
 - NO exaggerated claims (e.g., "guaranteed", "100%", "never")
@@ -470,13 +579,17 @@ Offer: ${params.offerName}
 Copy Master: ${params.copyMaster}
 Platform: ${params.platform}
 Ad Format: ${params.adFormat}
+Country: ${params.country}
+Language: ${params.language}
 ${params.targetAudience ? `Target Audience: ${params.targetAudience}` : ''}
+
+CRITICAL LANGUAGE REQUIREMENT: ${languageInstruction} ALL ad copy text MUST be in ${languageName}.
 
 Return JSON:
 {
-  "primaryText": "main ad text",
-  "headline": "compelling headline",
-  "description": "description text",
+  "primaryText": "main ad text in ${languageName}",
+  "headline": "compelling headline in ${languageName}",
+  "description": "description text in ${languageName}",
   "callToAction": "CTA text (one of: ${guidelines.ctas.join(', ')})"
 }`;
 

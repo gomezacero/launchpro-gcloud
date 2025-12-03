@@ -761,6 +761,8 @@ class CampaignOrchestratorService {
           copyMaster: aiContentResult.copyMaster,
           platform: platformConfig.platform, // Now TypeScript knows it's 'META' | 'TIKTOK'
           adFormat: 'IMAGE', // or VIDEO based on config
+          country: params.country,
+          language: params.language,
         });
 
         // Generate Image
@@ -908,6 +910,21 @@ class CampaignOrchestratorService {
         'B3': 'EAADuOFCzsHsBPPOGO8j4fzZBKy4BRViYTWiPiCZChKNAQ3sWVhWlTvTp267FXnLEzHgwEEMbWxoUz9fbQKBWaWP2iOSGbM00o3091hARmTf0QTlgPYbpt9a52cqNIxXMEBNx02YL2xzq0sSdepJzPTQ3IQ4a9OU0KEoGZBZAv7ul23HtpwoS5xaWSWCt4kmtGwZDZD',
       };
 
+      // Meta Pixel ID → Access Token mapping (each pixel has its own specific token)
+      const META_PIXEL_TOKEN_MAPPING: { [pixelId: string]: string } = {
+        '1203351311131422': 'EAAJRmTwhsNgBO1OnDiD8eS4vZB2m1JGFUZAi9ErzWUBlV0hPtuoNZCL6TBADDy6jXAbd0lvc0RiZCOxrK991pcuW8b519EnhrpPKt4ZBTLLmUYMkkV4LZCYx1GAkU0uhBbekynZBdrpE30S9Th1x1zwpIUe0OACto0iKDZCFzfd6OBZCZBZBSRcPxZBMGrNZA4BOlqUrUAQZDZD', // L2 - Loans
+        '1179895397093948': 'EABZB8DcFpOfsBOynXLGBDvWfGotmCDsrwHy2eaM3h5dbpVkHzg3vUMKmT481gRJlNa7bVRm1yE7ZA3M049Se5wrE0YSvPRDGQeaewl07KIK7uU1yjOolDjoJSZBn2Pno7VMZB2fmPhQH7rux8iITnSVp49Vhf8tYZBWgWqgEFzdWVizYHgBoZChHTi76u68jEVYgZDZD', // A1
+        '1435976930918931': 'EABZB8DcFpOfsBO8Vkz5gBxmH9wIkH7CcPxgr9ZAbfF5lhslhfDZBRu7F9L5ZCIWS1H7jlFM3Mef7cRaZBg0IuR2aNo9BOA3HvWECyXHuDV2gEnVRS1aCzQmGV4LFvF6aOyjnyMcJFZBMZAq9iKCj6fmcmdqD25CIkwfvI1Kud269QIxZA0vreVbqUmIUA0XZAxMsmbQZDZD', // B1 - Rsoc Tonic
+        '1891445634963589': 'EABZB8DcFpOfsBO6vHZBiXZBgo2LtZCjEpt0qOyQGvxxIN0LgOXp6vxU9VTUQmwkzMnevZAv5LnE2UKFNxhITNZAJb5Crt3tUcNZBREinKrlU4cf29T6hIqxPAZCfKbjbQLRoWO5zkZAZC3Axshd8jstZBnDCwFLjZAd9oWQ9bwCHReODOWltyJVZAudg2PkyDSOS6PXwknwZDZD', // Inforproductos
+        '764050146176958': 'EAADuOFCzsHsBPPOGO8j4fzZBKy4BRViYTWiPiCZChKNAQ3sWVhWlTvTp267FXnLEzHgwEEMbWxoUz9fbQKBWaWP2iOSGbM00o3091hARmTf0QTlgPYbpt9a52cqNIxXMEBNx02YL2xzq0sSdepJzPTQ3IQ4a9OU0KEoGZBZAv7ul23HtpwoS5xaWSWCt4kmtGwZDZD', // B3
+        '1039541308325786': 'EAAYl7gsCHoQBO1rJjzTkPmehaQaXd4yuSlcFQqo9wicerpGnmxwbGQNfQr0AKdwiBq5suGUxRsPLBAcLEY2NeJ5VQEvZANpLmdx2KWiOrE6ujdJqQGNbspu2O3OtJoruFE44qN77Nu8fR5NWC9maP5OSWbyXJznieeSddXgj6VjLjwmtvML4eBdoKyngjBAZDZD', // Y - Rsoc Tonic
+        '878273167774607': 'EAAYl7gsCHoQBO5uHb4HvFXM0S3czUMZCTyPomIKw5iTDZBzfD8EODwZB20l2zMqGW3QrHMwdxR6WnyT7Pq85RTOVLhloqgkyUIJpTCIMQQso25LZA7DOWAhI2IkoHu0KJOJcfNq5JDtqA3oX6k3kjRBOyvywThOwSPRbiGnKzSdU7ZCm532mald7X3v0zpiEjBQZDZD', // H - RSOC Tonic
+        '2718831948325465': 'EAAYl7gsCHoQBO5uHb4HvFXM0S3czUMZCTyPomIKw5iTDZBzfD8EODwZB20l2zMqGW3QrHMwdxR6WnyT7Pq85RTOVLhloqgkyUIJpTCIMQQso25LZA7DOWAhI2IkoHu0KJOJcfNq5JDtqA3oX6k3kjRBOyvywThOwSPRbiGnKzSdU7ZCm532mald7X3v0zpiEjBQZDZD', // Z
+        '2180869225678766': 'EAAYl7gsCHoQBO5uHb4HvFXM0S3czUMZCTyPomIKw5iTDZBzfD8EODwZB20l2zMqGW3QrHMwdxR6WnyT7Pq85RTOVLhloqgkyUIJpTCIMQQso25LZA7DOWAhI2IkoHu0KJOJcfNq5JDtqA3oX6k3kjRBOyvywThOwSPRbiGnKzSdU7ZCm532mald7X3v0zpiEjBQZDZD', // S
+        '847010030396510': 'EAAYl7gsCHoQBO5uHb4HvFXM0S3czUMZCTyPomIKw5iTDZBzfD8EODwZB20l2zMqGW3QrHMwdxR6WnyT7Pq85RTOVLhloqgkyUIJpTCIMQQso25LZA7DOWAhI2IkoHu0KJOJcfNq5JDtqA3oX6k3kjRBOyvywThOwSPRbiGnKzSdU7ZCm532mald7X3v0zpiEjBQZDZD', // X - RSOC Tonic
+        '860387142264159': 'EAAYl7gsCHoQBO5uHb4HvFXM0S3czUMZCTyPomIKw5iTDZBzfD8EODwZB20l2zMqGW3QrHMwdxR6WnyT7Pq85RTOVLhloqgkyUIJpTCIMQQso25LZA7DOWAhI2IkoHu0KJOJcfNq5JDtqA3oX6k3kjRBOyvywThOwSPRbiGnKzSdU7ZCm532mald7X3v0zpiEjBQZDZD', // Q
+      };
+
       // TikTok constants (same for all accounts)
       const TIKTOK_PIXEL_ID = 'CQHUEGBC77U4RGRFJN4G';
       const TIKTOK_ACCESS_TOKEN = '50679817ad0f0f06d1dadd43dbce8f3345b676cd';
@@ -964,10 +981,19 @@ class CampaignOrchestratorService {
 
             logger.info('tonic', `Configuring Facebook pixel ${pixelId} for account "${metaAccount.name}"...`);
 
+            // Use the pixel-specific token from the mapping, fallback to account token
+            const pixelAccessToken = META_PIXEL_TOKEN_MAPPING[pixelId] || accessToken;
+
+            if (META_PIXEL_TOKEN_MAPPING[pixelId]) {
+              logger.info('tonic', `✅ Using pixel-specific access token for pixel ${pixelId}`);
+            } else {
+              logger.warn('tonic', `⚠️  No mapping found for pixel ${pixelId}, using account access token`);
+            }
+
             await tonicService.createPixel(credentials, 'facebook', {
               campaign_id: parseInt(tonicCampaignId.toString()),
               pixel_id: pixelId, // REQUIRED
-              access_token: accessToken, // REQUIRED for Facebook Conversion API
+              access_token: pixelAccessToken, // Use pixel-specific token from mapping
               event_name: 'Purchase',
               revenue_type: 'preestimated_revenue',
             });
@@ -1336,6 +1362,8 @@ class CampaignOrchestratorService {
         copyMaster: aiContent.copyMaster,
         platform: 'META',
         adFormat: adFormat,
+        country: campaign.country,
+        language: campaign.language,
       });
     }
 
@@ -2164,6 +2192,8 @@ class CampaignOrchestratorService {
       copyMaster: aiContent.copyMaster,
       platform: 'TIKTOK',
       adFormat: adFormat,
+      country: campaign.country,
+      language: campaign.language,
     });
 
     // Fetch the TikTok Account
