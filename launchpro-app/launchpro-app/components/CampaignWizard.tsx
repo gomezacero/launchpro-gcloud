@@ -147,6 +147,27 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
   const [loadingKeywords, setLoadingKeywords] = useState(false);
   const [keywordsError, setKeywordsError] = useState<string | null>(null);
 
+  // Constants
+  const MAX_KEYWORDS = 10;
+
+  // Helper: Check if selected Tonic account is "Meta" type
+  const isTonicMetaSelected = (): boolean => {
+    if (!formData.tonicAccountId) return false;
+    const selectedAccount = tonicAccounts.find(a => a.id === formData.tonicAccountId);
+    return selectedAccount?.name?.toLowerCase().includes('meta') ?? false;
+  };
+
+  // Helper: Get current keyword count
+  const getCurrentKeywordCount = (): number => {
+    if (!keywordsText.trim()) return 0;
+    return keywordsText.split(',').map(k => k.trim()).filter(k => k).length;
+  };
+
+  // Helper: Check if keyword limit is reached
+  const isKeywordLimitReached = (): boolean => {
+    return getCurrentKeywordCount() >= MAX_KEYWORDS;
+  };
+
   // Helper functions to manage namespaced temp files (prevents race conditions)
   const getTempFilesNamespace = () => {
     if (!(window as any).__tempFiles) {
@@ -516,8 +537,12 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
 
   /**
    * Add a keyword suggestion to the keywords field (accumulates, doesn't replace)
+   * Respects the MAX_KEYWORDS limit
    */
   const addKeywordSuggestion = (keyword: string) => {
+    // Check if limit is reached
+    if (isKeywordLimitReached()) return;
+
     const currentKeywords = keywordsText.trim();
     if (currentKeywords) {
       // Check if already exists
@@ -1292,78 +1317,82 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
                   placeholder="e.g., Get approved for your dream car with low interest rates..."
                 />
 
-                {/* Generate Suggestions Button */}
-                <div className="mt-2">
-                  <button
-                    type="button"
-                    onClick={generateCopySuggestions}
-                    disabled={loadingSuggestions || !formData.offerId || !formData.country || !formData.language}
-                    className="inline-flex items-center px-4 py-2 text-sm font-medium text-purple-700 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    {loadingSuggestions ? (
-                      <>
-                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-purple-700" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        Generating...
-                      </>
-                    ) : (
-                      <>
-                        <span className="mr-2">✨</span>
-                        Generate 5 Suggestions
-                      </>
-                    )}
-                  </button>
-
-                  {(!formData.offerId || !formData.country || !formData.language) && (
-                    <p className="mt-1 text-xs text-gray-500">
-                      Select Offer, Country, and Language first to generate suggestions
-                    </p>
-                  )}
-                </div>
-
-                {/* Error Message */}
-                {suggestionsError && (
-                  <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-lg">
-                    <p className="text-sm text-red-700">{suggestionsError}</p>
-                  </div>
-                )}
-
-                {/* Suggestions List */}
-                {copySuggestions.length > 0 && (
-                  <div className="mt-3 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm font-medium text-gray-700">
-                        ✨ Click to select a suggestion:
-                      </p>
+                {/* Generate Suggestions Button - Only show for Tonic Meta */}
+                {isTonicMetaSelected() && (
+                  <>
+                    <div className="mt-2">
                       <button
                         type="button"
                         onClick={generateCopySuggestions}
-                        disabled={loadingSuggestions}
-                        className="text-xs text-purple-600 hover:text-purple-800 disabled:opacity-50"
+                        disabled={loadingSuggestions || !formData.offerId || !formData.country || !formData.language}
+                        className="inline-flex items-center px-4 py-2 text-sm font-medium text-purple-700 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                       >
-                        🔄 Regenerate
+                        {loadingSuggestions ? (
+                          <>
+                            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-purple-700" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            Generating...
+                          </>
+                        ) : (
+                          <>
+                            <span className="mr-2">✨</span>
+                            Generate 5 Suggestions
+                          </>
+                        )}
                       </button>
+
+                      {(!formData.offerId || !formData.country || !formData.language) && (
+                        <p className="mt-1 text-xs text-gray-500">
+                          Select Offer, Country, and Language first to generate suggestions
+                        </p>
+                      )}
                     </div>
-                    {copySuggestions.map((suggestion, index) => (
-                      <button
-                        key={index}
-                        type="button"
-                        onClick={() => selectCopySuggestion(suggestion)}
-                        className="w-full text-left p-3 bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-lg hover:from-purple-100 hover:to-blue-100 hover:border-purple-300 transition-all group"
-                      >
-                        <div className="flex items-start gap-2">
-                          <span className="flex-shrink-0 w-6 h-6 bg-purple-600 text-white rounded-full flex items-center justify-center text-xs font-bold">
-                            {index + 1}
-                          </span>
-                          <p className="text-sm text-gray-700 group-hover:text-gray-900">
-                            {suggestion}
+
+                    {/* Error Message */}
+                    {suggestionsError && (
+                      <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-lg">
+                        <p className="text-sm text-red-700">{suggestionsError}</p>
+                      </div>
+                    )}
+
+                    {/* Suggestions List */}
+                    {copySuggestions.length > 0 && (
+                      <div className="mt-3 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm font-medium text-gray-700">
+                            ✨ Click to select a suggestion:
                           </p>
+                          <button
+                            type="button"
+                            onClick={generateCopySuggestions}
+                            disabled={loadingSuggestions}
+                            className="text-xs text-purple-600 hover:text-purple-800 disabled:opacity-50"
+                          >
+                            🔄 Regenerate
+                          </button>
                         </div>
-                      </button>
-                    ))}
-                  </div>
+                        {copySuggestions.map((suggestion, index) => (
+                          <button
+                            key={index}
+                            type="button"
+                            onClick={() => selectCopySuggestion(suggestion)}
+                            className="w-full text-left p-3 bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-lg hover:from-purple-100 hover:to-blue-100 hover:border-purple-300 transition-all group"
+                          >
+                            <div className="flex items-start gap-2">
+                              <span className="flex-shrink-0 w-6 h-6 bg-purple-600 text-white rounded-full flex items-center justify-center text-xs font-bold">
+                                {index + 1}
+                              </span>
+                              <p className="text-sm text-gray-700 group-hover:text-gray-900">
+                                {suggestion}
+                              </p>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
 
@@ -1388,13 +1417,28 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
                   <span className="text-xs text-gray-500 ml-2">
                     Leave empty to generate with AI
                   </span>
+                  <span className={`text-xs ml-2 ${isKeywordLimitReached() ? 'text-amber-600 font-medium' : 'text-gray-400'}`}>
+                    ({getCurrentKeywordCount()}/{MAX_KEYWORDS})
+                  </span>
                 </label>
                 <textarea
                   value={keywordsText}
-                  onChange={(e) => setKeywordsText(e.target.value)}
+                  onChange={(e) => {
+                    const newText = e.target.value;
+                    // Auto-truncate to MAX_KEYWORDS when typing
+                    const keywords = newText.split(',').map(k => k.trim()).filter(k => k);
+                    if (keywords.length > MAX_KEYWORDS) {
+                      // Keep only first MAX_KEYWORDS
+                      const truncated = keywords.slice(0, MAX_KEYWORDS).join(', ');
+                      setKeywordsText(truncated);
+                      handleInputChange('keywords', keywords.slice(0, MAX_KEYWORDS));
+                    } else {
+                      setKeywordsText(newText);
+                    }
+                  }}
                   onBlur={() => {
                     const keywordsArray = keywordsText
-                      ? keywordsText.split(',').map(k => k.trim()).filter(k => k)
+                      ? keywordsText.split(',').map(k => k.trim()).filter(k => k).slice(0, MAX_KEYWORDS)
                       : [];
                     handleInputChange('keywords', keywordsArray);
                   }}
@@ -1403,132 +1447,163 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
                   placeholder="e.g., car loans, auto financing, vehicle payment plans..."
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  Separate keywords with commas. AI will generate 6-10 keywords if left empty.
+                  Separate keywords with commas. AI will generate 6-10 keywords if left empty. Max {MAX_KEYWORDS} keywords.
                 </p>
 
-                {/* Generate Keywords Button */}
-                <div className="mt-2">
-                  <button
-                    type="button"
-                    onClick={generateKeywordsSuggestions}
-                    disabled={loadingKeywords || !formData.offerId || !formData.country || !formData.language}
-                    className="inline-flex items-center px-4 py-2 text-sm font-medium text-green-700 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    {loadingKeywords ? (
-                      <>
-                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-green-700" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        Generating...
-                      </>
-                    ) : (
-                      <>
-                        <span className="mr-2">🔑</span>
-                        Generate 10 Keywords
-                      </>
-                    )}
-                  </button>
-
-                  {!formData.offerId || !formData.country || !formData.language ? (
-                    <p className="mt-1 text-xs text-gray-500">
-                      Select Offer, Country, and Language first to generate suggestions
-                    </p>
-                  ) : null}
-                </div>
-
-                {/* Keywords Error */}
-                {keywordsError && (
-                  <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-lg">
-                    <p className="text-sm text-red-700">{keywordsError}</p>
+                {/* Keyword limit message */}
+                {isKeywordLimitReached() && (
+                  <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg">
+                    <p className="text-sm text-amber-700">Limite de {MAX_KEYWORDS} keywords alcanzado</p>
                   </div>
                 )}
 
-                {/* Keywords Suggestions - Grouped by type */}
-                {keywordSuggestions.length > 0 && (
-                  <div className="mt-3 space-y-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm font-medium text-gray-700">
-                        🔑 Click to add keywords:
-                      </p>
+                {/* Generate Keywords Button - Only show for Tonic Meta */}
+                {isTonicMetaSelected() && (
+                  <>
+                    <div className="mt-2">
                       <button
                         type="button"
                         onClick={generateKeywordsSuggestions}
-                        disabled={loadingKeywords}
-                        className="text-xs text-green-600 hover:text-green-800 disabled:opacity-50"
+                        disabled={loadingKeywords || !formData.offerId || !formData.country || !formData.language}
+                        className="inline-flex items-center px-4 py-2 text-sm font-medium text-green-700 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                       >
-                        🔄 Regenerate
+                        {loadingKeywords ? (
+                          <>
+                            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-green-700" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            Generating...
+                          </>
+                        ) : (
+                          <>
+                            <span className="mr-2">🔑</span>
+                            Generate 10 Keywords
+                          </>
+                        )}
                       </button>
+
+                      {!formData.offerId || !formData.country || !formData.language ? (
+                        <p className="mt-1 text-xs text-gray-500">
+                          Select Offer, Country, and Language first to generate suggestions
+                        </p>
+                      ) : null}
                     </div>
 
-                    {/* Financial Focus (5) */}
-                    <div>
-                      <p className="text-xs font-semibold text-blue-700 mb-1">💰 Financial Focus (5)</p>
-                      <div className="flex flex-wrap gap-2">
-                        {keywordSuggestions.filter(s => s.type === 'financial').map((s, i) => (
-                          <button
-                            key={i}
-                            type="button"
-                            onClick={() => addKeywordSuggestion(s.keyword)}
-                            className="px-3 py-1 text-sm font-medium text-blue-800 bg-blue-100 border border-blue-300 rounded-full hover:bg-blue-200 transition-colors"
-                          >
-                            {s.keyword}
-                          </button>
-                        ))}
+                    {/* Keywords Error */}
+                    {keywordsError && (
+                      <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-lg">
+                        <p className="text-sm text-red-700">{keywordsError}</p>
                       </div>
-                    </div>
+                    )}
 
-                    {/* Geographic Focus (1) */}
-                    <div>
-                      <p className="text-xs font-semibold text-orange-700 mb-1">📍 Geographic Focus (1)</p>
-                      <div className="flex flex-wrap gap-2">
-                        {keywordSuggestions.filter(s => s.type === 'geographic').map((s, i) => (
+                    {/* Keywords Suggestions - Grouped by type */}
+                    {keywordSuggestions.length > 0 && (
+                      <div className="mt-3 space-y-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm font-medium text-gray-700">
+                            🔑 Click to add keywords: {isKeywordLimitReached() && <span className="text-amber-600">(limite alcanzado)</span>}
+                          </p>
                           <button
-                            key={i}
                             type="button"
-                            onClick={() => addKeywordSuggestion(s.keyword)}
-                            className="px-3 py-1 text-sm font-medium text-orange-800 bg-orange-100 border border-orange-300 rounded-full hover:bg-orange-200 transition-colors"
+                            onClick={generateKeywordsSuggestions}
+                            disabled={loadingKeywords}
+                            className="text-xs text-green-600 hover:text-green-800 disabled:opacity-50"
                           >
-                            {s.keyword}
+                            🔄 Regenerate
                           </button>
-                        ))}
-                      </div>
-                    </div>
+                        </div>
 
-                    {/* Need Focus (2) */}
-                    <div>
-                      <p className="text-xs font-semibold text-purple-700 mb-1">🎯 Need Focus (2)</p>
-                      <div className="flex flex-wrap gap-2">
-                        {keywordSuggestions.filter(s => s.type === 'need').map((s, i) => (
-                          <button
-                            key={i}
-                            type="button"
-                            onClick={() => addKeywordSuggestion(s.keyword)}
-                            className="px-3 py-1 text-sm font-medium text-purple-800 bg-purple-100 border border-purple-300 rounded-full hover:bg-purple-200 transition-colors"
-                          >
-                            {s.keyword}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
+                        {/* Financial Focus (5) */}
+                        <div>
+                          <p className="text-xs font-semibold text-blue-700 mb-1">💰 Financial Focus (5)</p>
+                          <div className="flex flex-wrap gap-2">
+                            {keywordSuggestions.filter(s => s.type === 'financial').map((s, i) => (
+                              <button
+                                key={i}
+                                type="button"
+                                onClick={() => addKeywordSuggestion(s.keyword)}
+                                disabled={isKeywordLimitReached()}
+                                className={`px-3 py-1 text-sm font-medium rounded-full transition-colors ${
+                                  isKeywordLimitReached()
+                                    ? 'text-gray-400 bg-gray-100 border border-gray-200 cursor-not-allowed'
+                                    : 'text-blue-800 bg-blue-100 border border-blue-300 hover:bg-blue-200'
+                                }`}
+                              >
+                                {s.keyword}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
 
-                    {/* Urgency Focus (2) */}
-                    <div>
-                      <p className="text-xs font-semibold text-red-700 mb-1">⚡ Urgency Focus (2)</p>
-                      <div className="flex flex-wrap gap-2">
-                        {keywordSuggestions.filter(s => s.type === 'urgency').map((s, i) => (
-                          <button
-                            key={i}
-                            type="button"
-                            onClick={() => addKeywordSuggestion(s.keyword)}
-                            className="px-3 py-1 text-sm font-medium text-red-800 bg-red-100 border border-red-300 rounded-full hover:bg-red-200 transition-colors"
-                          >
-                            {s.keyword}
-                          </button>
-                        ))}
+                        {/* Geographic Focus (1) */}
+                        <div>
+                          <p className="text-xs font-semibold text-orange-700 mb-1">📍 Geographic Focus (1)</p>
+                          <div className="flex flex-wrap gap-2">
+                            {keywordSuggestions.filter(s => s.type === 'geographic').map((s, i) => (
+                              <button
+                                key={i}
+                                type="button"
+                                onClick={() => addKeywordSuggestion(s.keyword)}
+                                disabled={isKeywordLimitReached()}
+                                className={`px-3 py-1 text-sm font-medium rounded-full transition-colors ${
+                                  isKeywordLimitReached()
+                                    ? 'text-gray-400 bg-gray-100 border border-gray-200 cursor-not-allowed'
+                                    : 'text-orange-800 bg-orange-100 border border-orange-300 hover:bg-orange-200'
+                                }`}
+                              >
+                                {s.keyword}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Need Focus (2) */}
+                        <div>
+                          <p className="text-xs font-semibold text-purple-700 mb-1">🎯 Need Focus (2)</p>
+                          <div className="flex flex-wrap gap-2">
+                            {keywordSuggestions.filter(s => s.type === 'need').map((s, i) => (
+                              <button
+                                key={i}
+                                type="button"
+                                onClick={() => addKeywordSuggestion(s.keyword)}
+                                disabled={isKeywordLimitReached()}
+                                className={`px-3 py-1 text-sm font-medium rounded-full transition-colors ${
+                                  isKeywordLimitReached()
+                                    ? 'text-gray-400 bg-gray-100 border border-gray-200 cursor-not-allowed'
+                                    : 'text-purple-800 bg-purple-100 border border-purple-300 hover:bg-purple-200'
+                                }`}
+                              >
+                                {s.keyword}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Urgency Focus (2) */}
+                        <div>
+                          <p className="text-xs font-semibold text-red-700 mb-1">⚡ Urgency Focus (2)</p>
+                          <div className="flex flex-wrap gap-2">
+                            {keywordSuggestions.filter(s => s.type === 'urgency').map((s, i) => (
+                              <button
+                                key={i}
+                                type="button"
+                                onClick={() => addKeywordSuggestion(s.keyword)}
+                                disabled={isKeywordLimitReached()}
+                                className={`px-3 py-1 text-sm font-medium rounded-full transition-colors ${
+                                  isKeywordLimitReached()
+                                    ? 'text-gray-400 bg-gray-100 border border-gray-200 cursor-not-allowed'
+                                    : 'text-red-800 bg-red-100 border border-red-300 hover:bg-red-200'
+                                }`}
+                              >
+                                {s.keyword}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
+                    )}
+                  </>
                 )}
               </div>
 
