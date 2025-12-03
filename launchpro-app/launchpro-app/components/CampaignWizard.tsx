@@ -432,11 +432,15 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
     setCopySuggestions([]);
 
     try {
+      // Get selected offer from local array (offers come from Tonic API, not local DB)
+      const selectedOffer = offers.find(o => o.id === formData.offerId);
+
       const response = await fetch('/api/ai/copy-suggestions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          offerId: formData.offerId,
+          offerName: selectedOffer?.name || '',
+          offerVertical: selectedOffer?.vertical || '',
           country: formData.country,
           language: formData.language,
         }),
