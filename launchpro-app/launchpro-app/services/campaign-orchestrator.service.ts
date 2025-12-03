@@ -1730,11 +1730,14 @@ class CampaignOrchestratorService {
 
     logger.info('meta', `Using formatted Tonic link: ${finalLink} `);
 
-    // Determine if we need Carousel (CBO + multiple images) or Multiple Ads (ABO)
+    // Determine ad creation strategy:
+    // - CBO with multiple images: Create MULTIPLE individual ads in the SAME ad set (NOT carousel)
+    // - ABO with multiple images: Create MULTIPLE ad sets, each with ONE ad
     // Note: hasMultipleVideos is defined earlier (near useVideo) for use in upload logic
     const hasMultipleImages = !useVideo && images.length > 1;
-    const useCarousel = isCBO && hasMultipleImages;
-    const useMultipleAds = !isCBO && (hasMultipleImages || hasMultipleVideos);
+    // CBO now creates multiple individual ads, not carousel
+    const useCBOMultipleAds = isCBO && hasMultipleImages;
+    const useABOMultipleAds = !isCBO && (hasMultipleImages || hasMultipleVideos);
 
     logger.info('meta', `Ad creation strategy:`, {
       useVideo,
@@ -1743,8 +1746,8 @@ class CampaignOrchestratorService {
       imageCount: images.length,
       videoCount: videos.length,
       isCBO,
-      useCarousel,
-      useMultipleAds,
+      useCBOMultipleAds,
+      useABOMultipleAds,
     });
 
     let creative: any;
@@ -1789,48 +1792,55 @@ class CampaignOrchestratorService {
       createdAds.push({ adId: ad.id, creativeId: creative.id });
       logger.success('meta', `Video ad created with ID: ${ad.id}`);
 
-    } else if (useCarousel) {
-      // CBO CAROUSEL AD - Multiple images in one ad
-      logger.info('meta', `Creating Carousel Ad with ${uploadedImageHashes.length} images (CBO mode)`);
+    } else if (useCBOMultipleAds) {
+      // CBO MULTIPLE INDIVIDUAL ADS - Each image gets its own ad in the SAME ad set
+      // This is the correct CBO behavior: multiple ads compete in a single ad set
+      logger.info('meta', `Creating ${uploadedImageHashes.length} Individual Ads in single Ad Set (CBO mode)`);
 
-      const childAttachments = uploadedImageHashes.slice(0, 10).map((img, idx) => ({
-        link: finalLink,
-        image_hash: img.imageHash,
-        name: adCopy.headline || `Image ${idx + 1}`,
-        description: adCopy.description || '',
-        call_to_action: {
-          type: 'LEARN_MORE',
-          value: { link: finalLink },
-        },
-      }));
+      for (let idx = 0; idx < uploadedImageHashes.length; idx++) {
+        const imgData = uploadedImageHashes[idx];
 
-      creative = await metaService.createAdCreative({
-        name: `${campaign.name} - Carousel Creative`,
-        object_story_spec: {
-          page_id: effectivePageId,
-          ...(instagramActorId && { instagram_user_id: instagramActorId }),
-          link_data: {
-            link: finalLink,
-            message: adCopy.primaryText,
-            child_attachments: childAttachments,
-            multi_share_optimized: true,
-          } as any, // Carousel-specific fields
-        },
-      }, adAccountId, accessToken);
+        logger.info('meta', `Creating ad ${idx + 1}/${uploadedImageHashes.length} for image...`);
 
-      logger.success('meta', `Carousel creative created with ID: ${creative.id}`, {
-        cardsCount: childAttachments.length,
-      });
+        // Create individual creative for this image
+        const individualCreative = await metaService.createAdCreative({
+          name: `${campaign.name} - Image ${idx + 1} Creative`,
+          object_story_spec: {
+            page_id: effectivePageId,
+            ...(instagramActorId && { instagram_user_id: instagramActorId }),
+            link_data: {
+              link: finalLink,
+              message: adCopy.primaryText,
+              name: adCopy.headline,
+              description: adCopy.description,
+              image_hash: imgData.imageHash,
+              call_to_action: {
+                type: 'LEARN_MORE',
+                value: { link: finalLink },
+              },
+            },
+          },
+        }, adAccountId, accessToken);
 
-      ad = await metaService.createAd({
-        name: getTomorrowDate(),
-        adset_id: adSet.id,
-        creative: { creative_id: creative.id },
-        status: 'PAUSED',
-      }, adAccountId, accessToken);
+        logger.success('meta', `Creative ${idx + 1} created with ID: ${individualCreative.id}`);
 
-      createdAds.push({ adId: ad.id, creativeId: creative.id });
-      logger.success('meta', `Carousel ad created with ID: ${ad.id}`);
+        // Create ad in the SAME ad set (CBO - all ads in one ad set)
+        const individualAd = await metaService.createAd({
+          name: `${getTomorrowDate()} - Ad ${idx + 1}`,
+          adset_id: adSet.id,
+          creative: { creative_id: individualCreative.id },
+          status: 'PAUSED',
+        }, adAccountId, accessToken);
+
+        createdAds.push({ adId: individualAd.id, creativeId: individualCreative.id });
+        logger.success('meta', `Ad ${idx + 1}/${uploadedImageHashes.length} created with ID: ${individualAd.id}`);
+      }
+
+      // Set creative and ad to the last one for backwards compatibility
+      creative = { id: createdAds[createdAds.length - 1]?.creativeId };
+      ad = { id: createdAds[createdAds.length - 1]?.adId };
+
+      logger.success('meta', `CBO: All ${createdAds.length} individual ads created in ad set ${adSet.id}`);
 
     } else if (hasMultipleVideos) {
       // MULTIPLE VIDEO ADS - Handle differently for CBO vs ABO
@@ -1941,7 +1951,7 @@ class CampaignOrchestratorService {
 
       logger.success('meta', `All ${createdAds.length} video ads created successfully (${isCBO ? 'CBO' : 'ABO'} mode)`);
 
-    } else if (useMultipleAds) {
+    } else if (useABOMultipleAds) {
       // ABO MULTIPLE IMAGE ADS - One ad set + one ad per image
       // Each image gets its OWN ad set with FULL budget (ABO mode)
       logger.info('meta', `Creating ${uploadedImageHashes.length} individual Image Ad Sets + Ads (ABO mode - each ad set gets full budget)`);
@@ -2055,7 +2065,7 @@ class CampaignOrchestratorService {
       campaignId: metaCampaign.id,
       adSetId: adSet.id,
       adId: ad.id,
-      adFormat: useVideo ? 'VIDEO' : (useCarousel ? 'CAROUSEL' : (useMultipleAds ? 'MULTIPLE_ADS' : 'SINGLE_IMAGE')),
+      adFormat: useVideo ? 'VIDEO' : (useCBOMultipleAds ? 'CBO_MULTIPLE_ADS' : (useABOMultipleAds ? 'ABO_MULTIPLE_ADS' : 'SINGLE_IMAGE')),
       totalAds: createdAds.length,
     });
 
