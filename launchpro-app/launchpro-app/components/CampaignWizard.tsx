@@ -1819,7 +1819,7 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
 
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Start Date & Time (UTC)
+                        Start Date & Time
                       </label>
                       <input
                         type="datetime-local"
@@ -1831,7 +1831,7 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
                         required
                       />
                       <p className="text-xs text-gray-500 mt-1">
-                        Schedule when the campaign should start. Time is in UTC.
+                        Schedule when the campaign should start (your local time).
                       </p>
                     </div>
 

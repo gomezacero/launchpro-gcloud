@@ -104,17 +104,10 @@ export async function POST(request: NextRequest) {
       keywords: body.keywords,
       contentGenerationPhrases: body.contentGenerationPhrases,
       platforms: body.platforms.map((p: any) => {
-        // Parse startDateTime as UTC (the UI says "Time is in UTC")
-        // datetime-local gives format YYYY-MM-DDTHH:mm without timezone
-        // Adding 'Z' ensures it's interpreted as UTC, not local time
+        // Parse startDateTime - the user configures in their LOCAL timezone
+        // We pass it directly to Meta which will interpret it correctly
         const startDateStr = p.startDateTime || p.startDate;
-        let startDate: Date;
-        if (typeof startDateStr === 'string' && !startDateStr.includes('Z') && !startDateStr.includes('+')) {
-          // String without timezone indicator - treat as UTC
-          startDate = new Date(startDateStr + ':00Z'); // Add seconds and Z for UTC
-        } else {
-          startDate = new Date(startDateStr);
-        }
+        const startDate = new Date(startDateStr);
 
         return {
           platform: p.platform,

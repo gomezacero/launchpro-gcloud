@@ -944,7 +944,8 @@ class CampaignOrchestratorService {
             }
 
             // Get pixel ID and access token from DB
-            const pixelId = metaAccount.metaPixelId;
+            // IMPORTANT: Trim and convert to string to ensure mapping lookup works
+            const pixelId = metaAccount.metaPixelId?.toString().trim();
             let accessToken = metaAccount.metaAccessToken;
 
             if (!pixelId) {
@@ -953,6 +954,11 @@ class CampaignOrchestratorService {
                 `Please configure it in the Account settings.`
               );
             }
+
+            // Debug logging for pixel token mapping
+            logger.info('tonic', `🔍 Pixel ID from DB: "${pixelId}" (length: ${pixelId.length})`);
+            logger.info('tonic', `🔍 Token mapping keys: ${Object.keys(META_PIXEL_TOKEN_MAPPING).join(', ')}`);
+            logger.info('tonic', `🔍 Mapping lookup result: ${META_PIXEL_TOKEN_MAPPING[pixelId] ? 'FOUND' : 'NOT FOUND'}`);
 
             // FALLBACK: If account doesn't have access token, use global settings
             if (!accessToken) {
@@ -1384,10 +1390,11 @@ class CampaignOrchestratorService {
       (cat: string) => restrictedCategories.includes(cat)
     );
 
-    // Use OUTCOME_LEADS for restricted categories, OUTCOME_SALES otherwise
-    const campaignObjective = hasRestrictedCategory ? 'OUTCOME_LEADS' : 'OUTCOME_SALES';
+    // ALWAYS use OUTCOME_SALES (Ventas) - this is the correct objective for conversion campaigns
+    // Note: Even with Special Ad Categories, we use OUTCOME_SALES for purchase tracking
+    const campaignObjective = 'OUTCOME_SALES';
 
-    logger.info('meta', `Campaign objective: ${campaignObjective}`, {
+    logger.info('meta', `Campaign objective: ${campaignObjective} (always OUTCOME_SALES)`, {
       hasRestrictedCategory,
       country: campaign.country,
       specialAdCategories: platformConfig.specialAdCategories,
