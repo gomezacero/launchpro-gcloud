@@ -624,6 +624,86 @@ Responde SOLO con un JSON array de exactamente 5 strings, sin explicaciones ni m
   }
 
   /**
+   * Generate 10 keyword suggestions following SEO Senior Specialist methodology
+   * Distribution: 5 financial, 1 geographic, 2 need, 2 urgency
+   */
+  async generateKeywordsSuggestions(params: {
+    category: string;
+    country: string;
+    language: string;
+  }): Promise<{ keyword: string; type: string }[]> {
+    const systemPrompt = `Actúa como un especialista Senior en SEO y Keyword Research. Tu tarea es generar una lista de 10 palabras clave (keywords) transaccionales y de navegación para la categoría especificada. Las keywords deben simular consultas orgánicas y naturales que los usuarios escriben en la barra de búsqueda de Google.
+
+Debes seguir estrictamente la siguiente distribución para las 10 opciones:
+
+1. (5 Keywords) Foco Financiero: Deben incluir términos relacionados con facilidades de pago, crédito o historial crediticio (ejemplos: "reportados en datacrédito", "pagar a cuotas", "sin cuota inicial", "crédito fácil").
+
+2. (1 Keyword) Foco Geográfico: Debe incluir explícitamente el nombre de la ciudad más importante del país especificado dentro de la frase de búsqueda.
+
+3. (2 Keywords) Foco en Necesidad: Deben abordar un problema, dolor o requerimiento específico que el usuario necesita solucionar con esta categoría.
+
+4. (2 Keywords) Foco en Urgencia: Deben contener gatillos de tiempo que indiquen inmediatez (ejemplos: "para hoy", "entrega inmediata", "rápido", "urgente").
+
+IMPORTANTE:
+- Determina automáticamente la ciudad más importante del país (ej: Bogotá para Colombia, Ciudad de México para México, Lima para Perú, Madrid para España, etc.).
+- Las keywords deben estar en el idioma especificado.
+- Deben ser búsquedas realistas que un usuario haría en Google.`;
+
+    const userPrompt = `Genera exactamente 10 keywords para:
+
+Categoría: ${params.category}
+País: ${params.country}
+Idioma: ${params.language}
+
+Responde SOLO con un JSON array de objetos con esta estructura exacta, sin explicaciones ni markdown:
+[
+  {"keyword": "keyword aquí", "type": "financial"},
+  {"keyword": "keyword aquí", "type": "financial"},
+  {"keyword": "keyword aquí", "type": "financial"},
+  {"keyword": "keyword aquí", "type": "financial"},
+  {"keyword": "keyword aquí", "type": "financial"},
+  {"keyword": "keyword aquí", "type": "geographic"},
+  {"keyword": "keyword aquí", "type": "need"},
+  {"keyword": "keyword aquí", "type": "need"},
+  {"keyword": "keyword aquí", "type": "urgency"},
+  {"keyword": "keyword aquí", "type": "urgency"}
+]`;
+
+    const message = await this.anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1500,
+      temperature: 0.8,
+      system: systemPrompt,
+      messages: [
+        {
+          role: 'user',
+          content: userPrompt,
+        },
+      ],
+    });
+
+    const responseText = message.content[0].type === 'text' ? message.content[0].text : '[]';
+    const cleanedResponse = this.cleanJsonResponse(responseText);
+    let suggestions: { keyword: string; type: string }[] = JSON.parse(cleanedResponse);
+
+    // Ensure we have exactly 10 suggestions
+    if (suggestions.length > 10) {
+      suggestions = suggestions.slice(0, 10);
+    }
+
+    // Save to database for tracking
+    await this.saveAIContent({
+      contentType: 'keyword_suggestions',
+      content: { suggestions },
+      model: 'claude-sonnet-4',
+      prompt: userPrompt,
+      tokensUsed: message.usage.input_tokens + message.usage.output_tokens,
+    });
+
+    return suggestions;
+  }
+
+  /**
    * Generate targeting suggestions based on offer and copy
    */
   async generateTargetingSuggestions(params: {
