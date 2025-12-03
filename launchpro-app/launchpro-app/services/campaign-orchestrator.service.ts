@@ -3145,28 +3145,55 @@ class CampaignOrchestratorService {
     // ============================================
     // STEP 4: Configure Pixels
     // ============================================
+    // Meta Pixel ID → Access Token mapping (each pixel has its own specific token)
+    const META_PIXEL_TOKEN_MAPPING_CONTINUE: { [pixelId: string]: string } = {
+      '1203351311131422': 'EAAJRmTwhsNgBO1OnDiD8eS4vZB2m1JGFUZAi9ErzWUBlV0hPtuoNZCL6TBADDy6jXAbd0lvc0RiZCOxrK991pcuW8b519EnhrpPKt4ZBTLLmUYMkkV4LZCYx1GAkU0uhBbekynZBdrpE30S9Th1x1zwpIUe0OACto0iKDZCFzfd6OBZCZBZBSRcPxZBMGrNZA4BOlqUrUAQZDZD', // L2 - Loans
+      '1179895397093948': 'EABZB8DcFpOfsBOynXLGBDvWfGotmCDsrwHy2eaM3h5dbpVkHzg3vUMKmT481gRJlNa7bVRm1yE7ZA3M049Se5wrE0YSvPRDGQeaewl07KIK7uU1yjOolDjoJSZBn2Pno7VMZB2fmPhQH7rux8iITnSVp49Vhf8tYZBWgWqgEFzdWVizYHgBoZChHTi76u68jEVYgZDZD', // A1
+      '1435976930918931': 'EABZB8DcFpOfsBO8Vkz5gBxmH9wIkH7CcPxgr9ZAbfF5lhslhfDZBRu7F9L5ZCIWS1H7jlFM3Mef7cRaZBg0IuR2aNo9BOA3HvWECyXHuDV2gEnVRS1aCzQmGV4LFvF6aOyjnyMcJFZBMZAq9iKCj6fmcmdqD25CIkwfvI1Kud269QIxZA0vreVbqUmIUA0XZAxMsmbQZDZD', // B1 - Rsoc Tonic
+      '1891445634963589': 'EABZB8DcFpOfsBO6vHZBiXZBgo2LtZCjEpt0qOyQGvxxIN0LgOXp6vxU9VTUQmwkzMnevZAv5LnE2UKFNxhITNZAJb5Crt3tUcNZBREinKrlU4cf29T6hIqxPAZCfKbjbQLRoWO5zkZAZC3Axshd8jstZBnDCwFLjZAd9oWQ9bwCHReODOWltyJVZAudg2PkyDSOS6PXwknwZDZD', // Inforproductos
+      '764050146176958': 'EAADuOFCzsHsBPPOGO8j4fzZBKy4BRViYTWiPiCZChKNAQ3sWVhWlTvTp267FXnLEzHgwEEMbWxoUz9fbQKBWaWP2iOSGbM00o3091hARmTf0QTlgPYbpt9a52cqNIxXMEBNx02YL2xzq0sSdepJzPTQ3IQ4a9OU0KEoGZBZAv7ul23HtpwoS5xaWSWCt4kmtGwZDZD', // B3
+      '1039541308325786': 'EAAYl7gsCHoQBO1rJjzTkPmehaQaXd4yuSlcFQqo9wicerpGnmxwbGQNfQr0AKdwiBq5suGUxRsPLBAcLEY2NeJ5VQEvZANpLmdx2KWiOrE6ujdJqQGNbspu2O3OtJoruFE44qN77Nu8fR5NWC9maP5OSWbyXJznieeSddXgj6VjLjwmtvML4eBdoKyngjBAZDZD', // Y - Rsoc Tonic
+      '878273167774607': 'EAAYl7gsCHoQBO5uHb4HvFXM0S3czUMZCTyPomIKw5iTDZBzfD8EODwZB20l2zMqGW3QrHMwdxR6WnyT7Pq85RTOVLhloqgkyUIJpTCIMQQso25LZA7DOWAhI2IkoHu0KJOJcfNq5JDtqA3oX6k3kjRBOyvywThOwSPRbiGnKzSdU7ZCm532mald7X3v0zpiEjBQZDZD', // H - RSOC Tonic
+      '2718831948325465': 'EAAYl7gsCHoQBO5uHb4HvFXM0S3czUMZCTyPomIKw5iTDZBzfD8EODwZB20l2zMqGW3QrHMwdxR6WnyT7Pq85RTOVLhloqgkyUIJpTCIMQQso25LZA7DOWAhI2IkoHu0KJOJcfNq5JDtqA3oX6k3kjRBOyvywThOwSPRbiGnKzSdU7ZCm532mald7X3v0zpiEjBQZDZD', // Z
+      '2180869225678766': 'EAAYl7gsCHoQBO5uHb4HvFXM0S3czUMZCTyPomIKw5iTDZBzfD8EODwZB20l2zMqGW3QrHMwdxR6WnyT7Pq85RTOVLhloqgkyUIJpTCIMQQso25LZA7DOWAhI2IkoHu0KJOJcfNq5JDtqA3oX6k3kjRBOyvywThOwSPRbiGnKzSdU7ZCm532mald7X3v0zpiEjBQZDZD', // S
+      '847010030396510': 'EAAYl7gsCHoQBO5uHb4HvFXM0S3czUMZCTyPomIKw5iTDZBzfD8EODwZB20l2zMqGW3QrHMwdxR6WnyT7Pq85RTOVLhloqgkyUIJpTCIMQQso25LZA7DOWAhI2IkoHu0KJOJcfNq5JDtqA3oX6k3kjRBOyvywThOwSPRbiGnKzSdU7ZCm532mald7X3v0zpiEjBQZDZD', // X - RSOC Tonic
+      '860387142264159': 'EAAYl7gsCHoQBO5uHb4HvFXM0S3czUMZCTyPomIKw5iTDZBzfD8EODwZB20l2zMqGW3QrHMwdxR6WnyT7Pq85RTOVLhloqgkyUIJpTCIMQQso25LZA7DOWAhI2IkoHu0KJOJcfNq5JDtqA3oX6k3kjRBOyvywThOwSPRbiGnKzSdU7ZCm532mald7X3v0zpiEjBQZDZD', // Q
+    };
+
+    // TikTok pixel constants
+    const TIKTOK_PIXEL_ID_CONTINUE = 'CQHUEGBC77U4RGRFJN4G';
+    const TIKTOK_ACCESS_TOKEN_CONTINUE = '50679817ad0f0f06d1dadd43dbce8f3345b676cd';
+
     for (const platform of campaign.platforms) {
       if (platform.platform === 'META' && platform.metaAccount?.metaPixelId) {
         try {
+          const pixelId = platform.metaAccount.metaPixelId.toString().trim();
+          const pixelAccessToken = META_PIXEL_TOKEN_MAPPING_CONTINUE[pixelId] || platform.metaAccount.metaAccessToken || process.env.META_ACCESS_TOKEN || '';
+
+          logger.info('tonic', `🔍 [continueCampaignAfterArticle] Pixel ID: "${pixelId}"`);
+          logger.info('tonic', `🔍 [continueCampaignAfterArticle] Token found in mapping: ${META_PIXEL_TOKEN_MAPPING_CONTINUE[pixelId] ? 'YES' : 'NO'}`);
+          logger.info('tonic', `🔍 [continueCampaignAfterArticle] Token preview: ${pixelAccessToken.substring(0, 20)}...`);
+
           await tonicService.createPixel(credentials, 'facebook', {
             campaign_id: parseInt(tonicCampaignId.toString()),
-            pixel_id: platform.metaAccount.metaPixelId,
-            access_token: process.env.META_ACCESS_TOKEN || platform.metaAccount.metaAccessToken || '',
+            pixel_id: pixelId,
+            access_token: pixelAccessToken,
             event_name: 'Purchase',
             revenue_type: 'preestimated_revenue',
           });
-          logger.success('tonic', 'Meta pixel configured');
+          logger.success('tonic', `✅ Meta pixel ${pixelId} configured with correct token`);
         } catch (e: any) {
           logger.warn('tonic', `Failed to configure Meta pixel: ${e.message}`);
         }
       }
 
-      if (platform.platform === 'TIKTOK' && platform.tiktokAccount?.tiktokPixelId) {
+      if (platform.platform === 'TIKTOK') {
         try {
+          // Use hardcoded TikTok pixel for Tonic (same for all accounts)
           await tonicService.createPixel(credentials, 'tiktok', {
             campaign_id: parseInt(tonicCampaignId.toString()),
-            pixel_id: platform.tiktokAccount.tiktokPixelId,
-            access_token: process.env.TIKTOK_ACCESS_TOKEN || platform.tiktokAccount.tiktokAccessToken || '',
+            pixel_id: TIKTOK_PIXEL_ID_CONTINUE,
+            access_token: TIKTOK_ACCESS_TOKEN_CONTINUE,
             event_name: 'Purchase',
             revenue_type: 'preestimated_revenue',
           });

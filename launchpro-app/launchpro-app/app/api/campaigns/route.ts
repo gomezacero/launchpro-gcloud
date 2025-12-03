@@ -104,10 +104,22 @@ export async function POST(request: NextRequest) {
       keywords: body.keywords,
       contentGenerationPhrases: body.contentGenerationPhrases,
       platforms: body.platforms.map((p: any) => {
-        // Parse startDateTime - the user configures in their LOCAL timezone
-        // We pass it directly to Meta which will interpret it correctly
-        const startDateStr = p.startDateTime || p.startDate;
-        const startDate = new Date(startDateStr);
+        // Keep startDateTime as string - we'll convert it later with proper timezone handling
+        // The user configures in their local timezone, we need to preserve this
+        const startDateTimeStr = p.startDateTime || p.startDate;
+
+        // For DB storage, we still need a Date object, but we'll also store the raw string
+        // Parse as if it's UTC-5 (Colombia timezone) - add 5 hours to get UTC
+        // This is a workaround until we have proper timezone handling from frontend
+        let startDate: Date;
+        if (typeof startDateTimeStr === 'string' && !startDateTimeStr.includes('Z') && !startDateTimeStr.includes('+')) {
+          // User entered local time (e.g., "2025-12-04T02:00")
+          // Assume UTC-5 (Colombia) - add 5 hours to convert to UTC
+          const localDate = new Date(startDateTimeStr);
+          startDate = new Date(localDate.getTime() + (5 * 60 * 60 * 1000)); // Add 5 hours for UTC-5
+        } else {
+          startDate = new Date(startDateTimeStr);
+        }
 
         return {
           platform: p.platform,
