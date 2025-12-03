@@ -1560,9 +1560,8 @@ class CampaignOrchestratorService {
     logger.info('meta', JSON.stringify(targetingSpec, null, 2));
     logger.info('meta', `=== END TARGETING SPEC ===`);
 
-    // Determine the conversion event type based on campaign objective
-    // OUTCOME_LEADS uses 'LEAD', OUTCOME_SALES uses 'PURCHASE'
-    const conversionEventType = hasRestrictedCategory ? 'LEAD' : 'PURCHASE';
+    // Conversion event type - ALWAYS use PURCHASE since we always use OUTCOME_SALES
+    const conversionEventType = 'PURCHASE';
 
     // Helper function to create an ad set (used for both CBO single ad set and ABO multiple ad sets)
     const createMetaAdSet = async (adSetNameSuffix: string = 'AdSet', adSetBudget?: number) => {
