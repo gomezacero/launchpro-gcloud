@@ -1463,14 +1463,14 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
 
                     {/* Financial Focus (5) */}
                     <div>
-                      <p className="text-xs font-semibold text-blue-600 mb-1">💰 Financial Focus (5)</p>
+                      <p className="text-xs font-semibold text-blue-700 mb-1">💰 Financial Focus (5)</p>
                       <div className="flex flex-wrap gap-2">
                         {keywordSuggestions.filter(s => s.type === 'financial').map((s, i) => (
                           <button
                             key={i}
                             type="button"
                             onClick={() => addKeywordSuggestion(s.keyword)}
-                            className="px-3 py-1 text-sm bg-blue-50 border border-blue-200 rounded-full hover:bg-blue-100 transition-colors"
+                            className="px-3 py-1 text-sm font-medium text-blue-800 bg-blue-100 border border-blue-300 rounded-full hover:bg-blue-200 transition-colors"
                           >
                             {s.keyword}
                           </button>
@@ -1480,14 +1480,14 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
 
                     {/* Geographic Focus (1) */}
                     <div>
-                      <p className="text-xs font-semibold text-orange-600 mb-1">📍 Geographic Focus (1)</p>
+                      <p className="text-xs font-semibold text-orange-700 mb-1">📍 Geographic Focus (1)</p>
                       <div className="flex flex-wrap gap-2">
                         {keywordSuggestions.filter(s => s.type === 'geographic').map((s, i) => (
                           <button
                             key={i}
                             type="button"
                             onClick={() => addKeywordSuggestion(s.keyword)}
-                            className="px-3 py-1 text-sm bg-orange-50 border border-orange-200 rounded-full hover:bg-orange-100 transition-colors"
+                            className="px-3 py-1 text-sm font-medium text-orange-800 bg-orange-100 border border-orange-300 rounded-full hover:bg-orange-200 transition-colors"
                           >
                             {s.keyword}
                           </button>
@@ -1497,14 +1497,14 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
 
                     {/* Need Focus (2) */}
                     <div>
-                      <p className="text-xs font-semibold text-purple-600 mb-1">🎯 Need Focus (2)</p>
+                      <p className="text-xs font-semibold text-purple-700 mb-1">🎯 Need Focus (2)</p>
                       <div className="flex flex-wrap gap-2">
                         {keywordSuggestions.filter(s => s.type === 'need').map((s, i) => (
                           <button
                             key={i}
                             type="button"
                             onClick={() => addKeywordSuggestion(s.keyword)}
-                            className="px-3 py-1 text-sm bg-purple-50 border border-purple-200 rounded-full hover:bg-purple-100 transition-colors"
+                            className="px-3 py-1 text-sm font-medium text-purple-800 bg-purple-100 border border-purple-300 rounded-full hover:bg-purple-200 transition-colors"
                           >
                             {s.keyword}
                           </button>
@@ -1514,14 +1514,14 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
 
                     {/* Urgency Focus (2) */}
                     <div>
-                      <p className="text-xs font-semibold text-red-600 mb-1">⚡ Urgency Focus (2)</p>
+                      <p className="text-xs font-semibold text-red-700 mb-1">⚡ Urgency Focus (2)</p>
                       <div className="flex flex-wrap gap-2">
                         {keywordSuggestions.filter(s => s.type === 'urgency').map((s, i) => (
                           <button
                             key={i}
                             type="button"
                             onClick={() => addKeywordSuggestion(s.keyword)}
-                            className="px-3 py-1 text-sm bg-red-50 border border-red-200 rounded-full hover:bg-red-100 transition-colors"
+                            className="px-3 py-1 text-sm font-medium text-red-800 bg-red-100 border border-red-300 rounded-full hover:bg-red-200 transition-colors"
                           >
                             {s.keyword}
                           </button>
