@@ -101,29 +101,9 @@ export default function LogsPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Link href="/" className="text-2xl">
-                🚀
-              </Link>
-              <h1 className="text-2xl font-bold text-gray-900">Sistema de Logs</h1>
-            </div>
-            <div className="flex items-center gap-4">
-              <Link
-                href="/"
-                className="text-blue-600 hover:text-blue-700 font-medium"
-              >
-                ← Volver al inicio
-              </Link>
-            </div>
-          </div>
-        </div>
-      </header>
-
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Page Title */}
+        <h1 className="text-2xl font-bold text-gray-900 mb-6">Sistema de Logs</h1>
         {/* Stats */}
         {stats && (
           <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-6">

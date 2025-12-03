@@ -3,32 +3,6 @@ import Link from 'next/link';
 export default function Home() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
-      {/* Header */}
-      <header className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="text-3xl">🚀</div>
-              <h1 className="text-2xl font-bold text-gray-900">LaunchPro</h1>
-            </div>
-            <div className="flex items-center gap-4">
-              <Link
-                href="/logs"
-                className="text-gray-700 hover:text-gray-900 font-medium"
-              >
-                📋 Logs
-              </Link>
-              <Link
-                href="/campaigns"
-                className="text-blue-600 hover:text-blue-700 font-medium"
-              >
-                View All Campaigns →
-              </Link>
-            </div>
-          </div>
-        </div>
-      </header>
-
       {/* Hero Section */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
         <div className="text-center mb-16">
