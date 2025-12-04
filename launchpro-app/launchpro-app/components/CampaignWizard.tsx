@@ -158,6 +158,11 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
   const [loadingTiktokAdCopy, setLoadingTiktokAdCopy] = useState(false);
   const [tiktokAdCopyError, setTiktokAdCopyError] = useState<string | null>(null);
 
+  // AI Generated Images state (per platform index)
+  const [generatedImages, setGeneratedImages] = useState<Record<number, { url: string; gcsPath: string; prompt: string }[]>>({});
+  const [generatingImages, setGeneratingImages] = useState<Record<number, boolean>>({});
+  const [generateImagesError, setGenerateImagesError] = useState<Record<number, string | null>>({});
+
   // Constants
   const MAX_KEYWORDS = 10;
 
@@ -717,6 +722,85 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
   };
 
   /**
+   * Generate AI images for preview in the wizard
+   */
+  const generateAIImages = async (platformIndex: number) => {
+    const platform = formData.platforms[platformIndex];
+    if (!platform) return;
+
+    // Validate required fields
+    if (!formData.offerId || !formData.copyMaster || !formData.country || !formData.language) {
+      setGenerateImagesError(prev => ({ ...prev, [platformIndex]: 'Complete Phase 1 first (Offer, Copy Master, Country, Language)' }));
+      return;
+    }
+
+    // Get ad title for the prompt
+    const adTitle = platform.manualAdTitle || formData.copyMaster.substring(0, 40);
+    if (!adTitle) {
+      setGenerateImagesError(prev => ({ ...prev, [platformIndex]: 'Please enter an Ad Title first or have a Copy Master' }));
+      return;
+    }
+
+    const count = platform.aiMediaCount || 1;
+    const selectedOffer = offers.find(o => o.id === formData.offerId);
+
+    setGeneratingImages(prev => ({ ...prev, [platformIndex]: true }));
+    setGenerateImagesError(prev => ({ ...prev, [platformIndex]: null }));
+
+    try {
+      const response = await fetch('/api/ai/generate-images', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          count,
+          category: selectedOffer?.vertical || selectedOffer?.name || 'General',
+          country: formData.country,
+          language: formData.language,
+          adTitle,
+          copyMaster: formData.copyMaster,
+          platform: platform.platform,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to generate images');
+      }
+
+      // Add new images to existing ones (allows mixing)
+      setGeneratedImages(prev => ({
+        ...prev,
+        [platformIndex]: [...(prev[platformIndex] || []), ...result.data.images],
+      }));
+    } catch (error: any) {
+      setGenerateImagesError(prev => ({ ...prev, [platformIndex]: error.message }));
+    } finally {
+      setGeneratingImages(prev => ({ ...prev, [platformIndex]: false }));
+    }
+  };
+
+  /**
+   * Remove a single generated image from preview
+   */
+  const removeGeneratedImage = (platformIndex: number, imageIndex: number) => {
+    setGeneratedImages(prev => ({
+      ...prev,
+      [platformIndex]: (prev[platformIndex] || []).filter((_, i) => i !== imageIndex),
+    }));
+  };
+
+  /**
+   * Clear all generated images for a platform
+   */
+  const clearGeneratedImages = (platformIndex: number) => {
+    setGeneratedImages(prev => ({
+      ...prev,
+      [platformIndex]: [],
+    }));
+  };
+
+  /**
    * Validate content generation phrases
    * - Must have 3-5 phrases
    * - Phrases must be unique (no duplicates)
@@ -1262,6 +1346,49 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
 
         console.log(`[Wizard] ✅ All ${fileIds.length} files uploaded successfully (session: ${wizardSessionId})`);
         addLog('Archivos subidos correctamente.', 'success');
+      }
+
+      // STEP 3: Save AI-generated images (from preview)
+      const allGeneratedImages = Object.entries(generatedImages);
+      const hasGeneratedImages = allGeneratedImages.some(([_, images]) => images.length > 0);
+
+      if (hasGeneratedImages) {
+        console.log('[Wizard] Saving AI-generated images...');
+        addLog('Guardando imágenes generadas por AI...', 'in_progress');
+
+        for (const [platformIdxStr, images] of allGeneratedImages) {
+          const platformIdx = parseInt(platformIdxStr, 10);
+          const platform = formData.platforms[platformIdx];
+          if (!platform || images.length === 0) continue;
+
+          for (const image of images) {
+            try {
+              // Save to Media table using the existing endpoint
+              const saveRes = await fetch(`/api/campaigns/${campaignId}/media/save-generated`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  gcsPath: image.gcsPath,
+                  url: image.url,
+                  mediaType: 'IMAGE',
+                  platform: platform.platform,
+                  prompt: image.prompt,
+                }),
+              });
+
+              const saveData = await saveRes.json();
+              if (!saveData.success) {
+                console.error('[Wizard] Failed to save generated image:', saveData.error);
+              } else {
+                console.log(`[Wizard] ✅ Saved generated image (ID: ${saveData.data.mediaId})`);
+              }
+            } catch (saveErr: any) {
+              console.error('[Wizard] Error saving generated image:', saveErr.message);
+            }
+          }
+        }
+
+        addLog('Imágenes generadas guardadas correctamente.', 'success');
       }
 
       // Campaign created successfully (async mode - no launch step needed)
@@ -2127,10 +2254,10 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
                     {platform.generateWithAI && (
                       <div className="mt-4 p-4 bg-purple-50 border border-purple-200 rounded-lg">
                         <h4 className="text-sm font-semibold text-purple-900 mb-3">
-                          🎨 AI Media Generation Settings
+                          🎨 AI Media Generation
                         </h4>
                         <p className="text-xs text-purple-700 mb-4">
-                          Configure what type of media AI should generate for your ads.
+                          Generate AI images and preview them before saving your campaign.
                         </p>
 
                         <div className="grid grid-cols-2 gap-4">
@@ -2180,30 +2307,112 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
                           </div>
                         </div>
 
-                        {/* Info about what will be generated */}
-                        <div className="mt-3 p-2 bg-white rounded border border-purple-100">
-                          <p className="text-xs text-gray-600">
-                            {platform.platform === 'TIKTOK' ? (
-                              <>
-                                AI will generate <strong>{platform.aiMediaCount || 1} video(s)</strong> in 9:16 vertical format.
-                              </>
-                            ) : platform.aiMediaType === 'BOTH' ? (
-                              <>
-                                AI will generate <strong>{platform.aiMediaCount || 1} image(s)</strong> (1:1 square) + <strong>{platform.aiMediaCount || 1} video(s)</strong> (16:9).
-                                Each video will include an auto-generated thumbnail.
-                              </>
-                            ) : platform.aiMediaType === 'VIDEO' ? (
-                              <>
-                                AI will generate <strong>{platform.aiMediaCount || 1} video(s)</strong> in 16:9 format.
-                                Each video will include an auto-generated thumbnail (required by Meta).
-                              </>
-                            ) : (
-                              <>
-                                AI will generate <strong>{platform.aiMediaCount || 1} image(s)</strong> in 1:1 square format.
-                              </>
-                            )}
-                          </p>
-                        </div>
+                        {/* Generate Images Button - Only for Meta with IMAGE or BOTH */}
+                        {platform.platform === 'META' && (platform.aiMediaType === 'IMAGE' || platform.aiMediaType === 'BOTH' || !platform.aiMediaType) && (
+                          <div className="mt-4">
+                            <button
+                              type="button"
+                              onClick={() => generateAIImages(index)}
+                              disabled={generatingImages[index] || !formData.offerId || !formData.copyMaster}
+                              className="w-full px-4 py-3 text-sm font-medium bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                            >
+                              {generatingImages[index] ? (
+                                <>
+                                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                                  </svg>
+                                  Generating {platform.aiMediaCount || 1} image(s)...
+                                </>
+                              ) : (
+                                <>
+                                  <span>✨</span>
+                                  Generate {platform.aiMediaCount || 1} AI Image{(platform.aiMediaCount || 1) > 1 ? 's' : ''}
+                                </>
+                              )}
+                            </button>
+                            <p className="text-xs text-purple-600 mt-1 text-center">
+                              Images will be generated and shown below for preview
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Error message */}
+                        {generateImagesError[index] && (
+                          <div className="mt-3 p-2 bg-red-100 border border-red-200 rounded-lg text-xs text-red-700">
+                            {generateImagesError[index]}
+                          </div>
+                        )}
+
+                        {/* Generated Images Preview */}
+                        {generatedImages[index] && generatedImages[index].length > 0 && (
+                          <div className="mt-4">
+                            <div className="flex items-center justify-between mb-2">
+                              <h5 className="text-sm font-medium text-purple-900">
+                                Generated Images ({generatedImages[index].length})
+                              </h5>
+                              <button
+                                type="button"
+                                onClick={() => clearGeneratedImages(index)}
+                                className="text-xs text-red-600 hover:text-red-700 hover:underline"
+                              >
+                                Clear all
+                              </button>
+                            </div>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                              {generatedImages[index].map((image, imgIdx) => (
+                                <div key={imgIdx} className="relative group">
+                                  <div className="aspect-square rounded-lg overflow-hidden border-2 border-purple-200 bg-white">
+                                    <img
+                                      src={image.url}
+                                      alt={`Generated image ${imgIdx + 1}`}
+                                      className="w-full h-full object-cover"
+                                    />
+                                  </div>
+                                  {/* Delete button overlay */}
+                                  <button
+                                    type="button"
+                                    onClick={() => removeGeneratedImage(index, imgIdx)}
+                                    className="absolute top-1 right-1 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
+                                    title="Remove image"
+                                  >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                  </button>
+                                  {/* Image number badge */}
+                                  <div className="absolute bottom-1 left-1 px-1.5 py-0.5 bg-black/60 text-white text-xs rounded">
+                                    #{imgIdx + 1}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                            <p className="text-xs text-gray-500 mt-2">
+                              Hover over images to see delete button. These images will be saved with your campaign.
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Info about what will be generated (Videos) */}
+                        {(platform.platform === 'TIKTOK' || platform.aiMediaType === 'VIDEO' || platform.aiMediaType === 'BOTH') && (
+                          <div className="mt-3 p-2 bg-white rounded border border-purple-100">
+                            <p className="text-xs text-gray-600">
+                              {platform.platform === 'TIKTOK' ? (
+                                <>
+                                  <strong>{platform.aiMediaCount || 1} video(s)</strong> will be generated automatically when campaign is approved (9:16 vertical format).
+                                </>
+                              ) : platform.aiMediaType === 'BOTH' ? (
+                                <>
+                                  <strong>{platform.aiMediaCount || 1} video(s)</strong> will be generated automatically when campaign is approved (16:9 format with thumbnails).
+                                </>
+                              ) : (
+                                <>
+                                  <strong>{platform.aiMediaCount || 1} video(s)</strong> will be generated automatically when campaign is approved (16:9 format with thumbnails).
+                                </>
+                              )}
+                            </p>
+                          </div>
+                        )}
                       </div>
                     )}
 

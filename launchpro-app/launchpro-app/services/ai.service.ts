@@ -1424,6 +1424,41 @@ Return JSON:
       },
     });
   }
+
+  /**
+   * Generate a single image for preview in the campaign wizard
+   * Uses UGC-style prompts for authentic-looking images
+   */
+  async generateImageForPreview(params: {
+    category: string;
+    country: string;
+    language: string;
+    adTitle: string;
+    copyMaster: string;
+  }): Promise<{ url: string; gcsPath: string; prompt: string }> {
+    const ugcParams: UGCPromptParams = {
+      category: params.category,
+      country: params.country,
+      language: params.language,
+      adTitle: params.adTitle,
+      copyMaster: params.copyMaster,
+    };
+
+    const prompt = buildUGCImagePrompt(ugcParams);
+
+    logger.info('ai', 'Generating preview image with Vertex AI Imagen');
+
+    const result = await this.generateImage({
+      prompt,
+      aspectRatio: '1:1', // Square for Meta feed
+    });
+
+    return {
+      url: result.imageUrl,
+      gcsPath: result.gcsPath,
+      prompt,
+    };
+  }
 }
 
 // Export singleton instance
