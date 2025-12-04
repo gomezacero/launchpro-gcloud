@@ -24,7 +24,9 @@
       "Bash(PGPASSWORD='Legolas9OD7A9SX!' psql:*)",
       "Bash(DATABASE_URL=\"postgresql://postgres.ojhflsfnlwnpysvwtvnw:Legolas9OD7A9SX!@aws-0-us-west-2.pooler.supabase.com:5432/postgres\" npx prisma db push:*)",
       "Bash(git push:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(git fetch:*)",
+      "Bash(npm install:*)"
     ],
     "deny": [],
     "ask": []

@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
+import { useSession, signOut } from 'next-auth/react';
 
 const navigation = [
   { name: 'Campaigns', href: '/campaigns', icon: '📋' },
@@ -14,6 +15,12 @@ const navigation = [
 export default function Header() {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { data: session, status } = useSession();
+
+  // Don't render header on login/register pages
+  if (pathname?.startsWith('/login') || pathname?.startsWith('/register')) {
+    return null;
+  }
 
   const isActive = (href: string) => {
     if (href === '/campaigns') {
@@ -48,6 +55,29 @@ export default function Header() {
                 {item.name}
               </Link>
             ))}
+
+            {/* User Menu */}
+            {session?.user && (
+              <div className="flex items-center gap-3 ml-4 pl-4 border-l border-gray-200">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                    <span className="text-blue-700 font-semibold text-sm">
+                      {session.user.name?.charAt(0).toUpperCase() || 'U'}
+                    </span>
+                  </div>
+                  <span className="text-sm font-medium text-gray-700">
+                    {session.user.name || session.user.email}
+                  </span>
+                </div>
+                <button
+                  onClick={() => signOut({ callbackUrl: '/login' })}
+                  className="px-3 py-1.5 text-sm text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                  title="Cerrar sesión"
+                >
+                  Salir
+                </button>
+              </div>
+            )}
           </nav>
 
           {/* Mobile menu button */}
@@ -88,6 +118,23 @@ export default function Header() {
                   {item.name}
                 </Link>
               ))}
+              {/* Mobile User Info & Logout */}
+              {session?.user && (
+                <div className="mt-3 pt-3 border-t border-gray-200">
+                  <div className="px-4 py-2 text-sm text-gray-600">
+                    Conectado como: <strong>{session.user.name || session.user.email}</strong>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      signOut({ callbackUrl: '/login' });
+                    }}
+                    className="w-full px-4 py-3 text-left text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                  >
+                    Cerrar Sesión
+                  </button>
+                </div>
+              )}
             </nav>
           </div>
         )}

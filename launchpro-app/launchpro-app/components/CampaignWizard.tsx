@@ -284,6 +284,30 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
         tomorrowUTC.setUTCHours(1, 0, 0, 0);
         const defaultStartDateTime = tomorrowUTC.toISOString().slice(0, 16);
 
+        // Convert campaign media to UploadedFile format for cloning
+        const clonedImages: UploadedFile[] = campaign.media
+          ?.filter((m: any) => m.type === 'IMAGE')
+          .map((m: any) => ({
+            id: `clone-${m.id}`,
+            url: m.url,
+            fileName: m.filename || 'image.jpg',
+            fileSize: 0, // Unknown from clone
+            type: 'IMAGE' as const,
+          })) || [];
+
+        const clonedVideos: UploadedFile[] = campaign.media
+          ?.filter((m: any) => m.type === 'VIDEO')
+          .map((m: any) => ({
+            id: `clone-${m.id}`,
+            url: m.url,
+            fileName: m.filename || 'video.mp4',
+            fileSize: 0, // Unknown from clone
+            type: 'VIDEO' as const,
+            thumbnailId: m.thumbnailUrl ? `clone-thumb-${m.id}` : undefined,
+            thumbnailUrl: m.thumbnailUrl,
+            thumbnailFileName: m.thumbnailUrl ? 'thumbnail.jpg' : undefined,
+          })) || [];
+
         const platformsConfig: PlatformConfig[] = campaign.platforms?.map((p: any) => ({
           platform: p.platform as 'META' | 'TIKTOK',
           accountId: p.platform === 'META' ? p.metaAccountId : p.tiktokAccountId,
@@ -299,6 +323,9 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
           metaPageId: p.metaPageId || '',
           tiktokIdentityId: p.tiktokIdentityId || '',
           tiktokIdentityType: p.tiktokIdentityType || '',
+          // Include cloned media for all platforms
+          uploadedImages: clonedImages,
+          uploadedVideos: clonedVideos,
         })) || [];
 
         // Update form data with campaign data

@@ -314,3 +314,32 @@ model GlobalSettings {
 
   @@map("global_settings")
 }
+
+// ============================================
+// AUTHENTICATION
+// ============================================
+
+model Manager {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  name         String
+
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  lastLoginAt  DateTime?
+
+  @@index([email])
+}
+
+model InvitationCode {
+  id        String    @id @default(cuid())
+  code      String    @unique
+  used      Boolean   @default(false)
+  usedBy    String?   // Manager ID that used this code
+  createdAt DateTime  @default(now())
+  expiresAt DateTime?
+
+  @@index([code])
+  @@index([used])
+}
