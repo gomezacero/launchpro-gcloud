@@ -146,11 +146,26 @@ class AIService {
       apiKey: env.ANTHROPIC_API_KEY,
     });
 
-    // Initialize Google Cloud clients
-    this.vertexAiClient = new PredictionServiceClient({
+    // Initialize Google Cloud clients with proper credentials
+    const credentialsJson = process.env.GCP_SERVICE_ACCOUNT_KEY;
+    let vertexAiOptions: any = {
       apiEndpoint: `${env.GCP_LOCATION}-aiplatform.googleapis.com`,
-    });
+    };
 
+    if (credentialsJson) {
+      try {
+        const credentials = JSON.parse(credentialsJson);
+        vertexAiOptions.credentials = credentials;
+        vertexAiOptions.projectId = credentials.project_id;
+        logger.info('ai', `Vertex AI initialized with service account: ${credentials.client_email}`);
+      } catch (e: any) {
+        logger.error('ai', `Failed to parse GCP_SERVICE_ACCOUNT_KEY: ${e.message}`);
+      }
+    } else {
+      logger.warn('ai', 'GCP_SERVICE_ACCOUNT_KEY not found, using default credentials');
+    }
+
+    this.vertexAiClient = new PredictionServiceClient(vertexAiOptions);
     this.storage = getStorage();
   }
 
