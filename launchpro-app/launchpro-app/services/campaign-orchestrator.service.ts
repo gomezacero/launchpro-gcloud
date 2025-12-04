@@ -3179,6 +3179,135 @@ class CampaignOrchestratorService {
     logger.success('ai', 'AI content generated and keywords set');
 
     // ============================================
+    // STEP 3.5: Generate AI Media (Images/Videos) if enabled
+    // ============================================
+    for (const platformConfig of campaign.platforms) {
+      if (!platformConfig.generateWithAI) {
+        logger.info('ai', `⏭️  Skipping AI media generation for ${platformConfig.platform} (manual upload mode)`);
+        continue;
+      }
+
+      // Skip Tonic platform (only generate media for Meta/TikTok)
+      if (platformConfig.platform === 'TONIC') {
+        continue;
+      }
+
+      // Check if media already exists for this campaign
+      const existingMedia = await prisma.media.count({
+        where: { campaignId: campaign.id },
+      });
+
+      if (existingMedia > 0) {
+        logger.info('ai', `⏭️  Media already exists for ${platformConfig.platform}, skipping generation`);
+        continue;
+      }
+
+      // Get media type and count from platform config
+      const mediaType = platformConfig.aiMediaType || (platformConfig.platform === 'TIKTOK' ? 'VIDEO' : 'IMAGE');
+      const mediaCount = platformConfig.aiMediaCount || 1;
+
+      // TikTok only allows videos - enforce this
+      const effectiveMediaType = platformConfig.platform === 'TIKTOK' ? 'VIDEO' : mediaType;
+
+      logger.info('ai', `🎨 Generating UGC media for ${platformConfig.platform}: ${mediaCount}x ${effectiveMediaType}`);
+
+      // Generate Ad Copy specific to platform (needed for text overlays)
+      const adCopy = await aiService.generateAdCopy({
+        offerName: campaign.offer.name,
+        copyMaster: aiContentResult.copyMaster,
+        platform: platformConfig.platform as 'META' | 'TIKTOK',
+        adFormat: effectiveMediaType === 'VIDEO' ? 'VIDEO' : 'IMAGE',
+        country: campaign.country,
+        language: campaign.language,
+      });
+
+      try {
+        // Generate UGC-style media with custom prompts
+        const ugcMedia = await aiService.generateUGCMedia({
+          campaignId: campaign.id,
+          platform: platformConfig.platform as 'META' | 'TIKTOK',
+          mediaType: effectiveMediaType as 'IMAGE' | 'VIDEO' | 'BOTH',
+          count: mediaCount,
+          category: campaign.offer.vertical || campaign.offer.name,
+          country: campaign.country,
+          language: campaign.language,
+          adTitle: adCopy.headline,
+          copyMaster: aiContentResult.copyMaster,
+        });
+
+        // Save generated images to database
+        for (const image of ugcMedia.images) {
+          await prisma.media.create({
+            data: {
+              campaignId: campaign.id,
+              type: MediaType.IMAGE,
+              generatedByAI: true,
+              aiModel: 'imagen-4.0-fast-generate-001',
+              aiPrompt: image.prompt,
+              url: image.url,
+              gcsPath: image.gcsPath,
+              fileName: image.gcsPath.split('/').pop() || 'image.png',
+              mimeType: 'image/png',
+              usedInMeta: platformConfig.platform === 'META',
+              usedInTiktok: false,
+            },
+          });
+        }
+
+        // Save generated videos to database (with thumbnails for Meta)
+        for (const video of ugcMedia.videos) {
+          const videoMedia = await prisma.media.create({
+            data: {
+              campaignId: campaign.id,
+              type: MediaType.VIDEO,
+              generatedByAI: true,
+              aiModel: 'veo-3.1-fast',
+              aiPrompt: video.prompt,
+              url: video.url,
+              gcsPath: video.gcsPath,
+              fileName: video.gcsPath.split('/').pop() || 'video.mp4',
+              mimeType: 'video/mp4',
+              duration: 5,
+              usedInMeta: platformConfig.platform === 'META',
+              usedInTiktok: platformConfig.platform === 'TIKTOK',
+            },
+          });
+
+          // If Meta and has thumbnail, create thumbnail and link it
+          if (platformConfig.platform === 'META' && video.thumbnailUrl && video.thumbnailGcsPath) {
+            const thumbnailMedia = await prisma.media.create({
+              data: {
+                campaignId: campaign.id,
+                type: MediaType.IMAGE,
+                generatedByAI: true,
+                aiModel: 'imagen-4.0-fast-generate-001',
+                aiPrompt: `Thumbnail for video: ${video.prompt}`,
+                url: video.thumbnailUrl,
+                gcsPath: video.thumbnailGcsPath,
+                fileName: video.thumbnailGcsPath.split('/').pop() || 'thumbnail.png',
+                mimeType: 'image/png',
+                usedInMeta: true,
+              },
+            });
+
+            await prisma.media.update({
+              where: { id: videoMedia.id },
+              data: { thumbnailMediaId: thumbnailMedia.id },
+            });
+
+            logger.success('ai', `Linked thumbnail ${thumbnailMedia.id} to video ${videoMedia.id}`);
+          }
+        }
+
+        logger.success('ai', `✅ UGC media generated for ${platformConfig.platform}: ${ugcMedia.images.length} images, ${ugcMedia.videos.length} videos`);
+      } catch (mediaError: any) {
+        logger.error('ai', `❌ Failed to generate AI media for ${platformConfig.platform}: ${mediaError.message}`);
+        errors.push(`AI media generation failed for ${platformConfig.platform}: ${mediaError.message}`);
+        // Continue with campaign - user will need to upload media manually
+      }
+    }
+
+    // ============================================
     // STEP 4: Configure Pixels
     // ============================================
     // Meta Pixel ID → Access Token mapping (each pixel has its own specific token)
