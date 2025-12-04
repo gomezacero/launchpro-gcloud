@@ -26,7 +26,9 @@
       "Bash(git push:*)",
       "Bash(curl:*)",
       "Bash(git fetch:*)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash($env:DATABASE_URL=\"postgresql://postgres.ojhflsfnlwnpysvwtvnw:Legolas9OD7A9SX!@aws-0-us-west-2.pooler.supabase.com:5432/postgres\")",
+      "Bash(set:*)"
     ],
     "deny": [],
     "ask": []
