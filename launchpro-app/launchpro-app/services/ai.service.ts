@@ -1143,6 +1143,9 @@ Return JSON:
       copyMaster: params.copyMaster,
     };
 
+    // DEBUG: Log para verificar el count recibido
+    logger.info('ai', `📊 DEBUG: generateUGCMedia called with count=${params.count}, platform=${params.platform}, mediaType=${params.mediaType}`);
+
     // Determine what to generate based on platform and mediaType
     const shouldGenerateImages = params.platform === 'META' &&
       (params.mediaType === 'IMAGE' || params.mediaType === 'BOTH');

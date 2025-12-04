@@ -264,7 +264,7 @@ class CampaignOrchestratorService {
               startDate: p.startDate,
               generateWithAI: p.generateWithAI,
               aiMediaType: p.aiMediaType || (p.platform === Platform.TIKTOK ? 'VIDEO' : 'IMAGE'),
-              aiMediaCount: p.aiMediaCount || 1,
+              aiMediaCount: Number(p.aiMediaCount) || 1,
               specialAdCategories: p.specialAdCategories || [],
               status: CampaignStatus.DRAFT,
               // Manual Ad Copy (for Meta)
@@ -761,6 +761,9 @@ class CampaignOrchestratorService {
         // Get media type and count from platform config
         const mediaType = platformConfig.aiMediaType || (platformConfig.platform === 'TIKTOK' ? 'VIDEO' : 'IMAGE');
         const mediaCount = platformConfig.aiMediaCount || 1;
+
+        // DEBUG: Log para verificar el valor de aiMediaCount
+        logger.info('ai', `📊 DEBUG: Platform ${platformConfig.platform} - aiMediaCount from config: ${platformConfig.aiMediaCount}, resolved mediaCount: ${mediaCount}`);
 
         // TikTok only allows videos - enforce this
         const effectiveMediaType = platformConfig.platform === 'TIKTOK' ? 'VIDEO' : mediaType;
@@ -3205,6 +3208,9 @@ class CampaignOrchestratorService {
       // Get media type and count from platform config
       const mediaType = platformConfig.aiMediaType || (platformConfig.platform === 'TIKTOK' ? 'VIDEO' : 'IMAGE');
       const mediaCount = platformConfig.aiMediaCount || 1;
+
+      // DEBUG: Log para verificar el valor de aiMediaCount desde BD
+      logger.info('ai', `📊 DEBUG: Platform ${platformConfig.platform} - aiMediaCount from DB: ${platformConfig.aiMediaCount}, resolved mediaCount: ${mediaCount}`);
 
       // TikTok only allows videos - enforce this
       const effectiveMediaType = platformConfig.platform === 'TIKTOK' ? 'VIDEO' : mediaType;
