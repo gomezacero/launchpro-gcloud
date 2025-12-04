@@ -149,6 +149,15 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
   const [loadingKeywords, setLoadingKeywords] = useState(false);
   const [keywordsError, setKeywordsError] = useState<string | null>(null);
 
+  // Ad Copy suggestions state (Phase 2 - Meta & TikTok)
+  const [metaAdCopySuggestions, setMetaAdCopySuggestions] = useState<{ headline: string; primaryText: string; description: string }[]>([]);
+  const [loadingMetaAdCopy, setLoadingMetaAdCopy] = useState(false);
+  const [metaAdCopyError, setMetaAdCopyError] = useState<string | null>(null);
+
+  const [tiktokAdCopySuggestions, setTiktokAdCopySuggestions] = useState<{ adText: string }[]>([]);
+  const [loadingTiktokAdCopy, setLoadingTiktokAdCopy] = useState(false);
+  const [tiktokAdCopyError, setTiktokAdCopyError] = useState<string | null>(null);
+
   // Constants
   const MAX_KEYWORDS = 10;
 
@@ -603,6 +612,108 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
       setKeywordsText(keyword);
       handleInputChange('keywords', [keyword]);
     }
+  };
+
+  /**
+   * Generate Ad Copy suggestions for Meta (headline, primaryText, description)
+   */
+  const generateMetaAdCopySuggestions = async (platformIndex: number) => {
+    if (!formData.offerId || !formData.copyMaster || !formData.country || !formData.language) {
+      setMetaAdCopyError('Complete Phase 1 first (Offer, Copy Master, Country, Language)');
+      return;
+    }
+
+    setLoadingMetaAdCopy(true);
+    setMetaAdCopyError(null);
+    setMetaAdCopySuggestions([]);
+
+    try {
+      const selectedOffer = offers.find(o => o.id === formData.offerId);
+
+      const response = await fetch('/api/ai/ad-copy-suggestions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          offerName: selectedOffer?.name || '',
+          copyMaster: formData.copyMaster,
+          platform: 'META',
+          country: formData.country,
+          language: formData.language,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to generate suggestions');
+      }
+
+      setMetaAdCopySuggestions(result.data.meta || []);
+    } catch (error: any) {
+      setMetaAdCopyError(error.message);
+    } finally {
+      setLoadingMetaAdCopy(false);
+    }
+  };
+
+  /**
+   * Select a Meta Ad Copy suggestion and fill all three fields
+   */
+  const selectMetaAdCopySuggestion = (platformIndex: number, suggestion: { headline: string; primaryText: string; description: string }) => {
+    updatePlatform(platformIndex, 'manualAdTitle', suggestion.headline);
+    updatePlatform(platformIndex, 'manualPrimaryText', suggestion.primaryText);
+    updatePlatform(platformIndex, 'manualDescription', suggestion.description);
+    setMetaAdCopySuggestions([]); // Hide suggestions after selecting
+  };
+
+  /**
+   * Generate Ad Copy suggestions for TikTok (adText only)
+   */
+  const generateTiktokAdCopySuggestions = async (platformIndex: number) => {
+    if (!formData.offerId || !formData.copyMaster || !formData.country || !formData.language) {
+      setTiktokAdCopyError('Complete Phase 1 first (Offer, Copy Master, Country, Language)');
+      return;
+    }
+
+    setLoadingTiktokAdCopy(true);
+    setTiktokAdCopyError(null);
+    setTiktokAdCopySuggestions([]);
+
+    try {
+      const selectedOffer = offers.find(o => o.id === formData.offerId);
+
+      const response = await fetch('/api/ai/ad-copy-suggestions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          offerName: selectedOffer?.name || '',
+          copyMaster: formData.copyMaster,
+          platform: 'TIKTOK',
+          country: formData.country,
+          language: formData.language,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to generate suggestions');
+      }
+
+      setTiktokAdCopySuggestions(result.data.tiktok || []);
+    } catch (error: any) {
+      setTiktokAdCopyError(error.message);
+    } finally {
+      setLoadingTiktokAdCopy(false);
+    }
+  };
+
+  /**
+   * Select a TikTok Ad Copy suggestion
+   */
+  const selectTiktokAdCopySuggestion = (platformIndex: number, suggestion: { adText: string }) => {
+    updatePlatform(platformIndex, 'manualTiktokAdText', suggestion.adText);
+    setTiktokAdCopySuggestions([]); // Hide suggestions after selecting
   };
 
   /**
@@ -1905,23 +2016,57 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
                         <label className="block text-sm font-medium text-gray-700 mb-2">
                           Special Ad Categories
                         </label>
-                        <select
-                          multiple
-                          value={platform.specialAdCategories || []}
-                          onChange={(e) => {
-                            const options = Array.from(e.target.selectedOptions, option => option.value);
-                            updatePlatform(index, 'specialAdCategories', options);
-                          }}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 h-32"
-                        >
-                          <option value="NONE">NONE</option>
-                          <option value="HOUSING">HOUSING</option>
-                          <option value="CREDIT">CREDIT</option>
-                          <option value="EMPLOYMENT">EMPLOYMENT</option>
-                          <option value="ISSUES_ELECTIONS_POLITICS">ISSUES_ELECTIONS_POLITICS</option>
-                        </select>
-                        <p className="text-xs text-gray-500 mt-1">
-                          Hold Ctrl (Windows) or Cmd (Mac) to select multiple options. Select NONE if no categories apply.
+                        <div className="grid grid-cols-2 gap-2">
+                          {[
+                            { value: 'NONE', label: 'None', icon: '✓', desc: 'No special category' },
+                            { value: 'HOUSING', label: 'Housing', icon: '🏠', desc: 'Real estate ads' },
+                            { value: 'CREDIT', label: 'Credit', icon: '💳', desc: 'Financial services' },
+                            { value: 'EMPLOYMENT', label: 'Employment', icon: '💼', desc: 'Job listings' },
+                            { value: 'ISSUES_ELECTIONS_POLITICS', label: 'Politics', icon: '🗳️', desc: 'Political content' },
+                          ].map((category) => {
+                            const currentCategories = platform.specialAdCategories || [];
+                            const isSelected = currentCategories.includes(category.value);
+                            const isNone = category.value === 'NONE';
+                            const noneSelected = currentCategories.includes('NONE') || currentCategories.length === 0;
+
+                            return (
+                              <button
+                                key={category.value}
+                                type="button"
+                                onClick={() => {
+                                  let newCategories: string[];
+                                  if (isNone) {
+                                    newCategories = ['NONE'];
+                                  } else {
+                                    if (isSelected) {
+                                      newCategories = currentCategories.filter(c => c !== category.value);
+                                      if (newCategories.length === 0) newCategories = ['NONE'];
+                                    } else {
+                                      newCategories = [...currentCategories.filter(c => c !== 'NONE'), category.value];
+                                    }
+                                  }
+                                  updatePlatform(index, 'specialAdCategories', newCategories);
+                                }}
+                                className={`flex items-center gap-2 p-3 rounded-lg border-2 transition-all text-left ${
+                                  (isNone && noneSelected) || (!isNone && isSelected)
+                                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                                    : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50'
+                                }`}
+                              >
+                                <span className="text-lg">{category.icon}</span>
+                                <div className="flex-1 min-w-0">
+                                  <div className="font-medium text-sm">{category.label}</div>
+                                  <div className="text-xs opacity-75 truncate">{category.desc}</div>
+                                </div>
+                                {((isNone && noneSelected) || (!isNone && isSelected)) && (
+                                  <span className="text-blue-500">✓</span>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <p className="text-xs text-gray-500 mt-2">
+                          Select applicable categories. Multiple categories can be selected except &quot;None&quot;.
                         </p>
                       </div>
                     )}
@@ -2065,12 +2210,72 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
                     {/* Manual Ad Copy Fields - Only for Meta */}
                     {platform.platform === 'META' && (
                       <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                        <h4 className="text-sm font-semibold text-blue-900 mb-3">
-                          Ad Copy (Optional)
-                        </h4>
+                        <div className="flex items-center justify-between mb-3">
+                          <h4 className="text-sm font-semibold text-blue-900">
+                            Ad Copy (Optional)
+                          </h4>
+                          <button
+                            type="button"
+                            onClick={() => generateMetaAdCopySuggestions(index)}
+                            disabled={loadingMetaAdCopy || !formData.offerId || !formData.copyMaster}
+                            className="px-3 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                          >
+                            {loadingMetaAdCopy ? (
+                              <>
+                                <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                                </svg>
+                                Generating...
+                              </>
+                            ) : (
+                              <>
+                                <span>✨</span>
+                                Generate 5 Suggestions
+                              </>
+                            )}
+                          </button>
+                        </div>
                         <p className="text-xs text-blue-700 mb-4">
-                          Leave empty to generate with AI. If you fill any field, empty fields will remain empty.
+                          Leave empty to generate with AI, or click &quot;Generate 5 Suggestions&quot; to get AI recommendations.
                         </p>
+
+                        {/* Error message */}
+                        {metaAdCopyError && (
+                          <div className="mb-4 p-2 bg-red-100 border border-red-200 rounded-lg text-xs text-red-700">
+                            {metaAdCopyError}
+                          </div>
+                        )}
+
+                        {/* Suggestions cards */}
+                        {metaAdCopySuggestions.length > 0 && (
+                          <div className="mb-4 space-y-2">
+                            <p className="text-xs font-medium text-blue-800 mb-2">Click to select a combination:</p>
+                            {metaAdCopySuggestions.map((suggestion, suggIdx) => (
+                              <button
+                                key={suggIdx}
+                                type="button"
+                                onClick={() => selectMetaAdCopySuggestion(index, suggestion)}
+                                className="w-full p-3 text-left bg-white border border-blue-200 rounded-lg hover:border-blue-400 hover:bg-blue-50 transition-colors"
+                              >
+                                <div className="space-y-1">
+                                  <div className="flex items-start gap-2">
+                                    <span className="text-xs font-semibold text-blue-600 shrink-0">Title:</span>
+                                    <span className="text-xs text-gray-800">{suggestion.headline}</span>
+                                  </div>
+                                  <div className="flex items-start gap-2">
+                                    <span className="text-xs font-semibold text-blue-600 shrink-0">Primary:</span>
+                                    <span className="text-xs text-gray-700">{suggestion.primaryText}</span>
+                                  </div>
+                                  <div className="flex items-start gap-2">
+                                    <span className="text-xs font-semibold text-blue-600 shrink-0">Desc:</span>
+                                    <span className="text-xs text-gray-600">{suggestion.description}</span>
+                                  </div>
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        )}
 
                         <div className="space-y-4">
                           {/* Ad Title / Headline */}
@@ -2132,12 +2337,59 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
                     {/* Manual Ad Copy Fields - Only for TikTok */}
                     {platform.platform === 'TIKTOK' && (
                       <div className="mt-4 p-4 bg-pink-50 border border-pink-200 rounded-lg">
-                        <h4 className="text-sm font-semibold text-pink-900 mb-3">
-                          Ad Text (Optional)
-                        </h4>
+                        <div className="flex items-center justify-between mb-3">
+                          <h4 className="text-sm font-semibold text-pink-900">
+                            Ad Text (Optional)
+                          </h4>
+                          <button
+                            type="button"
+                            onClick={() => generateTiktokAdCopySuggestions(index)}
+                            disabled={loadingTiktokAdCopy || !formData.offerId || !formData.copyMaster}
+                            className="px-3 py-1.5 text-xs font-medium bg-pink-600 text-white rounded-lg hover:bg-pink-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                          >
+                            {loadingTiktokAdCopy ? (
+                              <>
+                                <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                                </svg>
+                                Generating...
+                              </>
+                            ) : (
+                              <>
+                                <span>✨</span>
+                                Generate 5 Suggestions
+                              </>
+                            )}
+                          </button>
+                        </div>
                         <p className="text-xs text-pink-700 mb-4">
-                          Leave empty to generate with AI. This is the main text shown on your TikTok ad.
+                          Leave empty to generate with AI, or click &quot;Generate 5 Suggestions&quot; to get AI recommendations.
                         </p>
+
+                        {/* Error message */}
+                        {tiktokAdCopyError && (
+                          <div className="mb-4 p-2 bg-red-100 border border-red-200 rounded-lg text-xs text-red-700">
+                            {tiktokAdCopyError}
+                          </div>
+                        )}
+
+                        {/* Suggestions cards */}
+                        {tiktokAdCopySuggestions.length > 0 && (
+                          <div className="mb-4 space-y-2">
+                            <p className="text-xs font-medium text-pink-800 mb-2">Click to select:</p>
+                            {tiktokAdCopySuggestions.map((suggestion, suggIdx) => (
+                              <button
+                                key={suggIdx}
+                                type="button"
+                                onClick={() => selectTiktokAdCopySuggestion(index, suggestion)}
+                                className="w-full p-3 text-left bg-white border border-pink-200 rounded-lg hover:border-pink-400 hover:bg-pink-50 transition-colors"
+                              >
+                                <span className="text-sm text-gray-800">{suggestion.adText}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
 
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">

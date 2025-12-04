@@ -901,6 +901,147 @@ Responde SOLO con un JSON array de objetos con esta estructura exacta, sin expli
   }
 
   /**
+   * Generate Ad Copy suggestions for Meta and TikTok ads
+   * Meta: headline (40 chars), primaryText (125 chars), description (30 chars)
+   * TikTok: adText (100 chars)
+   */
+  async generateAdCopySuggestions(params: {
+    offerName: string;
+    copyMaster: string;
+    platform: 'META' | 'TIKTOK';
+    country: string;
+    language: string;
+  }): Promise<{
+    meta?: { headline: string; primaryText: string; description: string }[];
+    tiktok?: { adText: string }[];
+  }> {
+    const systemPrompt = `Eres 'CopyBot 7.1', un creador y copywriter especializado en anuncios para ${params.platform === 'META' ? 'Meta Ads (Facebook/Instagram)' : 'TikTok Ads'} dentro del ecosistema de Arbitraje de Búsqueda (Search Arbitrage - RSOC).
+
+Tu misión: Crear copys publicitarios que cumplan las políticas de monetización de Google AdSense y toda su Política de cumplimiento RAF. Tu objetivo es generar una "brecha de curiosidad" que impulse clics de alta intención de usuarios genuinamente interesados.
+
+## 8 Políticas de Cumplimiento Obligatorio
+
+Regla #1: Relevancia entre copys para Meta Ads, TikTok y copys de la landing page. Los copys que el usuario ve en el anuncio deben representar con precisión el contenido de la página de destino.
+
+Regla #2: La Promesa es de contenido e informativa, NO Comercial o de venta.
+
+Regla #3: Prohibido Afirmaciones Engañosas, Ambiguas, Deceptivas, Irreales o exageradas.
+
+Regla #4: Prohibido Clics Incentivados o Clickbait Manipulador. No ofrezcas recompensas por clics ni uses llamadas a la acción manipuladoras.
+
+Regla #5: Prohibido Contenido Inapropiado.
+
+Regla #6: Palabras/términos/frases PROHIBIDAS - NO UTILIZAR:
+- Términos de empleo: empleo, job
+- Promesas de precio: gratis, oferta, promesas
+- Términos de salud sensibles: cura, previene
+- Términos financieros agresivos: garantizado, préstamo, inmediato, gratis
+- Llamadas a la acción: Haz clic, Compra, clic aquí, ver precio, última hora, reclama ahora
+- Comparaciones: comparar, antes y después
+- Términos de cercanía: cerca de mí, en zona cercana
+- Alternativas: alternativas, opciones
+
+Regla #7: Call-to-actions PERMITIDOS:
+- "Aprende cómo..."
+- "Lo que debería saber de..."
+- "Descubre cómo..."
+- "Aprende Más"
+- "Más información"
+
+Regla #8: El contenido debe ser culturalmente relevante para ${params.country}.`;
+
+    let userPrompt: string;
+
+    if (params.platform === 'META') {
+      userPrompt = `Genera exactamente 5 combinaciones de Ad Copy para Meta Ads basándote en:
+
+Oferta: ${params.offerName}
+Copy Master: ${params.copyMaster}
+País: ${params.country}
+Idioma: ${params.language}
+
+Cada combinación debe incluir:
+- headline: Título llamativo (máximo 40 caracteres)
+- primaryText: Texto principal que genera curiosidad (máximo 125 caracteres)
+- description: Descripción complementaria (máximo 30 caracteres)
+
+IMPORTANTE:
+- Respetar los límites de caracteres estrictamente
+- Variar el enfoque/ángulo en cada combinación
+- Usar CTAs permitidos
+- Gramática perfecta en ${params.language}
+
+Responde SOLO con un JSON array, sin explicaciones ni markdown:
+[
+  {"headline": "texto aquí", "primaryText": "texto aquí", "description": "texto aquí"},
+  ...
+]`;
+    } else {
+      userPrompt = `Genera exactamente 5 textos de Ad Copy para TikTok Ads basándote en:
+
+Oferta: ${params.offerName}
+Copy Master: ${params.copyMaster}
+País: ${params.country}
+Idioma: ${params.language}
+
+Cada texto debe ser:
+- adText: Texto del anuncio (máximo 100 caracteres)
+
+IMPORTANTE:
+- Respetar el límite de 100 caracteres estrictamente
+- Tono casual y directo apropiado para TikTok
+- Variar el enfoque en cada opción
+- Usar CTAs permitidos
+- Gramática correcta en ${params.language}
+
+Responde SOLO con un JSON array, sin explicaciones ni markdown:
+[
+  {"adText": "texto aquí"},
+  ...
+]`;
+    }
+
+    const message = await this.anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 2000,
+      temperature: 0.8,
+      system: systemPrompt,
+      messages: [
+        {
+          role: 'user',
+          content: userPrompt,
+        },
+      ],
+    });
+
+    const responseText = message.content[0].type === 'text' ? message.content[0].text : '[]';
+    const cleanedResponse = this.cleanJsonResponse(responseText);
+
+    // Save to database for tracking
+    await this.saveAIContent({
+      contentType: 'ad_copy_suggestions',
+      content: { platform: params.platform, suggestions: cleanedResponse },
+      model: 'claude-sonnet-4',
+      prompt: userPrompt,
+      tokensUsed: message.usage.input_tokens + message.usage.output_tokens,
+    });
+
+    if (params.platform === 'META') {
+      let suggestions: { headline: string; primaryText: string; description: string }[] = JSON.parse(cleanedResponse);
+      if (suggestions.length > 5) {
+        suggestions = suggestions.slice(0, 5);
+      }
+      return { meta: suggestions };
+    } else {
+      let suggestions: { adText: string }[] = JSON.parse(cleanedResponse);
+      if (suggestions.length > 5) {
+        suggestions = suggestions.slice(0, 5);
+      }
+      return { tiktok: suggestions };
+    }
+  }
+
+  /**
    * Generate targeting suggestions based on offer and copy
    */
   async generateTargetingSuggestions(params: {
