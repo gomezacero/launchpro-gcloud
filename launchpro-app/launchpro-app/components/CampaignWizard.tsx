@@ -467,6 +467,24 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
     }
   };
 
+  // Load Meta Pages and TikTok Identities when cloning completes
+  // This runs after loadingClone becomes false and platforms have accountIds
+  useEffect(() => {
+    // Only run when clone just finished (loadingClone went from true to false)
+    // and we have cloneFromId (meaning this is a clone operation)
+    if (cloneFromId && !loadingClone && formData.platforms.length > 0) {
+      formData.platforms.forEach((platform) => {
+        if (platform.accountId) {
+          if (platform.platform === 'META') {
+            loadMetaPages(platform.accountId);
+          } else if (platform.platform === 'TIKTOK') {
+            loadTiktokIdentities(platform.accountId);
+          }
+        }
+      });
+    }
+  }, [cloneFromId, loadingClone, formData.platforms.length]);
+
   const handleInputChange = (field: string, value: any) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
