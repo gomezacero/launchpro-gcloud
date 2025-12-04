@@ -66,6 +66,75 @@ interface GenerateVideoParams {
   fromImageUrl?: string; // Optional: generate video from image
 }
 
+// UGC Style Prompt Configuration
+interface UGCPromptParams {
+  category: string;       // e.g., "Autos usados", "Préstamos personales"
+  country: string;        // e.g., "Colombia", "México"
+  language: string;       // e.g., "es", "en", "pt"
+  adTitle: string;        // The ad headline/title (COPY for images)
+  copyMaster: string;     // The copy master text (for videos)
+}
+
+// Country name mappings for prompts
+const COUNTRY_NAMES: Record<string, string> = {
+  'MX': 'México',
+  'CO': 'Colombia',
+  'AR': 'Argentina',
+  'ES': 'España',
+  'CL': 'Chile',
+  'PE': 'Perú',
+  'VE': 'Venezuela',
+  'EC': 'Ecuador',
+  'US': 'Estados Unidos',
+  'BR': 'Brasil',
+  'PT': 'Portugal',
+  'UK': 'Reino Unido',
+  'GB': 'Reino Unido',
+};
+
+// Language name mappings for prompts
+const LANGUAGE_NAMES: Record<string, string> = {
+  'es': 'español',
+  'spanish': 'español',
+  'en': 'inglés',
+  'english': 'inglés',
+  'pt': 'portugués',
+  'portuguese': 'portugués',
+};
+
+/**
+ * Generate UGC-style prompt for image generation
+ * Creates authentic, lo-fi looking images that appear user-generated
+ */
+function buildUGCImagePrompt(params: UGCPromptParams): string {
+  const countryName = COUNTRY_NAMES[params.country] || params.country;
+  const languageName = LANGUAGE_NAMES[params.language.toLowerCase()] || params.language;
+
+  return `Una foto 1000x1000 cruda y espontánea estilo UGC de ${params.category} situada en un entorno auténtico de ${countryName}. La imagen debe tener calidad baja (lo-fi), pareciendo tomada con una cámara de celular barato antiguo o digital compacta de los 2000. Iluminación de flash directo y duro, ruido ISO alto visible, composición amateur y descentrada sin edición profesional. El fondo muestra arquitectura y caos cotidiano típico de ${countryName}. Superpuesto en la imagen, hay un texto grande y legible en ${languageName} que dice textualmente: "${params.adTitle}". El texto tiene estilo de sticker nativo de Instagram/TikTok. Estética realista, sin filtro de belleza.`;
+}
+
+/**
+ * Generate UGC-style prompt for video generation
+ * Creates authentic, amateur-looking videos that appear user-generated
+ */
+function buildUGCVideoPrompt(params: UGCPromptParams): string {
+  const countryName = COUNTRY_NAMES[params.country] || params.country;
+  const languageName = LANGUAGE_NAMES[params.language.toLowerCase()] || params.language;
+
+  return `Video vertical amateur formato 9:16. Una toma en primera persona (POV) o cámara en mano temblorosa de ${params.category} ocurriendo en una locación normal de ${countryName}. El metraje luce como contenido real de usuario (UGC) grabado con un celular Android de gama baja. Movimiento de cámara inestable, el autofoco pierde nitidez por momentos (hunting), iluminación natural pobre (ligeramente quemada o oscura). Sin corrección de color, colores lavados y realistas. Durante el video aparece un texto superpuesto en ${languageName} que dice: "${params.copyMaster}", integrado naturalmente como un caption de red social sobre el video.`;
+}
+
+/**
+ * Generate prompt for video thumbnail (first frame style)
+ * Creates an image that looks like a natural video thumbnail
+ */
+function buildVideoThumbnailPrompt(params: UGCPromptParams): string {
+  const countryName = COUNTRY_NAMES[params.country] || params.country;
+  const languageName = LANGUAGE_NAMES[params.language.toLowerCase()] || params.language;
+
+  return `Una miniatura de video estilo UGC para ${params.category}. Captura de pantalla de un video amateur de ${countryName}, con un texto grande superpuesto en ${languageName} que dice: "${params.adTitle}". Estilo de thumbnail de TikTok/Instagram Reels con play button sutil. Calidad lo-fi, aspecto natural de screenshot de video vertical. El encuadre muestra el tema principal de forma llamativa pero amateur.`;
+}
+
 class AIService {
   private anthropic: Anthropic;
   private vertexAiClient: any;
@@ -1020,6 +1089,138 @@ Return JSON:
   // ============================================
   // UTILITY METHODS
   // ============================================
+
+  // ============================================
+  // UGC MEDIA GENERATION (Full workflow)
+  // ============================================
+
+  /**
+   * Generate UGC-style media for campaigns
+   * Handles images, videos, and video thumbnails based on platform requirements
+   */
+  async generateUGCMedia(params: {
+    campaignId: string;
+    platform: 'META' | 'TIKTOK';
+    mediaType: 'IMAGE' | 'VIDEO' | 'BOTH';
+    count: number;
+    category: string;      // Offer vertical/category (e.g., "Autos usados")
+    country: string;       // Country code (e.g., "CO", "MX")
+    language: string;      // Language code (e.g., "es", "en")
+    adTitle: string;       // Ad headline for text overlay
+    copyMaster: string;    // Copy master for video text overlay
+  }): Promise<{
+    images: { url: string; gcsPath: string; prompt: string }[];
+    videos: { url: string; gcsPath: string; prompt: string; thumbnailUrl?: string; thumbnailGcsPath?: string }[];
+  }> {
+    const results: {
+      images: { url: string; gcsPath: string; prompt: string }[];
+      videos: { url: string; gcsPath: string; prompt: string; thumbnailUrl?: string; thumbnailGcsPath?: string }[];
+    } = {
+      images: [],
+      videos: [],
+    };
+
+    const ugcParams: UGCPromptParams = {
+      category: params.category,
+      country: params.country,
+      language: params.language,
+      adTitle: params.adTitle,
+      copyMaster: params.copyMaster,
+    };
+
+    // Determine what to generate based on platform and mediaType
+    const shouldGenerateImages = params.platform === 'META' &&
+      (params.mediaType === 'IMAGE' || params.mediaType === 'BOTH');
+    const shouldGenerateVideos = params.mediaType === 'VIDEO' || params.mediaType === 'BOTH';
+
+    // TikTok only allows videos
+    if (params.platform === 'TIKTOK' && params.mediaType === 'IMAGE') {
+      logger.warn('ai', 'TikTok does not allow image-only ads. Switching to VIDEO.');
+    }
+
+    // Generate images (only for Meta)
+    if (shouldGenerateImages) {
+      logger.info('ai', `Generating ${params.count} UGC image(s) for ${params.platform}...`);
+
+      for (let i = 0; i < params.count; i++) {
+        try {
+          const imagePrompt = buildUGCImagePrompt(ugcParams);
+          logger.info('ai', `Generating image ${i + 1}/${params.count}...`);
+
+          const image = await this.generateImage({
+            prompt: imagePrompt,
+            aspectRatio: '1:1', // Square for Meta feed
+          });
+
+          results.images.push({
+            url: image.imageUrl,
+            gcsPath: image.gcsPath,
+            prompt: imagePrompt,
+          });
+
+          logger.success('ai', `Image ${i + 1}/${params.count} generated successfully`);
+        } catch (error: any) {
+          logger.error('ai', `Failed to generate image ${i + 1}: ${error.message}`);
+          throw error;
+        }
+      }
+    }
+
+    // Generate videos
+    if (shouldGenerateVideos || params.platform === 'TIKTOK') {
+      const videoCount = params.platform === 'TIKTOK' || !shouldGenerateImages ? params.count : params.count;
+      logger.info('ai', `Generating ${videoCount} UGC video(s) for ${params.platform}...`);
+
+      for (let i = 0; i < videoCount; i++) {
+        try {
+          const videoPrompt = buildUGCVideoPrompt(ugcParams);
+          logger.info('ai', `Generating video ${i + 1}/${videoCount}...`);
+
+          const video = await this.generateVideo({
+            prompt: videoPrompt,
+            aspectRatio: '9:16', // Vertical for both TikTok and Meta Reels
+            durationSeconds: 5,  // Short form content
+          });
+
+          const videoResult: {
+            url: string;
+            gcsPath: string;
+            prompt: string;
+            thumbnailUrl?: string;
+            thumbnailGcsPath?: string;
+          } = {
+            url: video.videoUrl,
+            gcsPath: video.gcsPath,
+            prompt: videoPrompt,
+          };
+
+          // Meta requires a thumbnail for video ads
+          if (params.platform === 'META') {
+            logger.info('ai', `Generating thumbnail for video ${i + 1}...`);
+
+            const thumbnailPrompt = buildVideoThumbnailPrompt(ugcParams);
+            const thumbnail = await this.generateImage({
+              prompt: thumbnailPrompt,
+              aspectRatio: '9:16', // Match video aspect ratio
+            });
+
+            videoResult.thumbnailUrl = thumbnail.imageUrl;
+            videoResult.thumbnailGcsPath = thumbnail.gcsPath;
+            logger.success('ai', `Thumbnail generated for video ${i + 1}`);
+          }
+
+          results.videos.push(videoResult);
+          logger.success('ai', `Video ${i + 1}/${videoCount} generated successfully`);
+        } catch (error: any) {
+          logger.error('ai', `Failed to generate video ${i + 1}: ${error.message}`);
+          throw error;
+        }
+      }
+    }
+
+    logger.success('ai', `UGC media generation complete: ${results.images.length} images, ${results.videos.length} videos`);
+    return results;
+  }
 
   /**
    * Clean JSON response from Claude (removes markdown code blocks)

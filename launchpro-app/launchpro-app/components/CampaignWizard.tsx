@@ -41,6 +41,8 @@ interface PlatformConfig {
   budget: string;
   startDateTime: string;  // Changed from startDate to include time
   generateWithAI: boolean;
+  aiMediaType?: 'IMAGE' | 'VIDEO' | 'BOTH';  // What type of media to generate with AI
+  aiMediaCount?: number;  // How many images/videos to generate (1-5)
   uploadedImages?: UploadedFile[];
   uploadedVideos?: UploadedFile[];
   specialAdCategories?: string[];
@@ -683,6 +685,9 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
       budget: '100',
       startDateTime: defaultDateTime,
       generateWithAI: true,
+      // TikTok only allows videos, Meta allows both
+      aiMediaType: platform === 'TIKTOK' ? 'VIDEO' : 'IMAGE',
+      aiMediaCount: 1,
       specialAdCategories: [],
     };
     setFormData((prev) => ({
@@ -1972,6 +1977,90 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
                         🤖 Generate images and videos with AI
                       </label>
                     </div>
+
+                    {/* AI Media Generation Options - Only shown when AI is enabled */}
+                    {platform.generateWithAI && (
+                      <div className="mt-4 p-4 bg-purple-50 border border-purple-200 rounded-lg">
+                        <h4 className="text-sm font-semibold text-purple-900 mb-3">
+                          🎨 AI Media Generation Settings
+                        </h4>
+                        <p className="text-xs text-purple-700 mb-4">
+                          Configure what type of media AI should generate for your ads.
+                        </p>
+
+                        <div className="grid grid-cols-2 gap-4">
+                          {/* Media Type Selection */}
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              Media Type
+                            </label>
+                            {platform.platform === 'TIKTOK' ? (
+                              <>
+                                <div className="px-4 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-600">
+                                  Videos only
+                                </div>
+                                <p className="text-xs text-orange-600 mt-1">
+                                  ⚠️ TikTok only allows video ads
+                                </p>
+                              </>
+                            ) : (
+                              <select
+                                value={platform.aiMediaType || 'IMAGE'}
+                                onChange={(e) => updatePlatform(index, 'aiMediaType', e.target.value)}
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                              >
+                                <option value="IMAGE">Images only</option>
+                                <option value="VIDEO">Videos only</option>
+                                <option value="BOTH">Images + Videos</option>
+                              </select>
+                            )}
+                          </div>
+
+                          {/* Media Count */}
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              Quantity
+                            </label>
+                            <select
+                              value={platform.aiMediaCount || 1}
+                              onChange={(e) => updatePlatform(index, 'aiMediaCount', parseInt(e.target.value))}
+                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                            >
+                              <option value={1}>1 creative</option>
+                              <option value={2}>2 creatives</option>
+                              <option value={3}>3 creatives</option>
+                              <option value={4}>4 creatives</option>
+                              <option value={5}>5 creatives</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* Info about what will be generated */}
+                        <div className="mt-3 p-2 bg-white rounded border border-purple-100">
+                          <p className="text-xs text-gray-600">
+                            {platform.platform === 'TIKTOK' ? (
+                              <>
+                                AI will generate <strong>{platform.aiMediaCount || 1} video(s)</strong> in 9:16 vertical format.
+                              </>
+                            ) : platform.aiMediaType === 'BOTH' ? (
+                              <>
+                                AI will generate <strong>{platform.aiMediaCount || 1} image(s)</strong> (1:1 square) + <strong>{platform.aiMediaCount || 1} video(s)</strong> (16:9).
+                                Each video will include an auto-generated thumbnail.
+                              </>
+                            ) : platform.aiMediaType === 'VIDEO' ? (
+                              <>
+                                AI will generate <strong>{platform.aiMediaCount || 1} video(s)</strong> in 16:9 format.
+                                Each video will include an auto-generated thumbnail (required by Meta).
+                              </>
+                            ) : (
+                              <>
+                                AI will generate <strong>{platform.aiMediaCount || 1} image(s)</strong> in 1:1 square format.
+                              </>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Manual Ad Copy Fields - Only for Meta */}
                     {platform.platform === 'META' && (

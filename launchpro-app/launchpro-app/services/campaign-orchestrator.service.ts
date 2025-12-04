@@ -68,6 +68,8 @@ export interface CreateCampaignParams {
     budget: number; // in dollars
     startDate: Date;
     generateWithAI: boolean; // Generate images/videos with AI?
+    aiMediaType?: 'IMAGE' | 'VIDEO' | 'BOTH'; // What type of media to generate (IMAGE for Meta, VIDEO for TikTok)
+    aiMediaCount?: number; // How many media items to generate (1-5)
     specialAdCategories?: string[];
     // Fan Page for Meta (user selected in wizard)
     metaPageId?: string;
@@ -261,6 +263,8 @@ class CampaignOrchestratorService {
               budget: p.budget,
               startDate: p.startDate,
               generateWithAI: p.generateWithAI,
+              aiMediaType: p.aiMediaType || (p.platform === Platform.TIKTOK ? 'VIDEO' : 'IMAGE'),
+              aiMediaCount: p.aiMediaCount || 1,
               specialAdCategories: p.specialAdCategories || [],
               status: CampaignStatus.DRAFT,
               // Manual Ad Copy (for Meta)
@@ -735,6 +739,7 @@ class CampaignOrchestratorService {
 
       // ============================================
       // STEP 7: Generate Media (Images/Videos) for each platform
+      // Using UGC-style prompts based on user configuration
       // ============================================
       aiContentResult.media = {
         images: [],
@@ -753,77 +758,108 @@ class CampaignOrchestratorService {
           continue;
         }
 
-        logger.info('ai', `Generating media for ${platformConfig.platform}...`);
+        // Get media type and count from platform config
+        const mediaType = platformConfig.aiMediaType || (platformConfig.platform === 'TIKTOK' ? 'VIDEO' : 'IMAGE');
+        const mediaCount = platformConfig.aiMediaCount || 1;
 
-        // Generate Ad Copy specific to platform
+        // TikTok only allows videos - enforce this
+        const effectiveMediaType = platformConfig.platform === 'TIKTOK' ? 'VIDEO' : mediaType;
+
+        logger.info('ai', `Generating UGC media for ${platformConfig.platform}: ${mediaCount}x ${effectiveMediaType}`);
+
+        // Generate Ad Copy specific to platform (needed for text overlays)
         const adCopy = await aiService.generateAdCopy({
           offerName: offer.name,
           copyMaster: aiContentResult.copyMaster,
-          platform: platformConfig.platform, // Now TypeScript knows it's 'META' | 'TIKTOK'
-          adFormat: 'IMAGE', // or VIDEO based on config
+          platform: platformConfig.platform as 'META' | 'TIKTOK',
+          adFormat: effectiveMediaType === 'VIDEO' ? 'VIDEO' : 'IMAGE',
           country: params.country,
           language: params.language,
         });
 
-        // Generate Image
-        logger.info('ai', `Generating image for ${platformConfig.platform}...`);
-        const imagePrompt = `${adCopy.headline}. ${adCopy.primaryText}. Professional advertising image for ${offer.name}. High quality, eye-catching, ${platformConfig.platform} ad style.`;
-
-        const image = await aiService.generateImage({
-          prompt: imagePrompt,
-          aspectRatio: platformConfig.platform === 'TIKTOK' ? '9:16' : '1:1',
+        // Generate UGC-style media with custom prompts
+        const ugcMedia = await aiService.generateUGCMedia({
+          campaignId: campaign.id,
+          platform: platformConfig.platform as 'META' | 'TIKTOK',
+          mediaType: effectiveMediaType as 'IMAGE' | 'VIDEO' | 'BOTH',
+          count: mediaCount,
+          category: offer.vertical || offer.name, // Use vertical as category, fallback to offer name
+          country: params.country,
+          language: params.language,
+          adTitle: adCopy.headline, // Used for image text overlay
+          copyMaster: aiContentResult.copyMaster, // Used for video text overlay
         });
 
-        await prisma.media.create({
-          data: {
-            campaignId: campaign.id,
-            type: MediaType.IMAGE,
-            generatedByAI: true,
-            aiModel: 'imagen-4.0-fast-generate-001',
-            aiPrompt: imagePrompt,
-            url: image.imageUrl,
-            gcsPath: image.gcsPath,
-            fileName: image.gcsPath.split('/').pop() || 'image.png',
-            mimeType: 'image/png',
-          },
-        });
+        // Save generated images to database
+        for (const image of ugcMedia.images) {
+          await prisma.media.create({
+            data: {
+              campaignId: campaign.id,
+              type: MediaType.IMAGE,
+              generatedByAI: true,
+              aiModel: 'imagen-4.0-fast-generate-001',
+              aiPrompt: image.prompt,
+              url: image.url,
+              gcsPath: image.gcsPath,
+              fileName: image.gcsPath.split('/').pop() || 'image.png',
+              mimeType: 'image/png',
+              usedInMeta: platformConfig.platform === 'META',
+              usedInTiktok: false, // TikTok doesn't use images
+            },
+          });
+          aiContentResult.media.images.push(image.url);
+        }
 
-        aiContentResult.media.images.push(image.imageUrl);
-        logger.success('ai', `Image generated for ${platformConfig.platform}`, { url: image.imageUrl });
+        // Save generated videos to database (with thumbnails for Meta)
+        for (const video of ugcMedia.videos) {
+          // First create the video
+          const videoMedia = await prisma.media.create({
+            data: {
+              campaignId: campaign.id,
+              type: MediaType.VIDEO,
+              generatedByAI: true,
+              aiModel: 'veo-3.1-fast',
+              aiPrompt: video.prompt,
+              url: video.url,
+              gcsPath: video.gcsPath,
+              fileName: video.gcsPath.split('/').pop() || 'video.mp4',
+              mimeType: 'video/mp4',
+              duration: 5,
+              usedInMeta: platformConfig.platform === 'META',
+              usedInTiktok: platformConfig.platform === 'TIKTOK',
+            },
+          });
 
-        // TEMPORARILY DISABLED: Video generation (Veo model not available in GCP project)
-        // Users should upload videos manually for now
-        logger.warn('ai', `⚠️  Video generation temporarily disabled (Veo model not available). Please upload videos manually.`);
+          aiContentResult.media.videos.push(video.url);
 
-        // TODO: Re-enable when Veo model is available or use alternative video generation
-        // if (platformConfig.platform === 'TIKTOK' || platformConfig.platform === 'META') {
-        //   logger.info('ai', `Generating video for ${platformConfig.platform}...`);
-        //   const videoPrompt = `${adCopy.headline}. Professional advertising video for ${offer.name}. Dynamic, engaging, ${platformConfig.platform} style.`;
-        //
-        //   const video = await aiService.generateVideo({
-        //     prompt: videoPrompt,
-        //     durationSeconds: 5,
-        //     aspectRatio: platformConfig.platform === 'TIKTOK' ? '9:16' : '16:9',
-        //   });
-        //
-        //   await prisma.media.create({
-        //     data: {
-        //       campaignId: campaign.id,
-        //       type: MediaType.VIDEO,
-        //       generatedByAI: true,
-        //       aiModel: 'veo-3.1-fast',
-        //       aiPrompt: videoPrompt,
-        //       url: video.videoUrl,
-        //       gcsPath: video.gcsPath,
-        //       fileName: video.gcsPath.split('/').pop() || 'video.mp4',
-        //       mimeType: 'video/mp4',
-        //       duration: 5,
-        //     },
-        //   });
-        //
-        //   aiContentResult.media.videos.push(video.videoUrl);
-        //   logger.success('ai', `Video generated for ${platformConfig.platform}`, { url: video.videoUrl });
-        // }
+          // If Meta and has thumbnail, create thumbnail and link it
+          if (platformConfig.platform === 'META' && video.thumbnailUrl && video.thumbnailGcsPath) {
+            const thumbnailMedia = await prisma.media.create({
+              data: {
+                campaignId: campaign.id,
+                type: MediaType.IMAGE,
+                generatedByAI: true,
+                aiModel: 'imagen-4.0-fast-generate-001',
+                aiPrompt: `Thumbnail for video: ${video.prompt}`,
+                url: video.thumbnailUrl,
+                gcsPath: video.thumbnailGcsPath,
+                fileName: video.thumbnailGcsPath.split('/').pop() || 'thumbnail.png',
+                mimeType: 'image/png',
+                usedInMeta: true,
+              },
+            });
+
+            // Link thumbnail to video
+            await prisma.media.update({
+              where: { id: videoMedia.id },
+              data: { thumbnailMediaId: thumbnailMedia.id },
+            });
+
+            logger.success('ai', `Linked thumbnail ${thumbnailMedia.id} to video ${videoMedia.id}`);
+          }
+        }
+
+        logger.success('ai', `UGC media generated for ${platformConfig.platform}: ${ugcMedia.images.length} images, ${ugcMedia.videos.length} videos`);
       }
 
       logger.success('ai', 'AI content generation complete!');
