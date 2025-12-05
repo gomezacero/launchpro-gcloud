@@ -707,7 +707,7 @@ Return JSON:
   }
 
   /**
-   * Generate 5 Copy Master suggestions following CopyBot 7.1 RSOC compliance rules
+   * Generate 5 Copy Master suggestions - short, high-converting ad titles
    */
   async generateCopyMasterSuggestions(params: {
     offerName: string;
@@ -716,74 +716,25 @@ Return JSON:
     country: string;
     language: string;
   }): Promise<string[]> {
-    const systemPrompt = `Eres 'CopyBot 7.1', un creador, productor y estratega de contenido publicitario profesional y copywriter especializado en el ecosistema de Arbitraje de Búsqueda (Search Arbitrage - RSOC).
+    const systemPrompt = `Actúa como un experto en Copywriting para Anuncios de Alto Rendimiento (PPC y Social Ads).
+Tu objetivo es generar 5 opciones de títulos cortos (máximo 50-80 caracteres incluyendo espacios) que generen curiosidad inmediata y clics.
 
-Tu misión: Crear copys para plataformas publicitarias como Meta Ads o TikTok que cumplan las políticas de monetización de Google AdSense y toda su Política de cumplimiento RAF. Tu objetivo es generar una "brecha de curiosidad" que impulse clics de alta intención de usuarios genuinamente interesados, buscando una conversión informada, sin una venta directa.
+TUS INSTRUCCIONES:
+1. **Analiza las variables:** País, Idioma y Categoría.
+2. **Localización:** Usa terminología específica del país (ej: "Enganche" en México, "Pie" en Chile, "Inicial" en Perú).
+3. **El Gancho ("Picante"):** El copy debe atacar un dolor, una objeción común (ej: "a credito", "cuotas"). No seas genérico.
+4. **La Fórmula:** [Beneficio/Gancho corto] + [Sufijo Obligatorio].
+5. **Sufijos Obligatorios:** Debes terminar CADA opción con una de estas frases (o variaciones cortas): "Lo que debes saber", "Infórmate más", "Aprende más", "Ver detalles".
+6. **Formato:** Usa emojis estratégicos al inicio para llamar la atención en algunas opciones.
+7. No uses ninguno de los siguientes términos: gratis, barato, empleo, trabajo, economico, facil, rapido.`;
 
-## 8 Políticas de Cumplimiento Obligatorio
+    const userPrompt = `VARIABLES:
+- PAIS: ${params.country}
+- IDIOMA: ${params.language}
+- CATEGORIA: ${params.offerName}
+${params.vertical ? `- VERTICAL: ${params.vertical}` : ''}
 
-Regla #1: Relevancia entre copys para Meta Ads, TikTok y copys de la landing page. Los copys que el usuario ve en el anuncio deben representar con precisión el contenido de la página de destino. Si el contenido de la landing de destino solo ofrece información, los copys solo pueden prometer información.
-
-Regla #2: La Promesa es de contenido e informativa, NO Comercial o de venta.
-
-Regla #3: Prohibido Afirmaciones Engañosas, Ambiguas, Deceptivas, Irreales o exageradas. Evita falsas promesas laborales, de salud o financieras, de crédito, ofertas, promociones. No hables en nombre de una empresa, marca o elementos que puedan confundirse con una marca oficial (Ejemplo: Samsung, TikTok, Apple).
-
-Regla #4: Prohibido Clics Incentivados o Clickbait Manipulador. No ofrezcas recompensas por clics ni uses llamadas a la acción manipuladoras como: Toca aquí, compra aquí, pide gratis, reclámalo ahora.
-
-Regla #5: Prohibido Contenido Inapropiado. Cero tolerancia con discursos de odio, violencia o contenido para adultos, drogas, armas, juegos de azar, político, discriminación, violencia, productos peligrosos, promesas falsas, antes/después, cannabis, ropa interior, disfunción eréctil, donación de óvulos, etc.
-
-Regla #6: Palabras/términos/frases PROHIBIDAS - NO UTILIZAR:
-- Términos de empleo: empleo, job
-- Promesas de precio: gratis, oferta, promesas
-- Términos de salud sensibles: cura, previene
-- Términos financieros agresivos: garantizado, préstamo, inmediato, gratis
-- Llamadas a la acción: Haz clic, Compra, clic aquí, Explora alternativas, ver precio, última hora, reclama ahora
-- Comparaciones: comparar, comparaciones, antes y después
-- Términos de cercanía: cerca de mí, en zona cercana
-- Alternativas: alternativas, opciones
-- Términos de tiempo: último minuto, rápido, hoy mismo
-
-Regla #7: Call-to-actions PERMITIDOS (úsalos):
-- "Aprende cómo..."
-- "Lo que debería saber de..."
-- "Descubre cómo..."
-- "Aprende Más"
-- "Más información"
-
-## Ejemplos de Copys
-
-❌ Prohibido: "Obtén préstamos en minutos"
-✅ Permitido: "Aprende cómo es el proceso de solicitud de préstamos"
-
-❌ Prohibido: "Estamos contratando choferes CDL hoy"
-✅ Permitido: "Descubre cómo los conductores CDL construyen su carrera"
-
-❌ Prohibido: "Teléfonos gratis para adultos mayores"
-✅ Permitido: "Lo que debería saber sobre los programas de descuentos en teléfonos para adultos mayores"
-
-## CTAs Prohibidos vs Permitidos
-❌ Prohibidos: "Aplica ahora", "Reclama aquí", "Compra ya"
-✅ Permitidos: "Aprende Más", "Más información"`;
-
-    const userPrompt = `Genera exactamente 5 copys diferentes para el siguiente producto/oferta:
-
-Oferta: ${params.offerName}
-${params.offerDescription ? `Descripción: ${params.offerDescription}` : ''}
-${params.vertical ? `Vertical: ${params.vertical}` : ''}
-País objetivo: ${params.country}
-Idioma: ${params.language}
-
-Requisitos OBLIGATORIOS:
-- Cada copy debe tener 2-3 oraciones máximo
-- Debe generar curiosidad informativa, NO vender
-- Usar CTAs permitidos (Aprende cómo, Descubre, Lo que debería saber, Más información)
-- Ser culturalmente relevante para el país ${params.country}
-- NO usar NINGUNA palabra prohibida de la lista
-- Variar el enfoque/ángulo en cada sugerencia
-- Gramática y ortografía perfecta en ${params.language}
-- Tono formal o semi-formal
-
-Responde SOLO con un JSON array de exactamente 5 strings, sin explicaciones ni markdown:
+Responde SOLO con un JSON array de exactamente 5 strings (cada uno 50-80 caracteres), sin explicaciones ni markdown:
 ["copy1", "copy2", "copy3", "copy4", "copy5"]`;
 
     const message = await this.anthropic.messages.create({
@@ -901,9 +852,216 @@ Responde SOLO con un JSON array de objetos con esta estructura exacta, sin expli
   }
 
   /**
-   * Generate Ad Copy suggestions for Meta and TikTok ads
+   * Generate 5 Ad Title (Headline) suggestions - max 80 chars
+   * Step 1 of the sequential Ad Copy generation flow
+   */
+  async generateAdTitleSuggestions(params: {
+    offerName: string;
+    copyMaster: string;
+    country: string;
+    language: string;
+  }): Promise<string[]> {
+    const systemPrompt = `Actúa como experto en Copywriting para Anuncios. Genera 5 opciones de TÍTULOS que generen alta curiosidad.
+
+RESTRICCIONES TÉCNICAS:
+1. Longitud: Máximo 80 caracteres (incluyendo espacios).
+2. Palabras PROHIBIDAS (Estricto): gratis, barato, empleo, trabajo, economico, facil, rapido.
+
+INSTRUCCIONES DE CONTENIDO:
+1. Analiza: PAIS, IDIOMA, CATEGORIA.
+2. Localización: Usa jerga local del país para términos financieros (ej: "Pie" en CL, "Inicial" en PE, "Enganche" en MX).
+3. El Gancho ("Picante"): Ataca una objeción financiera o dolor (ej: "a crédito", "sin historial", "cuotas").
+4. Formato: Usa emojis al inicio para destacar.`;
+
+    const userPrompt = `VARIABLES:
+- PAIS: ${params.country}
+- IDIOMA: ${params.language}
+- CATEGORIA: ${params.offerName}
+- Copy Master: ${params.copyMaster}
+
+Responde SOLO con un JSON array de exactamente 5 strings (cada uno máximo 80 caracteres), sin explicaciones ni markdown:
+["titulo1", "titulo2", "titulo3", "titulo4", "titulo5"]`;
+
+    const message = await this.anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1500,
+      temperature: 0.8,
+      system: systemPrompt,
+      messages: [
+        {
+          role: 'user',
+          content: userPrompt,
+        },
+      ],
+    });
+
+    const responseText = message.content[0].type === 'text' ? message.content[0].text : '[]';
+    const cleanedResponse = this.cleanJsonResponse(responseText);
+    let suggestions: string[] = JSON.parse(cleanedResponse);
+
+    // Ensure we have exactly 5 suggestions
+    if (suggestions.length > 5) {
+      suggestions = suggestions.slice(0, 5);
+    }
+
+    // Save to database for tracking
+    await this.saveAIContent({
+      contentType: 'ad_title_suggestions',
+      content: { suggestions },
+      model: 'claude-sonnet-4',
+      prompt: userPrompt,
+      tokensUsed: message.usage.input_tokens + message.usage.output_tokens,
+    });
+
+    return suggestions;
+  }
+
+  /**
+   * Generate 5 Ad Primary Text suggestions - max 120 chars
+   * Step 2 of the sequential Ad Copy generation flow (requires selected title)
+   */
+  async generateAdPrimaryTextSuggestions(params: {
+    offerName: string;
+    copyMaster: string;
+    selectedTitle: string;
+    country: string;
+    language: string;
+  }): Promise<string[]> {
+    const systemPrompt = `Actúa como experto en Copywriting. Genera 5 opciones de TEXTO PRINCIPAL (Primary Text) persuasivo.
+
+RESTRICCIONES TÉCNICAS:
+1. Longitud: Máximo 120 caracteres (incluyendo espacios).
+2. Palabras PROHIBIDAS (Estricto): gratis, barato, empleo, trabajo, economico, facil, rapido.
+
+INSTRUCCIONES DE CONTENIDO:
+1. Analiza: PAIS, IDIOMA, CATEGORIA.
+2. Localización: Usa terminología local exacta del país indicado.
+3. El Gancho ("Picante"): Plantea una pregunta retórica sobre financiación o un dato revelador que ataque la incertidumbre del usuario.
+4. La Fórmula: [Pregunta/Situación de dolor] + [Sufijo Obligatorio].
+5. Sufijos Obligatorios: Integra al final: "Lo que debes saber", "Infórmate más", "Aprende más" o "Ver detalles".
+6. Formato: Usa emojis estratégicos.`;
+
+    const userPrompt = `VARIABLES:
+- PAIS: ${params.country}
+- IDIOMA: ${params.language}
+- CATEGORIA: ${params.offerName}
+- Copy Master: ${params.copyMaster}
+- Ad Title seleccionado: ${params.selectedTitle}
+
+Responde SOLO con un JSON array de exactamente 5 strings (cada uno máximo 120 caracteres), sin explicaciones ni markdown:
+["texto1", "texto2", "texto3", "texto4", "texto5"]`;
+
+    const message = await this.anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1500,
+      temperature: 0.8,
+      system: systemPrompt,
+      messages: [
+        {
+          role: 'user',
+          content: userPrompt,
+        },
+      ],
+    });
+
+    const responseText = message.content[0].type === 'text' ? message.content[0].text : '[]';
+    const cleanedResponse = this.cleanJsonResponse(responseText);
+    let suggestions: string[] = JSON.parse(cleanedResponse);
+
+    // Ensure we have exactly 5 suggestions
+    if (suggestions.length > 5) {
+      suggestions = suggestions.slice(0, 5);
+    }
+
+    // Save to database for tracking
+    await this.saveAIContent({
+      contentType: 'ad_primary_text_suggestions',
+      content: { suggestions, selectedTitle: params.selectedTitle },
+      model: 'claude-sonnet-4',
+      prompt: userPrompt,
+      tokensUsed: message.usage.input_tokens + message.usage.output_tokens,
+    });
+
+    return suggestions;
+  }
+
+  /**
+   * Generate 5 Ad Description suggestions - max 120 chars
+   * Step 3 of the sequential Ad Copy generation flow (requires selected title and primary text)
+   */
+  async generateAdDescriptionSuggestions(params: {
+    offerName: string;
+    copyMaster: string;
+    selectedTitle: string;
+    selectedPrimaryText: string;
+    country: string;
+    language: string;
+  }): Promise<string[]> {
+    const systemPrompt = `Actúa como experto en Copywriting. Genera 5 opciones de DESCRIPCIONES (para la parte inferior del anuncio).
+
+RESTRICCIONES TÉCNICAS:
+1. Longitud: Máximo 120 caracteres (incluyendo espacios).
+2. Palabras PROHIBIDAS (Estricto): gratis, barato, empleo, trabajo, economico, facil, rapido.
+
+INSTRUCCIONES DE CONTENIDO:
+1. Analiza: PAIS, IDIOMA, CATEGORIA, Copy master, Ad Title y Ad Primary Text.
+2. Localización: Adapta los términos de pago al país (ej: cuotas, plazos, letras).
+3. Detalla la información con un enfoque informativo que complemente el título y texto principal.`;
+
+    const userPrompt = `VARIABLES:
+- PAIS: ${params.country}
+- IDIOMA: ${params.language}
+- CATEGORIA: ${params.offerName}
+- Copy Master: ${params.copyMaster}
+- Ad Title: ${params.selectedTitle}
+- Ad Primary Text: ${params.selectedPrimaryText}
+
+Responde SOLO con un JSON array de exactamente 5 strings (cada uno máximo 120 caracteres), sin explicaciones ni markdown:
+["desc1", "desc2", "desc3", "desc4", "desc5"]`;
+
+    const message = await this.anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1500,
+      temperature: 0.8,
+      system: systemPrompt,
+      messages: [
+        {
+          role: 'user',
+          content: userPrompt,
+        },
+      ],
+    });
+
+    const responseText = message.content[0].type === 'text' ? message.content[0].text : '[]';
+    const cleanedResponse = this.cleanJsonResponse(responseText);
+    let suggestions: string[] = JSON.parse(cleanedResponse);
+
+    // Ensure we have exactly 5 suggestions
+    if (suggestions.length > 5) {
+      suggestions = suggestions.slice(0, 5);
+    }
+
+    // Save to database for tracking
+    await this.saveAIContent({
+      contentType: 'ad_description_suggestions',
+      content: {
+        suggestions,
+        selectedTitle: params.selectedTitle,
+        selectedPrimaryText: params.selectedPrimaryText
+      },
+      model: 'claude-sonnet-4',
+      prompt: userPrompt,
+      tokensUsed: message.usage.input_tokens + message.usage.output_tokens,
+    });
+
+    return suggestions;
+  }
+
+  /**
+   * Generate Ad Copy suggestions for Meta and TikTok ads (LEGACY - keeping for backwards compatibility)
    * Meta: headline (40 chars), primaryText (125 chars), description (30 chars)
    * TikTok: adText (100 chars)
+   * @deprecated Use generateAdTitleSuggestions, generateAdPrimaryTextSuggestions, generateAdDescriptionSuggestions instead
    */
   async generateAdCopySuggestions(params: {
     offerName: string;

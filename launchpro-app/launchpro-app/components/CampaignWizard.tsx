@@ -149,11 +149,23 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
   const [loadingKeywords, setLoadingKeywords] = useState(false);
   const [keywordsError, setKeywordsError] = useState<string | null>(null);
 
-  // Ad Copy suggestions state (Phase 2 - Meta & TikTok)
-  const [metaAdCopySuggestions, setMetaAdCopySuggestions] = useState<{ headline: string; primaryText: string; description: string }[]>([]);
-  const [loadingMetaAdCopy, setLoadingMetaAdCopy] = useState(false);
-  const [metaAdCopyError, setMetaAdCopyError] = useState<string | null>(null);
+  // Ad Copy suggestions state (Phase 2 - Meta) - Sequential: Title -> Primary Text -> Description
+  // Step 1: Ad Title suggestions (max 80 chars)
+  const [adTitleSuggestions, setAdTitleSuggestions] = useState<string[]>([]);
+  const [loadingAdTitles, setLoadingAdTitles] = useState(false);
+  const [adTitleError, setAdTitleError] = useState<string | null>(null);
 
+  // Step 2: Primary Text suggestions (max 120 chars) - requires selected title
+  const [adPrimaryTextSuggestions, setAdPrimaryTextSuggestions] = useState<string[]>([]);
+  const [loadingAdPrimaryText, setLoadingAdPrimaryText] = useState(false);
+  const [adPrimaryTextError, setAdPrimaryTextError] = useState<string | null>(null);
+
+  // Step 3: Description suggestions (max 120 chars) - requires selected title + primary text
+  const [adDescriptionSuggestions, setAdDescriptionSuggestions] = useState<string[]>([]);
+  const [loadingAdDescription, setLoadingAdDescription] = useState(false);
+  const [adDescriptionError, setAdDescriptionError] = useState<string | null>(null);
+
+  // Legacy: Keep for TikTok (which still uses the old flow)
   const [tiktokAdCopySuggestions, setTiktokAdCopySuggestions] = useState<{ adText: string }[]>([]);
   const [loadingTiktokAdCopy, setLoadingTiktokAdCopy] = useState(false);
   const [tiktokAdCopyError, setTiktokAdCopyError] = useState<string | null>(null);
@@ -620,17 +632,17 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
   };
 
   /**
-   * Generate Ad Copy suggestions for Meta (headline, primaryText, description)
+   * Step 1: Generate Ad Title suggestions (max 80 chars)
    */
-  const generateMetaAdCopySuggestions = async (platformIndex: number) => {
+  const generateAdTitleSuggestions = async (platformIndex: number) => {
     if (!formData.offerId || !formData.copyMaster || !formData.country || !formData.language) {
-      setMetaAdCopyError('Complete Phase 1 first (Offer, Copy Master, Country, Language)');
+      setAdTitleError('Complete Phase 1 first (Offer, Copy Master, Country, Language)');
       return;
     }
 
-    setLoadingMetaAdCopy(true);
-    setMetaAdCopyError(null);
-    setMetaAdCopySuggestions([]);
+    setLoadingAdTitles(true);
+    setAdTitleError(null);
+    setAdTitleSuggestions([]);
 
     try {
       const selectedOffer = offers.find(o => o.id === formData.offerId);
@@ -639,9 +651,9 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          type: 'title',
           offerName: selectedOffer?.name || '',
           copyMaster: formData.copyMaster,
-          platform: 'META',
           country: formData.country,
           language: formData.language,
         }),
@@ -650,25 +662,142 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
       const result = await response.json();
 
       if (!result.success) {
-        throw new Error(result.error || 'Failed to generate suggestions');
+        throw new Error(result.error || 'Failed to generate title suggestions');
       }
 
-      setMetaAdCopySuggestions(result.data.meta || []);
+      setAdTitleSuggestions(result.data.titles || []);
     } catch (error: any) {
-      setMetaAdCopyError(error.message);
+      setAdTitleError(error.message);
     } finally {
-      setLoadingMetaAdCopy(false);
+      setLoadingAdTitles(false);
     }
   };
 
   /**
-   * Select a Meta Ad Copy suggestion and fill all three fields
+   * Select an Ad Title suggestion (keeps suggestions visible like Copy Master)
    */
-  const selectMetaAdCopySuggestion = (platformIndex: number, suggestion: { headline: string; primaryText: string; description: string }) => {
-    updatePlatform(platformIndex, 'manualAdTitle', suggestion.headline);
-    updatePlatform(platformIndex, 'manualPrimaryText', suggestion.primaryText);
-    updatePlatform(platformIndex, 'manualDescription', suggestion.description);
-    setMetaAdCopySuggestions([]); // Hide suggestions after selecting
+  const selectAdTitleSuggestion = (platformIndex: number, title: string) => {
+    updatePlatform(platformIndex, 'manualAdTitle', title);
+    // Clear dependent suggestions when title changes (user needs to regenerate)
+    setAdPrimaryTextSuggestions([]);
+    setAdDescriptionSuggestions([]);
+  };
+
+  /**
+   * Step 2: Generate Primary Text suggestions (max 120 chars)
+   * Requires: selected Ad Title
+   */
+  const generateAdPrimaryTextSuggestions = async (platformIndex: number) => {
+    const platform = formData.platforms[platformIndex];
+    if (!platform?.manualAdTitle) {
+      setAdPrimaryTextError('Please select an Ad Title first');
+      return;
+    }
+
+    if (!formData.offerId || !formData.copyMaster || !formData.country || !formData.language) {
+      setAdPrimaryTextError('Complete Phase 1 first (Offer, Copy Master, Country, Language)');
+      return;
+    }
+
+    setLoadingAdPrimaryText(true);
+    setAdPrimaryTextError(null);
+    setAdPrimaryTextSuggestions([]);
+
+    try {
+      const selectedOffer = offers.find(o => o.id === formData.offerId);
+
+      const response = await fetch('/api/ai/ad-copy-suggestions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'primaryText',
+          offerName: selectedOffer?.name || '',
+          copyMaster: formData.copyMaster,
+          selectedTitle: platform.manualAdTitle,
+          country: formData.country,
+          language: formData.language,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to generate primary text suggestions');
+      }
+
+      setAdPrimaryTextSuggestions(result.data.primaryTexts || []);
+    } catch (error: any) {
+      setAdPrimaryTextError(error.message);
+    } finally {
+      setLoadingAdPrimaryText(false);
+    }
+  };
+
+  /**
+   * Select a Primary Text suggestion (keeps suggestions visible like Copy Master)
+   */
+  const selectAdPrimaryTextSuggestion = (platformIndex: number, primaryText: string) => {
+    updatePlatform(platformIndex, 'manualPrimaryText', primaryText);
+    // Clear description suggestions when primary text changes (user needs to regenerate)
+    setAdDescriptionSuggestions([]);
+  };
+
+  /**
+   * Step 3: Generate Description suggestions (max 120 chars)
+   * Requires: selected Ad Title + Primary Text
+   */
+  const generateAdDescriptionSuggestions = async (platformIndex: number) => {
+    const platform = formData.platforms[platformIndex];
+    if (!platform?.manualAdTitle || !platform?.manualPrimaryText) {
+      setAdDescriptionError('Please select an Ad Title and Primary Text first');
+      return;
+    }
+
+    if (!formData.offerId || !formData.copyMaster || !formData.country || !formData.language) {
+      setAdDescriptionError('Complete Phase 1 first (Offer, Copy Master, Country, Language)');
+      return;
+    }
+
+    setLoadingAdDescription(true);
+    setAdDescriptionError(null);
+    setAdDescriptionSuggestions([]);
+
+    try {
+      const selectedOffer = offers.find(o => o.id === formData.offerId);
+
+      const response = await fetch('/api/ai/ad-copy-suggestions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'description',
+          offerName: selectedOffer?.name || '',
+          copyMaster: formData.copyMaster,
+          selectedTitle: platform.manualAdTitle,
+          selectedPrimaryText: platform.manualPrimaryText,
+          country: formData.country,
+          language: formData.language,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to generate description suggestions');
+      }
+
+      setAdDescriptionSuggestions(result.data.descriptions || []);
+    } catch (error: any) {
+      setAdDescriptionError(error.message);
+    } finally {
+      setLoadingAdDescription(false);
+    }
+  };
+
+  /**
+   * Select a Description suggestion (keeps suggestions visible like Copy Master)
+   */
+  const selectAdDescriptionSuggestion = (platformIndex: number, description: string) => {
+    updatePlatform(platformIndex, 'manualDescription', description);
   };
 
   /**
@@ -2416,128 +2545,287 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
                       </div>
                     )}
 
-                    {/* Manual Ad Copy Fields - Only for Meta */}
+                    {/* Manual Ad Copy Fields - Only for Meta - Sequential 3-Step Flow */}
                     {platform.platform === 'META' && (
                       <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                        <div className="flex items-center justify-between mb-3">
-                          <h4 className="text-sm font-semibold text-blue-900">
-                            Ad Copy (Optional)
-                          </h4>
-                          <button
-                            type="button"
-                            onClick={() => generateMetaAdCopySuggestions(index)}
-                            disabled={loadingMetaAdCopy || !formData.offerId || !formData.copyMaster}
-                            className="px-3 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
-                          >
-                            {loadingMetaAdCopy ? (
-                              <>
-                                <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
-                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                                </svg>
-                                Generating...
-                              </>
-                            ) : (
-                              <>
-                                <span>✨</span>
-                                Generate 5 Suggestions
-                              </>
-                            )}
-                          </button>
-                        </div>
+                        <h4 className="text-sm font-semibold text-blue-900 mb-2">
+                          Ad Copy (Optional) - Sequential Generation
+                        </h4>
                         <p className="text-xs text-blue-700 mb-4">
-                          Leave empty to generate with AI, or click &quot;Generate 5 Suggestions&quot; to get AI recommendations.
+                          Generate ad copy in 3 steps: Title → Primary Text → Description. Each step uses the previous selection to create better suggestions.
                         </p>
 
-                        {/* Error message */}
-                        {metaAdCopyError && (
-                          <div className="mb-4 p-2 bg-red-100 border border-red-200 rounded-lg text-xs text-red-700">
-                            {metaAdCopyError}
-                          </div>
-                        )}
-
-                        {/* Suggestions cards */}
-                        {metaAdCopySuggestions.length > 0 && (
-                          <div className="mb-4 space-y-2">
-                            <p className="text-xs font-medium text-blue-800 mb-2">Click to select a combination:</p>
-                            {metaAdCopySuggestions.map((suggestion, suggIdx) => (
+                        <div className="space-y-6">
+                          {/* STEP 1: Ad Title (Headline) - max 80 chars */}
+                          <div className="p-3 bg-white rounded-lg border border-blue-100">
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-2">
+                                <span className="flex items-center justify-center w-6 h-6 rounded-full bg-blue-600 text-white text-xs font-bold">1</span>
+                                <label className="text-sm font-medium text-gray-700">
+                                  Ad Title (Headline)
+                                </label>
+                              </div>
                               <button
-                                key={suggIdx}
                                 type="button"
-                                onClick={() => selectMetaAdCopySuggestion(index, suggestion)}
-                                className="w-full p-3 text-left bg-white border border-blue-200 rounded-lg hover:border-blue-400 hover:bg-blue-50 transition-colors"
+                                onClick={() => generateAdTitleSuggestions(index)}
+                                disabled={loadingAdTitles || !formData.offerId || !formData.copyMaster}
+                                className="px-3 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                               >
-                                <div className="space-y-1">
-                                  <div className="flex items-start gap-2">
-                                    <span className="text-xs font-semibold text-blue-600 shrink-0">Title:</span>
-                                    <span className="text-xs text-gray-800">{suggestion.headline}</span>
-                                  </div>
-                                  <div className="flex items-start gap-2">
-                                    <span className="text-xs font-semibold text-blue-600 shrink-0">Primary:</span>
-                                    <span className="text-xs text-gray-700">{suggestion.primaryText}</span>
-                                  </div>
-                                  <div className="flex items-start gap-2">
-                                    <span className="text-xs font-semibold text-blue-600 shrink-0">Desc:</span>
-                                    <span className="text-xs text-gray-600">{suggestion.description}</span>
-                                  </div>
-                                </div>
+                                {loadingAdTitles ? (
+                                  <>
+                                    <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
+                                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                                    </svg>
+                                    Generating...
+                                  </>
+                                ) : (
+                                  <>
+                                    <span>✨</span>
+                                    Generate 5 Titles
+                                  </>
+                                )}
                               </button>
-                            ))}
-                          </div>
-                        )}
+                            </div>
 
-                        <div className="space-y-4">
-                          {/* Ad Title / Headline */}
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                              Ad Title (Headline)
-                            </label>
-                            <input
-                              type="text"
-                              value={platform.manualAdTitle || ''}
-                              onChange={(e) => updatePlatform(index, 'manualAdTitle', e.target.value)}
-                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                              placeholder="Enter ad headline..."
-                            />
-                            <p className="text-xs text-gray-500 mt-1">
-                              {(platform.manualAdTitle || '').length} characters
-                            </p>
+                            {/* Title error */}
+                            {adTitleError && (
+                              <div className="mb-2 p-2 bg-red-100 border border-red-200 rounded text-xs text-red-700">
+                                {adTitleError}
+                              </div>
+                            )}
+
+                            {/* Title suggestions - Radio style like Copy Master */}
+                            {adTitleSuggestions.length > 0 && (
+                              <div className="mb-3 space-y-2">
+                                <p className="text-xs font-medium text-blue-800 mb-2">Select a title:</p>
+                                {adTitleSuggestions.map((title, suggIdx) => (
+                                  <label
+                                    key={suggIdx}
+                                    className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
+                                      platform.manualAdTitle === title
+                                        ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
+                                        : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50/50'
+                                    }`}
+                                  >
+                                    <input
+                                      type="radio"
+                                      name={`adTitle-${index}`}
+                                      checked={platform.manualAdTitle === title}
+                                      onChange={() => selectAdTitleSuggestion(index, title)}
+                                      className="mt-0.5 h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                                    />
+                                    <span className="text-sm text-gray-800 flex-1">{title}</span>
+                                    <span className="text-xs text-gray-400">{title.length} chars</span>
+                                  </label>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* Manual input field */}
+                            <div className="mt-3 pt-3 border-t border-gray-200">
+                              <p className="text-xs text-gray-500 mb-2">Or enter custom title:</p>
+                              <input
+                                type="text"
+                                value={platform.manualAdTitle || ''}
+                                onChange={(e) => {
+                                  updatePlatform(index, 'manualAdTitle', e.target.value);
+                                  // Clear dependent suggestions when manually editing
+                                  setAdPrimaryTextSuggestions([]);
+                                  setAdDescriptionSuggestions([]);
+                                }}
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                placeholder="Enter ad headline (max 80 chars)..."
+                                maxLength={80}
+                              />
+                              <p className="text-xs text-gray-500 mt-1">
+                                {(platform.manualAdTitle || '').length}/80 characters
+                              </p>
+                            </div>
                           </div>
 
-                          {/* Primary Text */}
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                              Primary Text
-                            </label>
-                            <textarea
-                              value={platform.manualPrimaryText || ''}
-                              onChange={(e) => updatePlatform(index, 'manualPrimaryText', e.target.value)}
-                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                              rows={2}
-                              placeholder="Max 125 characters..."
-                              maxLength={125}
-                            />
-                            <p className="text-xs text-gray-500 mt-1">
-                              {(platform.manualPrimaryText || '').length}/125 characters
-                            </p>
+                          {/* STEP 2: Primary Text - max 120 chars */}
+                          <div className={`p-3 rounded-lg border ${platform.manualAdTitle ? 'bg-white border-blue-100' : 'bg-gray-50 border-gray-200'}`}>
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-2">
+                                <span className={`flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${platform.manualAdTitle ? 'bg-blue-600 text-white' : 'bg-gray-300 text-gray-500'}`}>2</span>
+                                <label className={`text-sm font-medium ${platform.manualAdTitle ? 'text-gray-700' : 'text-gray-400'}`}>
+                                  Primary Text
+                                </label>
+                                {!platform.manualAdTitle && (
+                                  <span className="text-xs text-gray-400 ml-2">Select a title first</span>
+                                )}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => generateAdPrimaryTextSuggestions(index)}
+                                disabled={loadingAdPrimaryText || !platform.manualAdTitle || !formData.offerId || !formData.copyMaster}
+                                className="px-3 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                              >
+                                {loadingAdPrimaryText ? (
+                                  <>
+                                    <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
+                                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                                    </svg>
+                                    Generating...
+                                  </>
+                                ) : (
+                                  <>
+                                    <span>✨</span>
+                                    Generate 5 Texts
+                                  </>
+                                )}
+                              </button>
+                            </div>
+
+                            {/* Primary Text error */}
+                            {adPrimaryTextError && (
+                              <div className="mb-2 p-2 bg-red-100 border border-red-200 rounded text-xs text-red-700">
+                                {adPrimaryTextError}
+                              </div>
+                            )}
+
+                            {/* Primary Text suggestions - Radio style like Copy Master */}
+                            {adPrimaryTextSuggestions.length > 0 && (
+                              <div className="mb-3 space-y-2">
+                                <p className="text-xs font-medium text-blue-800 mb-2">Select a primary text:</p>
+                                {adPrimaryTextSuggestions.map((text, suggIdx) => (
+                                  <label
+                                    key={suggIdx}
+                                    className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
+                                      platform.manualPrimaryText === text
+                                        ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
+                                        : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50/50'
+                                    }`}
+                                  >
+                                    <input
+                                      type="radio"
+                                      name={`adPrimaryText-${index}`}
+                                      checked={platform.manualPrimaryText === text}
+                                      onChange={() => selectAdPrimaryTextSuggestion(index, text)}
+                                      className="mt-0.5 h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                                    />
+                                    <span className="text-sm text-gray-800 flex-1">{text}</span>
+                                    <span className="text-xs text-gray-400">{text.length} chars</span>
+                                  </label>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* Manual input field */}
+                            <div className={`mt-3 pt-3 ${adPrimaryTextSuggestions.length > 0 ? 'border-t border-gray-200' : ''}`}>
+                              {adPrimaryTextSuggestions.length > 0 && (
+                                <p className="text-xs text-gray-500 mb-2">Or enter custom text:</p>
+                              )}
+                              <textarea
+                                value={platform.manualPrimaryText || ''}
+                                onChange={(e) => {
+                                  updatePlatform(index, 'manualPrimaryText', e.target.value);
+                                  // Clear description suggestions when manually editing
+                                  setAdDescriptionSuggestions([]);
+                                }}
+                                disabled={!platform.manualAdTitle}
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                                rows={2}
+                                placeholder={platform.manualAdTitle ? "Enter primary text (max 120 chars)..." : "Select a title first..."}
+                                maxLength={120}
+                              />
+                              <p className="text-xs text-gray-500 mt-1">
+                                {(platform.manualPrimaryText || '').length}/120 characters
+                              </p>
+                            </div>
                           </div>
 
-                          {/* Description */}
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                              Description
-                            </label>
-                            <input
-                              type="text"
-                              value={platform.manualDescription || ''}
-                              onChange={(e) => updatePlatform(index, 'manualDescription', e.target.value)}
-                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                              placeholder="Max 30 characters..."
-                              maxLength={30}
-                            />
-                            <p className="text-xs text-gray-500 mt-1">
-                              {(platform.manualDescription || '').length}/30 characters. Note: Description is ignored by Meta API when using video ads.
-                            </p>
+                          {/* STEP 3: Description - max 120 chars */}
+                          <div className={`p-3 rounded-lg border ${platform.manualAdTitle && platform.manualPrimaryText ? 'bg-white border-blue-100' : 'bg-gray-50 border-gray-200'}`}>
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-2">
+                                <span className={`flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${platform.manualAdTitle && platform.manualPrimaryText ? 'bg-blue-600 text-white' : 'bg-gray-300 text-gray-500'}`}>3</span>
+                                <label className={`text-sm font-medium ${platform.manualAdTitle && platform.manualPrimaryText ? 'text-gray-700' : 'text-gray-400'}`}>
+                                  Description
+                                </label>
+                                {(!platform.manualAdTitle || !platform.manualPrimaryText) && (
+                                  <span className="text-xs text-gray-400 ml-2">
+                                    {!platform.manualAdTitle ? 'Select a title first' : 'Select a primary text first'}
+                                  </span>
+                                )}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => generateAdDescriptionSuggestions(index)}
+                                disabled={loadingAdDescription || !platform.manualAdTitle || !platform.manualPrimaryText || !formData.offerId || !formData.copyMaster}
+                                className="px-3 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                              >
+                                {loadingAdDescription ? (
+                                  <>
+                                    <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
+                                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                                    </svg>
+                                    Generating...
+                                  </>
+                                ) : (
+                                  <>
+                                    <span>✨</span>
+                                    Generate 5 Descriptions
+                                  </>
+                                )}
+                              </button>
+                            </div>
+
+                            {/* Description error */}
+                            {adDescriptionError && (
+                              <div className="mb-2 p-2 bg-red-100 border border-red-200 rounded text-xs text-red-700">
+                                {adDescriptionError}
+                              </div>
+                            )}
+
+                            {/* Description suggestions - Radio style like Copy Master */}
+                            {adDescriptionSuggestions.length > 0 && (
+                              <div className="mb-3 space-y-2">
+                                <p className="text-xs font-medium text-blue-800 mb-2">Select a description:</p>
+                                {adDescriptionSuggestions.map((desc, suggIdx) => (
+                                  <label
+                                    key={suggIdx}
+                                    className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
+                                      platform.manualDescription === desc
+                                        ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
+                                        : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50/50'
+                                    }`}
+                                  >
+                                    <input
+                                      type="radio"
+                                      name={`adDescription-${index}`}
+                                      checked={platform.manualDescription === desc}
+                                      onChange={() => selectAdDescriptionSuggestion(index, desc)}
+                                      className="mt-0.5 h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                                    />
+                                    <span className="text-sm text-gray-800 flex-1">{desc}</span>
+                                    <span className="text-xs text-gray-400">{desc.length} chars</span>
+                                  </label>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* Manual input field */}
+                            <div className={`mt-3 pt-3 ${adDescriptionSuggestions.length > 0 ? 'border-t border-gray-200' : ''}`}>
+                              {adDescriptionSuggestions.length > 0 && (
+                                <p className="text-xs text-gray-500 mb-2">Or enter custom description:</p>
+                              )}
+                              <input
+                                type="text"
+                                value={platform.manualDescription || ''}
+                                onChange={(e) => updatePlatform(index, 'manualDescription', e.target.value)}
+                                disabled={!platform.manualAdTitle || !platform.manualPrimaryText}
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                                placeholder={platform.manualAdTitle && platform.manualPrimaryText ? "Enter description (max 120 chars)..." : "Complete previous steps first..."}
+                                maxLength={120}
+                              />
+                              <p className="text-xs text-gray-500 mt-1">
+                                {(platform.manualDescription || '').length}/120 characters
+                              </p>
+                            </div>
                           </div>
                         </div>
                       </div>
