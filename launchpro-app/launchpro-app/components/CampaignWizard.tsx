@@ -15,6 +15,8 @@ interface Offer {
   id: string;
   name: string;
   vertical?: string;
+  category?: string; // Tonic API may use 'category' instead of 'vertical'
+  niche?: string;    // Or 'niche' in some cases
 }
 
 interface Country {
@@ -254,6 +256,7 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
     if (!formData.country) return;
 
     const countryLanguageMap: Record<string, string> = {
+      // Spanish-speaking countries
       'CO': 'es', // Colombia
       'MX': 'es', // Mexico
       'ES': 'es', // Spain
@@ -264,16 +267,86 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
       'VE': 'es', // Venezuela
       'GT': 'es', // Guatemala
       'CR': 'es', // Costa Rica
+      'PA': 'es', // Panama
+      'UY': 'es', // Uruguay
+      'PY': 'es', // Paraguay
+      'BO': 'es', // Bolivia
+      'DO': 'es', // Dominican Republic
+      'HN': 'es', // Honduras
+      'SV': 'es', // El Salvador
+      'NI': 'es', // Nicaragua
+      // English-speaking countries
       'US': 'en', // United States
       'GB': 'en', // United Kingdom
       'CA': 'en', // Canada
       'AU': 'en', // Australia
+      'NZ': 'en', // New Zealand
+      'IE': 'en', // Ireland
+      'ZA': 'en', // South Africa
+      'SG': 'en', // Singapore (English is official)
+      'PH': 'en', // Philippines
+      // German-speaking countries
       'DE': 'de', // Germany
       'AT': 'de', // Austria
       'CH': 'de', // Switzerland
+      // French-speaking countries
       'FR': 'fr', // France
+      'BE': 'fr', // Belgium
+      // Portuguese-speaking countries
       'BR': 'pt', // Brazil
       'PT': 'pt', // Portugal
+      // Italian
+      'IT': 'it', // Italy
+      // Dutch
+      'NL': 'nl', // Netherlands
+      // Polish
+      'PL': 'pl', // Poland
+      // Russian
+      'RU': 'ru', // Russia
+      // Japanese
+      'JP': 'ja', // Japan
+      // Korean
+      'KR': 'ko', // South Korea
+      // Chinese
+      'CN': 'zh', // China
+      'TW': 'zh', // Taiwan
+      'HK': 'zh', // Hong Kong
+      // Arabic-speaking countries
+      'SA': 'ar', // Saudi Arabia
+      'AE': 'ar', // UAE
+      'EG': 'ar', // Egypt
+      'MA': 'ar', // Morocco
+      'DZ': 'ar', // Algeria
+      'KW': 'ar', // Kuwait
+      'QA': 'ar', // Qatar
+      'BH': 'ar', // Bahrain
+      'OM': 'ar', // Oman
+      'JO': 'ar', // Jordan
+      'LB': 'ar', // Lebanon
+      // Hindi
+      'IN': 'hi', // India
+      // Thai
+      'TH': 'th', // Thailand
+      // Vietnamese
+      'VN': 'vi', // Vietnam
+      // Indonesian/Malay
+      'ID': 'id', // Indonesia
+      'MY': 'ms', // Malaysia
+      // Turkish
+      'TR': 'tr', // Turkey
+      // Scandinavian
+      'SE': 'sv', // Sweden
+      'DK': 'da', // Denmark
+      'FI': 'fi', // Finland
+      'NO': 'no', // Norway
+      // Greek
+      'GR': 'el', // Greece
+      // Hebrew
+      'IL': 'he', // Israel
+      // Central/Eastern European
+      'CZ': 'cs', // Czech Republic
+      'HU': 'hu', // Hungary
+      'RO': 'ro', // Romania
     };
 
     const defaultLang = countryLanguageMap[formData.country];
@@ -388,11 +461,16 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
       }
     };
 
-    // Wait for accounts to load first
-    if (tonicAccounts.length > 0) {
+    // Wait for all accounts to load first (tonic, meta, and tiktok)
+    // This ensures the cloned platform accounts can be properly matched
+    const hasTonicAccounts = tonicAccounts.length > 0;
+    const hasMetaAccounts = metaAccounts.length > 0;
+    const hasTiktokAccounts = tiktokAccounts.length > 0;
+
+    if (hasTonicAccounts && hasMetaAccounts && hasTiktokAccounts) {
       loadCampaignToClone();
     }
-  }, [cloneFromId, tonicAccounts]);
+  }, [cloneFromId, tonicAccounts, metaAccounts, tiktokAccounts]);
 
   const loadOffers = async () => {
     try {
@@ -539,7 +617,7 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           offerName: selectedOffer?.name || '',
-          offerVertical: selectedOffer?.vertical || '',
+          offerVertical: selectedOffer?.vertical || selectedOffer?.category || selectedOffer?.niche || '',
           country: formData.country,
           language: formData.language,
         }),
@@ -582,7 +660,7 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
 
     try {
       const selectedOffer = offers.find(o => o.id === formData.offerId);
-      const category = selectedOffer?.vertical || selectedOffer?.name || '';
+      const category = selectedOffer?.vertical || selectedOffer?.category || selectedOffer?.niche || selectedOffer?.name || '';
 
       const response = await fetch('/api/ai/keyword-suggestions', {
         method: 'POST',
@@ -882,7 +960,7 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           count,
-          category: selectedOffer?.vertical || selectedOffer?.name || 'General',
+          category: selectedOffer?.vertical || selectedOffer?.category || selectedOffer?.niche || selectedOffer?.name || 'General',
           country: formData.country,
           language: formData.language,
           adTitle,
@@ -1239,6 +1317,16 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
   };
 
   const handleSubmit = async () => {
+    // Validate budgets before submitting
+    for (const platform of formData.platforms) {
+      const budget = parseFloat(platform.budget);
+      const minBudget = platform.platform === 'TIKTOK' ? 50 : 5;
+      if (isNaN(budget) || budget < minBudget) {
+        setError(`${platform.platform} requires a minimum budget of $${minBudget} USD`);
+        return;
+      }
+    }
+
     setLoading(true);
     setError(null);
     setIsLaunching(true);
@@ -1676,7 +1764,7 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
                   <option value="">Select an offer...</option>
                   {offers.map((offer) => (
                     <option key={offer.id} value={offer.id}>
-                      {offer.name} {offer.vertical && `(${offer.vertical})`}
+                      {offer.name} {(offer.vertical || offer.category || offer.niche) && `(${offer.vertical || offer.category || offer.niche})`}
                     </option>
                   ))}
                 </select>
@@ -1716,6 +1804,29 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
                   <option value="fr">Français</option>
                   <option value="de">Deutsch</option>
                   <option value="pt">Português</option>
+                  <option value="it">Italiano</option>
+                  <option value="nl">Nederlands</option>
+                  <option value="pl">Polski</option>
+                  <option value="ru">Русский</option>
+                  <option value="ja">日本語 (Japanese)</option>
+                  <option value="ko">한국어 (Korean)</option>
+                  <option value="zh">中文 (Chinese)</option>
+                  <option value="ar">العربية (Arabic)</option>
+                  <option value="hi">हिन्दी (Hindi)</option>
+                  <option value="th">ไทย (Thai)</option>
+                  <option value="vi">Tiếng Việt (Vietnamese)</option>
+                  <option value="id">Bahasa Indonesia</option>
+                  <option value="ms">Bahasa Melayu</option>
+                  <option value="tr">Türkçe</option>
+                  <option value="sv">Svenska</option>
+                  <option value="da">Dansk</option>
+                  <option value="fi">Suomi</option>
+                  <option value="no">Norsk</option>
+                  <option value="el">Ελληνικά (Greek)</option>
+                  <option value="he">עברית (Hebrew)</option>
+                  <option value="cs">Čeština</option>
+                  <option value="hu">Magyar</option>
+                  <option value="ro">Română</option>
                 </select>
               </div>
 
@@ -2330,6 +2441,9 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         Daily Budget (USD)
+                        <span className="text-xs text-gray-500 ml-2">
+                          (Min: ${platform.platform === 'TIKTOK' ? '50' : '5'})
+                        </span>
                       </label>
                       <input
                         type="number"
@@ -2337,10 +2451,21 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
                         onChange={(e) =>
                           updatePlatform(index, 'budget', e.target.value)
                         }
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                        min="1"
+                        className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
+                          parseFloat(platform.budget) < (platform.platform === 'TIKTOK' ? 50 : 5)
+                            ? 'border-red-500 bg-red-50'
+                            : 'border-gray-300'
+                        }`}
+                        min={platform.platform === 'TIKTOK' ? '50' : '5'}
                         required
                       />
+                      {parseFloat(platform.budget) < (platform.platform === 'TIKTOK' ? 50 : 5) && (
+                        <p className="text-xs text-red-600 mt-1">
+                          {platform.platform === 'TIKTOK'
+                            ? 'TikTok requires a minimum budget of $50 USD'
+                            : 'Meta requires a minimum budget of $5 USD'}
+                        </p>
+                      )}
                     </div>
 
                     <div>

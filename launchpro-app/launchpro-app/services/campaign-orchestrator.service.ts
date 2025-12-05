@@ -228,11 +228,13 @@ class CampaignOrchestratorService {
       });
 
       if (!dbOffer) {
+        // Tonic API may return vertical in different fields: 'vertical', 'category', or 'niche'
+        const offerVertical = offer.vertical || offer.category || offer.niche || 'Unknown';
         dbOffer = await prisma.offer.create({
           data: {
             tonicId: params.offerId,
             name: offer.name,
-            vertical: offer.vertical || 'Unknown',
+            vertical: offerVertical,
           },
         });
         logger.info('system', 'Created new offer in database', { offerId: dbOffer.id, name: offer.name });
@@ -1627,11 +1629,13 @@ class CampaignOrchestratorService {
     // For CBO: Create a single Ad Set upfront (all ads go in this ad set)
     // For ABO: Ad sets are created in the loop below (one per media)
     let adSet: any = null;
+    // ABO counter for sequential naming (ABO1, ABO2, ABO3, etc.)
+    let aboCounter = 0;
     if (isCBO) {
       adSet = await createMetaAdSet('AdSet');
       logger.success('meta', `CBO: Single ad set created with ID: ${adSet.id}`);
     } else {
-      logger.info('meta', `ABO: Ad sets will be created per media item`);
+      logger.info('meta', `ABO: Ad sets will be created per media item with sequential numbering`);
     }
     let imageHash: string | undefined;
     let videoId: string | undefined;
@@ -1803,8 +1807,9 @@ class CampaignOrchestratorService {
       // VIDEO AD - Single video with thumbnail
       // ABO: Need to create an ad set (for CBO it was created at the start)
       if (!isCBO && !adSet) {
-        adSet = await createMetaAdSet('AdSet_Video');
-        logger.success('meta', `ABO: Created single video ad set: ${adSet.id}`);
+        aboCounter++;
+        adSet = await createMetaAdSet(`ABO${aboCounter}`);
+        logger.success('meta', `ABO: Created ad set ABO${aboCounter} for video: ${adSet.id}`);
       }
 
       creative = await metaService.createAdCreative({
@@ -1907,8 +1912,9 @@ class CampaignOrchestratorService {
         // CBO: Use the single ad set created at the start
         let videoAdSet = adSet;
         if (!isCBO) {
-          videoAdSet = await createMetaAdSet(`AdSet_Video_${idx + 1}`);
-          logger.success('meta', `ABO: Created ad set ${idx + 1}/${videos.length} for video: ${videoAdSet.id}`);
+          aboCounter++;
+          videoAdSet = await createMetaAdSet(`ABO${aboCounter}`);
+          logger.success('meta', `ABO: Created ad set ABO${aboCounter} for video: ${videoAdSet.id}`);
         }
 
         // Upload video
@@ -2005,8 +2011,9 @@ class CampaignOrchestratorService {
         const imgData = uploadedImageHashes[idx];
 
         // ABO: Create a separate ad set for THIS image with FULL budget
-        const imageAdSet = await createMetaAdSet(`AdSet_Image_${idx + 1}`);
-        logger.success('meta', `ABO: Created ad set ${idx + 1}/${uploadedImageHashes.length} for image: ${imageAdSet.id}`);
+        aboCounter++;
+        const imageAdSet = await createMetaAdSet(`ABO${aboCounter}`);
+        logger.success('meta', `ABO: Created ad set ABO${aboCounter} for image: ${imageAdSet.id}`);
 
         const imgCreative = await metaService.createAdCreative({
           name: `${campaign.name} - Creative ${idx + 1}`,
@@ -2056,8 +2063,9 @@ class CampaignOrchestratorService {
       // SINGLE IMAGE AD - Standard single image ad
       // ABO: Need to create an ad set (for CBO it was created at the start)
       if (!isCBO && !adSet) {
-        adSet = await createMetaAdSet('AdSet_Image');
-        logger.success('meta', `ABO: Created single image ad set: ${adSet.id}`);
+        aboCounter++;
+        adSet = await createMetaAdSet(`ABO${aboCounter}`);
+        logger.success('meta', `ABO: Created ad set ABO${aboCounter} for image: ${adSet.id}`);
       }
 
       creative = await metaService.createAdCreative({
@@ -2388,7 +2396,7 @@ class CampaignOrchestratorService {
     const adGroupParams: any = {
       advertiser_id: advertiserId,
       campaign_id: tiktokCampaign.campaign_id,
-      adgroup_name: `${fullCampaignName} - Ad Group`,
+      adgroup_name: `${fullCampaignName} - ABO1`,
       promotion_type: 'WEBSITE', // WEBSITE for traffic to external URL
       // SIEMPRE usar PLACEMENT_TIKTOK (no usar Pangle ni automatic)
       placement_type: 'PLACEMENT_TYPE_NORMAL',
@@ -2869,11 +2877,13 @@ class CampaignOrchestratorService {
       if (!tonicOffer) {
         throw new Error(`Offer ${params.offerId} not found in Tonic`);
       }
+      // Tonic API may return vertical in different fields: 'vertical', 'category', or 'niche'
+      const offerVertical = tonicOffer.vertical || tonicOffer.category || tonicOffer.niche || 'General';
       offer = await prisma.offer.create({
         data: {
           tonicId: params.offerId,
           name: tonicOffer.name,
-          vertical: tonicOffer.vertical || 'General',
+          vertical: offerVertical,
           description: tonicOffer.description,
         },
       });
