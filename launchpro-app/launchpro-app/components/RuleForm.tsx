@@ -126,11 +126,14 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
       const response = await fetch('/api/accounts?type=META');
       const data = await response.json();
 
-      if (data.success && Array.isArray(data.data)) {
-        setMetaAccounts(data.data);
+      // The API returns { success: true, data: { meta: [...] } } for type=META
+      const accounts = data.data?.meta || data.data || [];
+
+      if (data.success && Array.isArray(accounts)) {
+        setMetaAccounts(accounts);
         // Set first account as default if not editing
-        if (!initialData?.metaAccountId && data.data.length > 0) {
-          setFormData(prev => ({ ...prev, metaAccountId: data.data[0].id }));
+        if (!initialData?.metaAccountId && accounts.length > 0) {
+          setFormData(prev => ({ ...prev, metaAccountId: accounts[0].id }));
         }
       } else {
         console.error('Error fetching Meta accounts:', data.error || 'Invalid response');
