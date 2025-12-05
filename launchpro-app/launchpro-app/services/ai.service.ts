@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { v1, helpers } from '@google-cloud/aiplatform';
 import { Storage } from '@google-cloud/storage';
+import { GoogleGenAI } from '@google/genai';
 import { env } from '@/lib/env';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger';
@@ -13,7 +14,7 @@ import { getStorage } from '@/lib/gcs';
  * - Keywords generation (Anthropic Claude Sonnet 4)
  * - Article generation for RSOC (Anthropic Claude Sonnet 4)
  * - Ad copy generation (Anthropic Claude Sonnet 4)
- * - Image generation (Google Vertex AI - Imagen 4 Fast)
+ * - Image generation (Google Gemini - Nano Banana Pro / gemini-2.0-flash-exp)
  * - Video generation (Google Vertex AI - Veo 3.1 Fast)
  */
 
@@ -138,6 +139,7 @@ function buildVideoThumbnailPrompt(params: UGCPromptParams): string {
 class AIService {
   private anthropic: Anthropic;
   private vertexAiClient: any;
+  private geminiClient: GoogleGenAI;
   private storage: Storage;
 
   constructor() {
@@ -146,7 +148,12 @@ class AIService {
       apiKey: env.ANTHROPIC_API_KEY,
     });
 
-    // Initialize Google Cloud clients with proper credentials
+    // Initialize Gemini client for image generation (Nano Banana Pro)
+    this.geminiClient = new GoogleGenAI({
+      apiKey: process.env.GOOGLE_AI_API_KEY || process.env.GEMINI_API_KEY || '',
+    });
+
+    // Initialize Google Cloud clients with proper credentials (for Veo video generation)
     const credentialsJson = process.env.GCP_SERVICE_ACCOUNT_KEY;
     let vertexAiOptions: any = {
       apiEndpoint: `${env.GCP_LOCATION}-aiplatform.googleapis.com`,
@@ -1250,78 +1257,88 @@ Return JSON:
   }
 
   // ============================================
-  // IMAGE GENERATION (Vertex AI - Imagen 4 Fast)
+  // IMAGE GENERATION (Google Gemini - Nano Banana Pro)
   // ============================================
 
   /**
-   * Generate image using Vertex AI Imagen 4 Fast
+   * Generate image using Google Gemini (Nano Banana Pro)
+   * Uses gemini-2.0-flash-exp for high-quality image generation with excellent text rendering
    */
   async generateImage(params: GenerateImageParams): Promise<{
     imageUrl: string;
     gcsPath: string;
   }> {
-    const project = env.GCP_PROJECT_ID;
-    const location = env.GCP_LOCATION;
-    const model = 'imagen-4.0-fast-generate-001';
+    const model = 'gemini-2.0-flash-exp'; // Nano Banana Pro model
 
-    const endpoint = `projects/${project}/locations/${location}/publishers/google/models/${model}`;
+    logger.info('ai', `Generating image with Gemini ${model}...`);
 
-    const instanceValue = helpers.toValue({
-      prompt: params.prompt,
-      negativePrompt: params.negativePrompt || '',
-      aspectRatio: params.aspectRatio || '1:1',
-      sampleCount: 1,
-    });
-
-    const instances = [instanceValue];
-    const request = {
-      endpoint,
-      instances,
-    };
-
-    const [response] = await this.vertexAiClient.predict(request);
-
-    // Get generated image (base64)
-    const predictions = response.predictions;
-    const imageBase64 = predictions[0].structValue?.fields?.bytesBase64Encoded?.stringValue;
-
-    if (!imageBase64) {
-      throw new Error('No image generated from Vertex AI');
-    }
-
-    // Convert base64 to buffer
-    const imageBuffer = Buffer.from(imageBase64, 'base64');
-
-    // Upload to Google Cloud Storage
-    const fileName = `generated-images/${Date.now()}-${Math.random().toString(36).substring(7)}.png`;
-    const bucket = this.storage.bucket(env.GCP_STORAGE_BUCKET);
-    const file = bucket.file(fileName);
-
-    await file.save(imageBuffer, {
-      contentType: 'image/png',
-      metadata: {
-        metadata: {
-          prompt: params.prompt,
-          model: model,
-          generatedAt: new Date().toISOString(),
+    try {
+      // Use Gemini API for image generation
+      const response = await this.geminiClient.models.generateContent({
+        model,
+        contents: params.prompt,
+        config: {
+          responseModalities: ['image', 'text'],
         },
-      },
-    });
+      });
 
-    // Generate signed URL (valid for 7 days) instead of makePublic()
-    // This works with Uniform Bucket-Level Access enabled
-    const [signedUrl] = await file.getSignedUrl({
-      version: 'v4',
-      action: 'read',
-      expires: Date.now() + 7 * 24 * 60 * 60 * 1000, // 7 days
-    });
+      // Extract image data from response
+      let imageBase64: string | undefined;
+      let mimeType = 'image/png';
 
-    const imageUrl = signedUrl;
+      if (response.candidates && response.candidates[0]?.content?.parts) {
+        for (const part of response.candidates[0].content.parts) {
+          if (part.inlineData) {
+            imageBase64 = part.inlineData.data;
+            mimeType = part.inlineData.mimeType || 'image/png';
+            break;
+          }
+        }
+      }
 
-    return {
-      imageUrl,
-      gcsPath: fileName,
-    };
+      if (!imageBase64) {
+        throw new Error('No image generated from Gemini API');
+      }
+
+      // Convert base64 to buffer
+      const imageBuffer = Buffer.from(imageBase64, 'base64');
+
+      // Determine file extension based on mime type
+      const extension = mimeType.includes('jpeg') || mimeType.includes('jpg') ? 'jpg' : 'png';
+
+      // Upload to Google Cloud Storage
+      const fileName = `generated-images/${Date.now()}-${Math.random().toString(36).substring(7)}.${extension}`;
+      const bucket = this.storage.bucket(env.GCP_STORAGE_BUCKET);
+      const file = bucket.file(fileName);
+
+      await file.save(imageBuffer, {
+        contentType: mimeType,
+        metadata: {
+          metadata: {
+            prompt: params.prompt,
+            model: model,
+            generatedAt: new Date().toISOString(),
+          },
+        },
+      });
+
+      // Generate signed URL (valid for 7 days)
+      const [signedUrl] = await file.getSignedUrl({
+        version: 'v4',
+        action: 'read',
+        expires: Date.now() + 7 * 24 * 60 * 60 * 1000, // 7 days
+      });
+
+      logger.success('ai', `Image generated successfully with Gemini ${model}`);
+
+      return {
+        imageUrl: signedUrl,
+        gcsPath: fileName,
+      };
+    } catch (error: any) {
+      logger.error('ai', `Gemini image generation failed: ${error.message}`);
+      throw error;
+    }
   }
 
   // ============================================
