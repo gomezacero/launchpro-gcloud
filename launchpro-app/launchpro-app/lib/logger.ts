@@ -6,8 +6,8 @@
 export interface LogEntry {
   id: string;
   timestamp: string;
-  level: 'info' | 'warn' | 'error' | 'success';
-  category: 'api' | 'tonic' | 'meta' | 'tiktok' | 'ai' | 'system' | 'email';
+  level: 'info' | 'warn' | 'error' | 'success' | 'debug';
+  category: 'api' | 'tonic' | 'meta' | 'tiktok' | 'ai' | 'system' | 'email' | 'ad-rules' | 'cron';
   message: string;
   details?: any;
   duration?: number;
@@ -57,6 +57,11 @@ class Logger {
       case 'success':
         console.log(`✅ ${consoleMessage}`, details || '');
         break;
+      case 'debug':
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`🔍 ${consoleMessage}`, details || '');
+        }
+        break;
       default:
         console.log(consoleMessage, details || '');
     }
@@ -78,6 +83,10 @@ class Logger {
 
   error(category: LogEntry['category'], message: string, details?: any) {
     return this.log('error', category, message, details);
+  }
+
+  debug(category: LogEntry['category'], message: string, details?: any) {
+    return this.log('debug', category, message, details);
   }
 
   getLogs(options?: {
@@ -115,6 +124,7 @@ class Logger {
         warn: 0,
         error: 0,
         success: 0,
+        debug: 0,
       },
       byCategory: {
         api: 0,
@@ -124,6 +134,8 @@ class Logger {
         ai: 0,
         system: 0,
         email: 0,
+        'ad-rules': 0,
+        cron: 0,
       },
     };
 

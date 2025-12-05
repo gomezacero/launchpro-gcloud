@@ -8,6 +8,7 @@ import { useSession, signOut } from 'next-auth/react';
 const navigation = [
   { name: 'Campaigns', href: '/campaigns', icon: '📋' },
   { name: 'New Campaign', href: '/campaigns/new', icon: '🚀' },
+  { name: 'Reglas', href: '/rules', icon: '⚡' },
   { name: 'Logs', href: '/logs', icon: '📝' },
   { name: 'Settings', href: '/settings', icon: '⚙️' },
 ];

@@ -90,6 +90,9 @@ model Account {
   campaignsAsMeta  CampaignPlatform[] @relation("MetaAccount")
   campaignsAsTikTok CampaignPlatform[] @relation("TikTokAccount")
 
+  // Ad Rules
+  adRules          AdRule[]
+
   // Status
   isActive Boolean @default(true)
 
@@ -344,4 +347,121 @@ model InvitationCode {
 
   @@index([code])
   @@index([used])
+}
+
+// ============================================
+// AD RULES - Automated Rules for Meta Ads
+// ============================================
+
+enum AdRuleLevel {
+  CAMPAIGN
+  AD_SET
+  AD
+}
+
+enum AdRuleMetric {
+  ROAS           // Return on Ad Spend (primary)
+  CPA            // Cost per Action
+  CPM            // Cost per 1000 impressions
+  CPC            // Cost per Click
+  CTR            // Click-through Rate
+  SPEND          // Total spend
+  IMPRESSIONS    // Total impressions
+  CLICKS         // Total clicks
+  CONVERSIONS    // Total conversions
+}
+
+enum AdRuleOperator {
+  GREATER_THAN
+  LESS_THAN
+  BETWEEN
+  NOT_BETWEEN
+}
+
+enum AdRuleAction {
+  NOTIFY
+  PAUSE
+  UNPAUSE
+  INCREASE_BUDGET
+  DECREASE_BUDGET
+}
+
+model AdRule {
+  id              String         @id @default(cuid())
+  name            String
+  isActive        Boolean        @default(true)
+
+  // Scope - what level this rule applies to
+  level           AdRuleLevel
+
+  // Target - which Meta entity IDs this applies to
+  // If empty, applies to ALL active entities of that level
+  targetIds       String[]       @default([])
+
+  // Account - which Meta account this rule belongs to
+  metaAccountId   String
+  metaAccount     Account        @relation(fields: [metaAccountId], references: [id])
+
+  // Condition
+  metric          AdRuleMetric
+  operator        AdRuleOperator
+  value           Float          // Value for >, <
+  valueMin        Float?         // Min value for BETWEEN/NOT_BETWEEN
+  valueMax        Float?         // Max value for BETWEEN/NOT_BETWEEN
+  timeWindow      String         @default("TODAY") // TODAY, LAST_7D, LAST_14D, LAST_30D
+
+  // Action
+  action          AdRuleAction
+  actionValue     Float?         // Percentage or fixed amount for budget changes
+  actionValueType String?        // PERCENTAGE or FIXED
+  notifyEmails    String[]       @default([]) // Emails for notification
+
+  // Schedule
+  scheduleHours   Int[]          @default([]) // Hours of day (0-23), empty = all
+  scheduleDays    Int[]          @default([]) // Days of week (0=Sun, 6=Sat), empty = all
+
+  // Execution control
+  lastCheckedAt   DateTime?
+  lastTriggeredAt DateTime?
+  executionCount  Int            @default(0)
+
+  // Limits
+  cooldownMinutes Int            @default(60) // Min time between executions
+  maxExecutions   Int?           // Max executions (null = unlimited)
+
+  // History
+  executions      AdRuleExecution[]
+
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([metaAccountId])
+  @@index([isActive])
+  @@index([level])
+}
+
+model AdRuleExecution {
+  id              String    @id @default(cuid())
+  ruleId          String
+  rule            AdRule    @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  // Which entity triggered the rule
+  targetType      String    // CAMPAIGN, AD_SET, AD
+  targetId        String    // Meta ID of the entity
+  targetName      String?   // Name for reference
+
+  // Values at execution time
+  metricValue     Float     // Metric value that triggered the rule
+  conditionMet    Boolean   // Whether condition was met
+
+  // Result
+  actionTaken     String    // The action that was taken
+  actionResult    String?   // Success, error, etc.
+  actionDetails   Json?     // Additional details (e.g., previous/new budget)
+
+  executedAt      DateTime  @default(now())
+
+  @@index([ruleId])
+  @@index([executedAt])
+  @@index([targetId])
 }

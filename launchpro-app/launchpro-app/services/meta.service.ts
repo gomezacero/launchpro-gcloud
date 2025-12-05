@@ -874,6 +874,307 @@ class MetaService {
     }
   }
 
+  // ============================================
+  // AD RULES - Entity Management & Insights
+  // ============================================
+
+  /**
+   * Get insights for a specific entity (campaign, ad set, or ad)
+   * Used by the ad rules system to evaluate conditions
+   * @param entityId The entity ID (campaign, ad set, or ad)
+   * @param level The entity level ('campaign', 'adset', 'ad')
+   * @param datePreset Time window for insights
+   * @param accessToken Optional access token
+   */
+  async getEntityInsights(
+    entityId: string,
+    level: 'campaign' | 'adset' | 'ad',
+    datePreset: string = 'today',
+    accessToken?: string
+  ): Promise<{
+    spend: number;
+    impressions: number;
+    clicks: number;
+    cpc: number;
+    cpm: number;
+    ctr: number;
+    conversions: number;
+    conversionValue: number;
+    roas: number;
+    cpa: number;
+  } | null> {
+    try {
+      const client = this.getClient(accessToken);
+
+      // Map date preset to Meta API format
+      const datePresetMap: Record<string, string> = {
+        'TODAY': 'today',
+        'LAST_7D': 'last_7d',
+        'LAST_14D': 'last_14d',
+        'LAST_30D': 'last_30d',
+      };
+      const metaDatePreset = datePresetMap[datePreset] || datePreset.toLowerCase();
+
+      const response = await client.get(`/${entityId}/insights`, {
+        params: {
+          date_preset: metaDatePreset,
+          fields: 'spend,impressions,clicks,cpc,cpm,ctr,actions,action_values,purchase_roas',
+        },
+      });
+
+      const data = response.data?.data?.[0];
+      if (!data) {
+        console.log(`[META] No insights data for ${level} ${entityId}`);
+        return null;
+      }
+
+      // Extract metrics
+      const spend = parseFloat(data.spend || '0');
+      const impressions = parseInt(data.impressions || '0');
+      const clicks = parseInt(data.clicks || '0');
+      const cpc = parseFloat(data.cpc || '0');
+      const cpm = parseFloat(data.cpm || '0');
+      const ctr = parseFloat(data.ctr || '0');
+
+      // Extract conversions from actions array
+      let conversions = 0;
+      let conversionValue = 0;
+
+      if (data.actions) {
+        // Look for purchase, lead, or other conversion actions
+        const conversionAction = data.actions.find((a: any) =>
+          a.action_type === 'purchase' ||
+          a.action_type === 'lead' ||
+          a.action_type === 'omni_purchase'
+        );
+        if (conversionAction) {
+          conversions = parseInt(conversionAction.value || '0');
+        }
+      }
+
+      if (data.action_values) {
+        // Look for purchase value
+        const purchaseValue = data.action_values.find((a: any) =>
+          a.action_type === 'purchase' ||
+          a.action_type === 'omni_purchase'
+        );
+        if (purchaseValue) {
+          conversionValue = parseFloat(purchaseValue.value || '0');
+        }
+      }
+
+      // Calculate ROAS - use Meta's purchase_roas if available, otherwise calculate
+      let roas = 0;
+      if (data.purchase_roas && data.purchase_roas.length > 0) {
+        roas = parseFloat(data.purchase_roas[0].value || '0');
+      } else if (spend > 0 && conversionValue > 0) {
+        roas = conversionValue / spend;
+      }
+
+      // Calculate CPA
+      const cpa = conversions > 0 ? spend / conversions : 0;
+
+      console.log(`[META] Insights for ${level} ${entityId}:`, {
+        spend,
+        impressions,
+        clicks,
+        roas,
+        cpa,
+        conversions,
+      });
+
+      return {
+        spend,
+        impressions,
+        clicks,
+        cpc,
+        cpm,
+        ctr,
+        conversions,
+        conversionValue,
+        roas,
+        cpa,
+      };
+    } catch (error: any) {
+      console.error(`[META] ❌ Failed to get insights for ${level} ${entityId}:`, error.message);
+      if (error.response?.data?.error) {
+        console.error(`[META] Error details:`, JSON.stringify(error.response.data.error, null, 2));
+      }
+      return null;
+    }
+  }
+
+  /**
+   * Get all active campaigns for an ad account
+   * Used by ad rules to get all entities to evaluate
+   */
+  async getActiveCampaigns(adAccountId: string, accessToken?: string): Promise<Array<{ id: string; name: string; status: string; daily_budget?: string; lifetime_budget?: string }>> {
+    try {
+      const client = this.getClient(accessToken);
+      const response = await client.get(`/${adAccountId}/campaigns`, {
+        params: {
+          fields: 'id,name,status,daily_budget,lifetime_budget',
+          filtering: JSON.stringify([{ field: 'effective_status', operator: 'IN', value: ['ACTIVE'] }]),
+          limit: 500,
+        },
+      });
+
+      return response.data?.data || [];
+    } catch (error: any) {
+      console.error(`[META] ❌ Failed to get active campaigns:`, error.message);
+      return [];
+    }
+  }
+
+  /**
+   * Get all active ad sets for an ad account
+   */
+  async getActiveAdSets(adAccountId: string, accessToken?: string): Promise<Array<{ id: string; name: string; status: string; campaign_id: string; daily_budget?: string; lifetime_budget?: string }>> {
+    try {
+      const client = this.getClient(accessToken);
+      const response = await client.get(`/${adAccountId}/adsets`, {
+        params: {
+          fields: 'id,name,status,campaign_id,daily_budget,lifetime_budget',
+          filtering: JSON.stringify([{ field: 'effective_status', operator: 'IN', value: ['ACTIVE'] }]),
+          limit: 500,
+        },
+      });
+
+      return response.data?.data || [];
+    } catch (error: any) {
+      console.error(`[META] ❌ Failed to get active ad sets:`, error.message);
+      return [];
+    }
+  }
+
+  /**
+   * Get all active ads for an ad account
+   */
+  async getActiveAds(adAccountId: string, accessToken?: string): Promise<Array<{ id: string; name: string; status: string; adset_id: string }>> {
+    try {
+      const client = this.getClient(accessToken);
+      const response = await client.get(`/${adAccountId}/ads`, {
+        params: {
+          fields: 'id,name,status,adset_id',
+          filtering: JSON.stringify([{ field: 'effective_status', operator: 'IN', value: ['ACTIVE'] }]),
+          limit: 500,
+        },
+      });
+
+      return response.data?.data || [];
+    } catch (error: any) {
+      console.error(`[META] ❌ Failed to get active ads:`, error.message);
+      return [];
+    }
+  }
+
+  /**
+   * Pause an entity (campaign, ad set, or ad)
+   */
+  async pauseEntity(entityId: string, accessToken?: string): Promise<boolean> {
+    try {
+      const client = this.getClient(accessToken);
+      await client.post(`/${entityId}`, { status: 'PAUSED' });
+      console.log(`[META] ✅ Paused entity ${entityId}`);
+      return true;
+    } catch (error: any) {
+      console.error(`[META] ❌ Failed to pause entity ${entityId}:`, error.message);
+      if (error.response?.data?.error) {
+        console.error(`[META] Error details:`, JSON.stringify(error.response.data.error, null, 2));
+      }
+      return false;
+    }
+  }
+
+  /**
+   * Unpause (activate) an entity (campaign, ad set, or ad)
+   */
+  async unpauseEntity(entityId: string, accessToken?: string): Promise<boolean> {
+    try {
+      const client = this.getClient(accessToken);
+      await client.post(`/${entityId}`, { status: 'ACTIVE' });
+      console.log(`[META] ✅ Unpaused entity ${entityId}`);
+      return true;
+    } catch (error: any) {
+      console.error(`[META] ❌ Failed to unpause entity ${entityId}:`, error.message);
+      if (error.response?.data?.error) {
+        console.error(`[META] Error details:`, JSON.stringify(error.response.data.error, null, 2));
+      }
+      return false;
+    }
+  }
+
+  /**
+   * Update budget for a campaign (CBO) or ad set (ABO)
+   * @param entityId Campaign or Ad Set ID
+   * @param newBudget New budget in cents
+   * @param budgetType 'daily' or 'lifetime'
+   */
+  async updateBudget(
+    entityId: string,
+    newBudget: number,
+    budgetType: 'daily' | 'lifetime' = 'daily',
+    accessToken?: string
+  ): Promise<{ success: boolean; previousBudget?: number; newBudget?: number }> {
+    try {
+      const client = this.getClient(accessToken);
+
+      // First get current budget
+      const currentResponse = await client.get(`/${entityId}`, {
+        params: {
+          fields: 'daily_budget,lifetime_budget',
+        },
+      });
+
+      const previousBudget = budgetType === 'daily'
+        ? parseInt(currentResponse.data?.daily_budget || '0')
+        : parseInt(currentResponse.data?.lifetime_budget || '0');
+
+      // Update budget
+      const updatePayload = budgetType === 'daily'
+        ? { daily_budget: newBudget }
+        : { lifetime_budget: newBudget };
+
+      await client.post(`/${entityId}`, updatePayload);
+
+      console.log(`[META] ✅ Updated ${budgetType} budget for ${entityId}: ${previousBudget} -> ${newBudget}`);
+
+      return {
+        success: true,
+        previousBudget,
+        newBudget,
+      };
+    } catch (error: any) {
+      console.error(`[META] ❌ Failed to update budget for ${entityId}:`, error.message);
+      if (error.response?.data?.error) {
+        console.error(`[META] Error details:`, JSON.stringify(error.response.data.error, null, 2));
+      }
+      return { success: false };
+    }
+  }
+
+  /**
+   * Get budget information for an entity
+   */
+  async getBudgetInfo(entityId: string, accessToken?: string): Promise<{ daily_budget?: number; lifetime_budget?: number } | null> {
+    try {
+      const client = this.getClient(accessToken);
+      const response = await client.get(`/${entityId}`, {
+        params: {
+          fields: 'daily_budget,lifetime_budget',
+        },
+      });
+
+      return {
+        daily_budget: response.data?.daily_budget ? parseInt(response.data.daily_budget) : undefined,
+        lifetime_budget: response.data?.lifetime_budget ? parseInt(response.data.lifetime_budget) : undefined,
+      };
+    } catch (error: any) {
+      console.error(`[META] ❌ Failed to get budget info for ${entityId}:`, error.message);
+      return null;
+    }
+  }
+
 }
 
 // Export singleton instance

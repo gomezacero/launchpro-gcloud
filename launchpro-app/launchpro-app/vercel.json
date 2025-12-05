@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/process-campaigns",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/evaluate-rules",
+      "schedule": "*/15 * * * *"
     }
   ],
   "functions": {
@@ -18,6 +22,9 @@
     },
     "app/api/cron/process-campaigns/route.ts": {
       "maxDuration": 800
+    },
+    "app/api/cron/evaluate-rules/route.ts": {
+      "maxDuration": 300
     }
   }
 }
