@@ -227,9 +227,22 @@ class CampaignOrchestratorService {
         where: { tonicId: params.offerId },
       });
 
+      // Log all offer fields from Tonic to debug vertical field name
+      logger.info('tonic', 'Tonic offer data received:', {
+        id: offer.id,
+        name: offer.name,
+        vertical: offer.vertical,
+        category: offer.category,
+        niche: offer.niche,
+        offer_vertical: offer.offer_vertical,
+        type: offer.type,
+        allFields: Object.keys(offer),
+      });
+
+      // Tonic API may return vertical in different fields
+      const offerVertical = offer.vertical || offer.category || offer.niche || offer.offer_vertical || offer.type || 'Unknown';
+
       if (!dbOffer) {
-        // Tonic API may return vertical in different fields: 'vertical', 'category', or 'niche'
-        const offerVertical = offer.vertical || offer.category || offer.niche || 'Unknown';
         dbOffer = await prisma.offer.create({
           data: {
             tonicId: params.offerId,
@@ -237,7 +250,14 @@ class CampaignOrchestratorService {
             vertical: offerVertical,
           },
         });
-        logger.info('system', 'Created new offer in database', { offerId: dbOffer.id, name: offer.name });
+        logger.info('system', 'Created new offer in database', { offerId: dbOffer.id, name: offer.name, vertical: offerVertical });
+      } else if (dbOffer.vertical === 'Unknown' || dbOffer.vertical === 'General' || !dbOffer.vertical) {
+        // Update existing offer if vertical is missing or generic
+        dbOffer = await prisma.offer.update({
+          where: { id: dbOffer.id },
+          data: { vertical: offerVertical },
+        });
+        logger.info('system', 'Updated offer vertical in database', { offerId: dbOffer.id, vertical: offerVertical });
       }
 
       // ============================================
@@ -2870,15 +2890,32 @@ class CampaignOrchestratorService {
 
     // Get or create offer
     let offer = await prisma.offer.findUnique({ where: { tonicId: params.offerId } });
+
+    // Fetch offer details from Tonic to get/update vertical
+    const tonicOffers = await tonicService.getOffers(credentials, 'display');
+    const tonicOffer = tonicOffers.find((o: any) => o.id == params.offerId);
+
+    if (tonicOffer) {
+      // Log all offer fields from Tonic to debug vertical field name
+      logger.info('tonic', 'Tonic offer data received (simple launch):', {
+        id: tonicOffer.id,
+        name: tonicOffer.name,
+        vertical: tonicOffer.vertical,
+        category: tonicOffer.category,
+        niche: tonicOffer.niche,
+        offer_vertical: tonicOffer.offer_vertical,
+        type: tonicOffer.type,
+        allFields: Object.keys(tonicOffer),
+      });
+    }
+
+    // Tonic API may return vertical in different fields
+    const offerVertical = tonicOffer?.vertical || tonicOffer?.category || tonicOffer?.niche || tonicOffer?.offer_vertical || tonicOffer?.type || 'General';
+
     if (!offer) {
-      // Fetch from Tonic and create
-      const tonicOffers = await tonicService.getOffers(credentials, 'display');
-      const tonicOffer = tonicOffers.find((o: any) => o.id == params.offerId);
       if (!tonicOffer) {
         throw new Error(`Offer ${params.offerId} not found in Tonic`);
       }
-      // Tonic API may return vertical in different fields: 'vertical', 'category', or 'niche'
-      const offerVertical = tonicOffer.vertical || tonicOffer.category || tonicOffer.niche || 'General';
       offer = await prisma.offer.create({
         data: {
           tonicId: params.offerId,
@@ -2887,6 +2924,14 @@ class CampaignOrchestratorService {
           description: tonicOffer.description,
         },
       });
+      logger.info('system', 'Created new offer in database', { offerId: offer.id, vertical: offerVertical });
+    } else if (offer.vertical === 'Unknown' || offer.vertical === 'General' || !offer.vertical) {
+      // Update existing offer if vertical is missing or generic
+      offer = await prisma.offer.update({
+        where: { id: offer.id },
+        data: { vertical: offerVertical },
+      });
+      logger.info('system', 'Updated offer vertical in database', { offerId: offer.id, vertical: offerVertical });
     }
 
     // Detect campaign type (RSOC vs Display)
