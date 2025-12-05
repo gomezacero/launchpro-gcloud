@@ -105,16 +105,19 @@ export default function RulesPage() {
   const fetchRules = async () => {
     try {
       setLoading(true);
+      setError(null);
       const response = await fetch('/api/rules');
       const data = await response.json();
 
-      if (data.success) {
+      if (data.success && Array.isArray(data.data)) {
         setRules(data.data);
       } else {
         setError(data.error || 'Error al cargar las reglas');
+        setRules([]);
       }
     } catch (err: any) {
       setError(err.message || 'Error al cargar las reglas');
+      setRules([]);
     } finally {
       setLoading(false);
     }
