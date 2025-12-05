@@ -9,24 +9,38 @@ interface MetaAccount {
   metaAdAccountId: string;
 }
 
+interface Campaign {
+  id: string;
+  name: string;
+  status: string;
+}
+
 interface RuleFormData {
   name: string;
   isActive: boolean;
   metaAccountId: string;
   level: string;
   targetIds: string[];
+  // Campaign scope
+  applyToAllCampaigns: boolean;
+  specificCampaignId: string;
+  // Condition
   metric: string;
   operator: string;
   value: string;
   valueMin: string;
   valueMax: string;
-  timeWindow: string;
+  // Frequency
+  frequencyHours: string;
+  // Action
   action: string;
   actionValue: string;
   actionValueType: string;
   notifyEmails: string;
+  // Schedule
   scheduleHours: number[];
   scheduleDays: number[];
+  // Limits
   cooldownMinutes: string;
   maxExecutions: string;
 }
@@ -70,11 +84,15 @@ const LEVELS = [
   { value: 'AD', label: 'Anuncio' },
 ];
 
-const TIME_WINDOWS = [
-  { value: 'TODAY', label: 'Hoy' },
-  { value: 'LAST_7D', label: 'Ultimos 7 dias' },
-  { value: 'LAST_14D', label: 'Ultimos 14 dias' },
-  { value: 'LAST_30D', label: 'Ultimos 30 dias' },
+const FREQUENCY_OPTIONS = [
+  { value: '1', label: 'Cada hora' },
+  { value: '2', label: 'Cada 2 horas' },
+  { value: '3', label: 'Cada 3 horas' },
+  { value: '4', label: 'Cada 4 horas' },
+  { value: '6', label: 'Cada 6 horas' },
+  { value: '8', label: 'Cada 8 horas' },
+  { value: '12', label: 'Cada 12 horas' },
+  { value: '24', label: 'Cada 24 horas (1 vez al dia)' },
 ];
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
@@ -94,6 +112,8 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
   const [error, setError] = useState<string | null>(null);
   const [metaAccounts, setMetaAccounts] = useState<MetaAccount[]>([]);
   const [loadingAccounts, setLoadingAccounts] = useState(true);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [loadingCampaigns, setLoadingCampaigns] = useState(false);
 
   const [formData, setFormData] = useState<RuleFormData>({
     name: initialData?.name || '',
@@ -101,12 +121,14 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
     metaAccountId: initialData?.metaAccountId || '',
     level: initialData?.level || 'CAMPAIGN',
     targetIds: initialData?.targetIds || [],
+    applyToAllCampaigns: initialData?.applyToAllCampaigns ?? false,
+    specificCampaignId: initialData?.specificCampaignId || '',
     metric: initialData?.metric || 'ROAS',
     operator: initialData?.operator || 'LESS_THAN',
     value: initialData?.value || '',
     valueMin: initialData?.valueMin || '',
     valueMax: initialData?.valueMax || '',
-    timeWindow: initialData?.timeWindow || 'TODAY',
+    frequencyHours: initialData?.frequencyHours || '3',
     action: initialData?.action || 'NOTIFY',
     actionValue: initialData?.actionValue || '',
     actionValueType: initialData?.actionValueType || 'PERCENTAGE',
@@ -121,17 +143,22 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
     fetchMetaAccounts();
   }, []);
 
+  // Fetch campaigns when Meta account changes or when form mounts
+  useEffect(() => {
+    if (formData.metaAccountId) {
+      fetchCampaigns(formData.metaAccountId);
+    }
+  }, [formData.metaAccountId]);
+
   const fetchMetaAccounts = async () => {
     try {
       const response = await fetch('/api/accounts?type=META');
       const data = await response.json();
 
-      // The API returns { success: true, data: { meta: [...] } } for type=META
       const accounts = data.data?.meta || data.data || [];
 
       if (data.success && Array.isArray(accounts)) {
         setMetaAccounts(accounts);
-        // Set first account as default if not editing
         if (!initialData?.metaAccountId && accounts.length > 0) {
           setFormData(prev => ({ ...prev, metaAccountId: accounts[0].id }));
         }
@@ -144,6 +171,32 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
       setMetaAccounts([]);
     } finally {
       setLoadingAccounts(false);
+    }
+  };
+
+  const fetchCampaigns = async (accountId: string) => {
+    setLoadingCampaigns(true);
+    try {
+      // Fetch ACTIVE campaigns that have Meta platform configured with this account
+      const response = await fetch(`/api/campaigns?status=ACTIVE`);
+      const data = await response.json();
+
+      if (data.success && Array.isArray(data.data)) {
+        // Filter campaigns that have this Meta account
+        const filteredCampaigns = data.data.filter((campaign: any) => {
+          return campaign.platforms?.some((p: any) =>
+            p.platform === 'META' && p.metaAccountId === accountId
+          );
+        });
+        setCampaigns(filteredCampaigns);
+      } else {
+        setCampaigns([]);
+      }
+    } catch (err) {
+      console.error('Error fetching campaigns:', err);
+      setCampaigns([]);
+    } finally {
+      setLoadingCampaigns(false);
     }
   };
 
@@ -163,6 +216,9 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
       if (!formData.metaAccountId) {
         throw new Error('Selecciona una cuenta Meta');
       }
+      if (!formData.applyToAllCampaigns && !formData.specificCampaignId) {
+        throw new Error('Selecciona una campana especifica o marca "Aplicar a todas las campanas"');
+      }
 
       // Prepare data
       const payload = {
@@ -171,12 +227,14 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
         metaAccountId: formData.metaAccountId,
         level: formData.level,
         targetIds: formData.targetIds,
+        applyToAllCampaigns: formData.applyToAllCampaigns,
+        specificCampaignId: formData.applyToAllCampaigns ? null : formData.specificCampaignId,
         metric: formData.metric,
         operator: formData.operator,
         value: parseFloat(formData.value) || 0,
         valueMin: selectedOperator?.needsRange ? (parseFloat(formData.valueMin) || 0) : null,
         valueMax: selectedOperator?.needsRange ? (parseFloat(formData.valueMax) || 0) : null,
-        timeWindow: formData.timeWindow,
+        frequencyHours: parseInt(formData.frequencyHours) || 3,
         action: formData.action,
         actionValue: selectedAction?.needsValue ? (parseFloat(formData.actionValue) || 0) : null,
         actionValueType: selectedAction?.needsValue ? formData.actionValueType : null,
@@ -284,7 +342,7 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
             ) : (
               <select
                 value={formData.metaAccountId}
-                onChange={e => setFormData({ ...formData, metaAccountId: e.target.value })}
+                onChange={e => setFormData({ ...formData, metaAccountId: e.target.value, specificCampaignId: '' })}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="">Seleccionar cuenta...</option>
@@ -313,9 +371,85 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
               ))}
             </select>
             <p className="text-xs text-gray-500 mt-1">
-              La regla se aplicara a todas las entidades activas de este nivel
+              La regla se aplicara a las entidades de este nivel dentro de la campana seleccionada
             </p>
           </div>
+        </div>
+      </div>
+
+      {/* Campaign Scope - NEW SECTION */}
+      <div className="bg-white rounded-xl shadow-sm p-6">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Alcance de la Regla</h2>
+        <div className="space-y-4">
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+            <p className="text-sm text-yellow-800">
+              <strong>Importante:</strong> Durante el periodo de pruebas, se recomienda aplicar las reglas a campanas especificas para evitar cambios no deseados.
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            <label className="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+              <input
+                type="radio"
+                name="campaignScope"
+                checked={!formData.applyToAllCampaigns}
+                onChange={() => setFormData({ ...formData, applyToAllCampaigns: false })}
+                className="w-4 h-4 text-blue-600"
+              />
+              <div>
+                <span className="font-medium text-gray-900">Campana especifica</span>
+                <p className="text-xs text-gray-500">La regla solo se aplicara a una campana seleccionada</p>
+              </div>
+            </label>
+
+            <label className="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+              <input
+                type="radio"
+                name="campaignScope"
+                checked={formData.applyToAllCampaigns}
+                onChange={() => setFormData({ ...formData, applyToAllCampaigns: true, specificCampaignId: '' })}
+                className="w-4 h-4 text-blue-600"
+              />
+              <div>
+                <span className="font-medium text-gray-900">Todas las campanas</span>
+                <p className="text-xs text-gray-500">La regla se aplicara a todas las campanas activas de esta cuenta</p>
+              </div>
+            </label>
+          </div>
+
+          {/* Campaign Selector - Only shown when specific campaign is selected */}
+          {!formData.applyToAllCampaigns && formData.metaAccountId && (
+            <div className="mt-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Seleccionar Campana *
+              </label>
+              {loadingCampaigns ? (
+                <div className="w-full px-4 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-500">
+                  Cargando campanas activas...
+                </div>
+              ) : campaigns.length === 0 ? (
+                <div className="w-full px-4 py-2 border border-yellow-200 rounded-lg bg-yellow-50 text-yellow-700">
+                  No hay campanas activas con esta cuenta Meta
+                </div>
+              ) : (
+                <select
+                  value={formData.specificCampaignId}
+                  onChange={e => setFormData({ ...formData, specificCampaignId: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="">Seleccionar campana...</option>
+                  {campaigns.map(campaign => (
+                    <option key={campaign.id} value={campaign.id}>
+                      {campaign.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <p className="text-xs text-gray-500 mt-1">
+                Solo se muestran campanas ACTIVAS que usan esta cuenta Meta
+              </p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -404,23 +538,6 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
               />
             </div>
           )}
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Ventana de tiempo
-            </label>
-            <select
-              value={formData.timeWindow}
-              onChange={e => setFormData({ ...formData, timeWindow: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              {TIME_WINDOWS.map(tw => (
-                <option key={tw.value} value={tw.value}>
-                  {tw.label}
-                </option>
-              ))}
-            </select>
-          </div>
         </div>
       </div>
 
@@ -496,18 +613,43 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
         </div>
       </div>
 
-      {/* Schedule */}
+      {/* Schedule & Frequency */}
       <div className="bg-white rounded-xl shadow-sm p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Programacion</h2>
-        <p className="text-sm text-gray-600 mb-4">
-          Si no seleccionas horas o dias, la regla se evaluara en todo momento.
-        </p>
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Programacion y Frecuencia</h2>
+
+        {/* Frequency - NEW */}
+        <div className="mb-6">
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Frecuencia de ejecucion *
+          </label>
+          <select
+            value={formData.frequencyHours}
+            onChange={e => setFormData({ ...formData, frequencyHours: e.target.value })}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          >
+            {FREQUENCY_OPTIONS.map(freq => (
+              <option key={freq.value} value={freq.value}>
+                {freq.label}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-gray-500 mt-1">
+            Define cada cuanto tiempo se ejecutara la regla a partir de la hora de inicio programada
+          </p>
+        </div>
+
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+          <p className="text-sm text-blue-800">
+            <strong>Ejemplo:</strong> Si seleccionas &quot;Cada 3 horas&quot;, dias Martes y Jueves, y hora de inicio 6:00 UTC,
+            la regla se ejecutara los Martes y Jueves a las 6:00, 9:00, 12:00, 15:00, 18:00 y 21:00 UTC.
+          </p>
+        </div>
 
         <div className="space-y-4">
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="block text-sm font-medium text-gray-700">
-                Horas (UTC)
+                Hora de inicio (UTC)
               </label>
               <button
                 type="button"
@@ -517,6 +659,9 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
                 {formData.scheduleHours.length === 24 ? 'Deseleccionar todas' : 'Seleccionar todas'}
               </button>
             </div>
+            <p className="text-xs text-gray-500 mb-2">
+              Selecciona la(s) hora(s) a partir de las cuales la regla comenzara a ejecutarse segun la frecuencia
+            </p>
             <div className="grid grid-cols-12 gap-1">
               {HOURS.map(hour => (
                 <button
@@ -548,6 +693,9 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
                 {formData.scheduleDays.length === 7 ? 'Deseleccionar todos' : 'Seleccionar todos'}
               </button>
             </div>
+            <p className="text-xs text-gray-500 mb-2">
+              Selecciona los dias en que la regla estara activa
+            </p>
             <div className="flex gap-2">
               {DAYS.map(day => (
                 <button
@@ -584,7 +732,7 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
               placeholder="60"
             />
             <p className="text-xs text-gray-500 mt-1">
-              Tiempo minimo entre ejecuciones
+              Tiempo minimo entre ejecuciones para la misma entidad
             </p>
           </div>
           <div>

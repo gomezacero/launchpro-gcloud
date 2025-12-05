@@ -37,6 +37,12 @@ export async function GET(request: NextRequest) {
             metaAdAccountId: true,
           },
         },
+        specificCampaign: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
         executions: {
           take: 5,
           orderBy: { executedAt: 'desc' },
@@ -155,6 +161,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Validate campaign scope
+    if (!body.applyToAllCampaigns && !body.specificCampaignId) {
+      return NextResponse.json(
+        { success: false, error: 'Must select a specific campaign or apply to all campaigns' },
+        { status: 400 }
+      );
+    }
+
+    // Verify specific campaign exists if selected
+    if (body.specificCampaignId) {
+      const campaign = await prisma.campaign.findUnique({
+        where: { id: body.specificCampaignId },
+      });
+      if (!campaign) {
+        return NextResponse.json(
+          { success: false, error: 'Selected campaign not found' },
+          { status: 404 }
+        );
+      }
+    }
+
     // Create the rule
     const rule = await prisma.adRule.create({
       data: {
@@ -162,13 +189,16 @@ export async function POST(request: NextRequest) {
         isActive: body.isActive ?? true,
         level: body.level as AdRuleLevel,
         targetIds: body.targetIds || [],
+        applyToAllCampaigns: body.applyToAllCampaigns ?? false,
+        specificCampaignId: body.applyToAllCampaigns ? null : (body.specificCampaignId || null),
         metaAccountId: body.metaAccountId,
         metric: body.metric as AdRuleMetric,
         operator: body.operator as AdRuleOperator,
         value: parseFloat(body.value),
         valueMin: body.valueMin !== undefined ? parseFloat(body.valueMin) : null,
         valueMax: body.valueMax !== undefined ? parseFloat(body.valueMax) : null,
-        timeWindow: body.timeWindow || 'TODAY',
+        frequencyHours: body.frequencyHours || 3,
+        timeWindow: body.timeWindow || 'TODAY', // Keep for backward compatibility
         action: body.action as AdRuleAction,
         actionValue: body.actionValue !== undefined ? parseFloat(body.actionValue) : null,
         actionValueType: body.actionValueType || null,
@@ -184,6 +214,12 @@ export async function POST(request: NextRequest) {
             id: true,
             name: true,
             metaAdAccountId: true,
+          },
+        },
+        specificCampaign: {
+          select: {
+            id: true,
+            name: true,
           },
         },
       },

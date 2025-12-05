@@ -28,6 +28,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             metaAdAccountId: true,
           },
         },
+        specificCampaign: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
         executions: {
           take: 50,
           orderBy: { executedAt: 'desc' },
@@ -123,12 +129,17 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     if (body.isActive !== undefined) updateData.isActive = body.isActive;
     if (body.level !== undefined) updateData.level = body.level;
     if (body.targetIds !== undefined) updateData.targetIds = body.targetIds;
+    if (body.applyToAllCampaigns !== undefined) updateData.applyToAllCampaigns = body.applyToAllCampaigns;
+    if (body.specificCampaignId !== undefined) {
+      updateData.specificCampaignId = body.applyToAllCampaigns ? null : (body.specificCampaignId || null);
+    }
     if (body.metaAccountId !== undefined) updateData.metaAccountId = body.metaAccountId;
     if (body.metric !== undefined) updateData.metric = body.metric;
     if (body.operator !== undefined) updateData.operator = body.operator;
     if (body.value !== undefined) updateData.value = parseFloat(body.value);
     if (body.valueMin !== undefined) updateData.valueMin = body.valueMin !== null ? parseFloat(body.valueMin) : null;
     if (body.valueMax !== undefined) updateData.valueMax = body.valueMax !== null ? parseFloat(body.valueMax) : null;
+    if (body.frequencyHours !== undefined) updateData.frequencyHours = body.frequencyHours;
     if (body.timeWindow !== undefined) updateData.timeWindow = body.timeWindow;
     if (body.action !== undefined) updateData.action = body.action;
     if (body.actionValue !== undefined) updateData.actionValue = body.actionValue !== null ? parseFloat(body.actionValue) : null;
@@ -148,6 +159,12 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
             id: true,
             name: true,
             metaAdAccountId: true,
+          },
+        },
+        specificCampaign: {
+          select: {
+            id: true,
+            name: true,
           },
         },
       },

@@ -144,6 +144,9 @@ model Campaign {
   // Error details (when status is FAILED)
   errorDetails      Json?              // { step, message, timestamp, platform?, technicalDetails? }
 
+  // Ad Rules that target this specific campaign
+  adRules           AdRule[]
+
   // Metadata
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
@@ -398,6 +401,11 @@ model AdRule {
   // If empty, applies to ALL active entities of that level
   targetIds       String[]       @default([])
 
+  // Campaign Scope - apply to all campaigns or specific one
+  applyToAllCampaigns  Boolean   @default(false)  // false = specific campaign, true = all campaigns
+  specificCampaignId   String?   // Campaign ID if applyToAllCampaigns is false
+  specificCampaign     Campaign? @relation(fields: [specificCampaignId], references: [id])
+
   // Account - which Meta account this rule belongs to
   metaAccountId   String
   metaAccount     Account        @relation(fields: [metaAccountId], references: [id])
@@ -408,7 +416,13 @@ model AdRule {
   value           Float          // Value for >, <
   valueMin        Float?         // Min value for BETWEEN/NOT_BETWEEN
   valueMax        Float?         // Max value for BETWEEN/NOT_BETWEEN
-  timeWindow      String         @default("TODAY") // TODAY, LAST_7D, LAST_14D, LAST_30D
+
+  // Frequency - how often the rule runs (in hours) after schedule start
+  // e.g., frequencyHours=3 means rule runs every 3 hours starting from scheduleHours
+  frequencyHours  Int            @default(1) // Run every X hours (1, 2, 3, 6, 12, 24)
+
+  // DEPRECATED: timeWindow is no longer used, keeping for backward compatibility
+  timeWindow      String         @default("TODAY") // @deprecated - use frequencyHours instead
 
   // Action
   action          AdRuleAction
@@ -416,8 +430,10 @@ model AdRule {
   actionValueType String?        // PERCENTAGE or FIXED
   notifyEmails    String[]       @default([]) // Emails for notification
 
-  // Schedule
-  scheduleHours   Int[]          @default([]) // Hours of day (0-23), empty = all
+  // Schedule - when the rule cycle STARTS
+  // Example: scheduleDays=[2,4] (Tue, Thu), scheduleHours=[6] (6:00 UTC)
+  // With frequencyHours=3, rule runs at 6:00, 9:00, 12:00, 15:00, 18:00, 21:00 on Tue/Thu
+  scheduleHours   Int[]          @default([]) // Hours of day (0-23) when cycle starts, empty = all
   scheduleDays    Int[]          @default([]) // Days of week (0=Sun, 6=Sat), empty = all
 
   // Execution control
@@ -438,6 +454,7 @@ model AdRule {
   @@index([metaAccountId])
   @@index([isActive])
   @@index([level])
+  @@index([specificCampaignId])
 }
 
 model AdRuleExecution {
