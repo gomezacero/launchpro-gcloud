@@ -68,10 +68,27 @@ export async function POST(request: NextRequest) {
       where: { id: body.metaAccountId },
     });
 
-    if (!metaAccount || !metaAccount.metaAccessToken || !metaAccount.metaAdAccountId) {
+    if (!metaAccount) {
+      logger.error('ad-rules', `Meta account not found: ${body.metaAccountId}`);
       return NextResponse.json(
-        { success: false, error: 'Meta account not found or missing credentials' },
+        { success: false, error: 'Cuenta Meta no encontrada' },
         { status: 404 }
+      );
+    }
+
+    if (!metaAccount.metaAccessToken) {
+      logger.error('ad-rules', `Meta account missing access token: ${metaAccount.name}`);
+      return NextResponse.json(
+        { success: false, error: `La cuenta "${metaAccount.name}" no tiene Access Token configurado. Ve a Configuracion > Cuentas para configurarlo.` },
+        { status: 400 }
+      );
+    }
+
+    if (!metaAccount.metaAdAccountId) {
+      logger.error('ad-rules', `Meta account missing ad account ID: ${metaAccount.name}`);
+      return NextResponse.json(
+        { success: false, error: `La cuenta "${metaAccount.name}" no tiene Ad Account ID configurado. Ve a Configuracion > Cuentas para configurarlo.` },
+        { status: 400 }
       );
     }
 
