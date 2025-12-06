@@ -802,7 +802,7 @@ class CampaignOrchestratorService {
           language: params.language,
         });
 
-        // Generate UGC-style media with custom prompts
+        // Generate UGC-style media with custom prompts and vertical classification
         const ugcMedia = await aiService.generateUGCMedia({
           campaignId: campaign.id,
           platform: platformConfig.platform as 'META' | 'TIKTOK',
@@ -813,6 +813,8 @@ class CampaignOrchestratorService {
           language: params.language,
           adTitle: adCopy.headline, // Used for image text overlay
           copyMaster: aiContentResult.copyMaster, // Used for video text overlay
+          offerName: offer.name, // Pass offer name for better vertical classification
+          vertical: offer.vertical, // Pass vertical from Tonic for accurate template selection
         });
 
         // Save generated images to database
@@ -3283,7 +3285,7 @@ class CampaignOrchestratorService {
       });
 
       try {
-        // Generate UGC-style media with custom prompts
+        // Generate UGC-style media with custom prompts and vertical classification
         const ugcMedia = await aiService.generateUGCMedia({
           campaignId: campaign.id,
           platform: platformConfig.platform as 'META' | 'TIKTOK',
@@ -3294,6 +3296,8 @@ class CampaignOrchestratorService {
           language: campaign.language,
           adTitle: adCopy.headline,
           copyMaster: aiContentResult.copyMaster,
+          offerName: campaign.offer.name, // Pass offer name for better vertical classification
+          vertical: campaign.offer.vertical, // Pass vertical from Tonic for accurate template selection
         });
 
         // Save generated images to database

@@ -74,6 +74,8 @@ interface UGCPromptParams {
   language: string;       // e.g., "es", "en", "pt"
   adTitle: string;        // The ad headline/title (COPY for images)
   copyMaster: string;     // The copy master text (for videos)
+  offerName?: string;     // Specific offer name for context
+  vertical?: string;      // Vertical category from Tonic
 }
 
 // Country name mappings for prompts
@@ -91,6 +93,14 @@ const COUNTRY_NAMES: Record<string, string> = {
   'PT': 'Portugal',
   'UK': 'Reino Unido',
   'GB': 'Reino Unido',
+  'JP': 'Japón',
+  'KR': 'Corea del Sur',
+  'CN': 'China',
+  'AU': 'Australia',
+  'CA': 'Canadá',
+  'FR': 'Francia',
+  'DE': 'Alemania',
+  'IT': 'Italia',
 };
 
 // Language name mappings for prompts
@@ -101,39 +111,501 @@ const LANGUAGE_NAMES: Record<string, string> = {
   'english': 'inglés',
   'pt': 'portugués',
   'portuguese': 'portugués',
+  'ja': 'japonés',
+  'japanese': 'japonés',
+  'ko': 'coreano',
+  'korean': 'coreano',
+  'zh': 'chino',
+  'chinese': 'chino',
+  'fr': 'francés',
+  'french': 'francés',
+  'de': 'alemán',
+  'german': 'alemán',
+  'it': 'italiano',
+  'italian': 'italiano',
+  'ar': 'árabe',
+  'arabic': 'árabe',
+};
+
+// ============================================
+// VERTICAL TEMPLATES SYSTEM
+// Defines visual guidelines for each vertical
+// ============================================
+
+interface VerticalTemplate {
+  name: string;
+  keywords: string[];  // Keywords to match this vertical
+  visualStyle: {
+    subjects: string[];      // What/who should appear in the image
+    settings: string[];      // Where the scene takes place
+    props: string[];         // Objects that should be visible
+    mood: string;            // Emotional tone
+    colors: string[];        // Dominant color palette
+    lighting: string;        // Lighting style
+  };
+  adStyle: {
+    tone: string;            // Professional, casual, urgent, etc.
+    callToAction: string;    // Type of CTA that works best
+  };
+}
+
+const VERTICAL_TEMPLATES: Record<string, VerticalTemplate> = {
+  // FINANCE VERTICALS
+  'finance_loans': {
+    name: 'Préstamos / Loans',
+    keywords: ['loan', 'préstamo', 'crédito', 'credit', 'lending', 'borrow', 'dinero rápido', 'quick cash', 'personal loan'],
+    visualStyle: {
+      subjects: ['persona sonriendo con dinero en mano', 'familia feliz en casa nueva', 'persona usando celular para transferencia'],
+      settings: ['sala de casa modesta pero acogedora', 'oficina de banco', 'exterior de casa'],
+      props: ['billetes de moneda local', 'celular mostrando app bancaria', 'documentos de aprobación', 'llaves de casa'],
+      mood: 'esperanzador, alivio financiero, confianza',
+      colors: ['verde dinero', 'azul confianza', 'blanco limpio'],
+      lighting: 'iluminación cálida natural, sensación de hogar'
+    },
+    adStyle: {
+      tone: 'confiable y accesible',
+      callToAction: 'Solicita ahora, Aprobación rápida'
+    }
+  },
+  'finance_insurance': {
+    name: 'Seguros / Insurance',
+    keywords: ['insurance', 'seguro', 'cobertura', 'coverage', 'protección', 'protection', 'póliza', 'policy'],
+    visualStyle: {
+      subjects: ['familia protegida bajo techo', 'persona mayor tranquila', 'auto protegido'],
+      settings: ['hogar seguro', 'hospital', 'carretera'],
+      props: ['paraguas protector', 'escudo', 'documentos de póliza', 'auto'],
+      mood: 'seguridad, tranquilidad, protección familiar',
+      colors: ['azul seguridad', 'verde estabilidad', 'blanco pureza'],
+      lighting: 'luz suave y reconfortante'
+    },
+    adStyle: {
+      tone: 'protector y tranquilizador',
+      callToAction: 'Protege a tu familia, Cotiza gratis'
+    }
+  },
+  'finance_cards': {
+    name: 'Tarjetas de Crédito / Credit Cards',
+    keywords: ['credit card', 'tarjeta de crédito', 'tarjeta', 'card', 'rewards', 'cashback', 'puntos'],
+    visualStyle: {
+      subjects: ['persona haciendo compra con tarjeta', 'joven viajando', 'persona en tienda'],
+      settings: ['centro comercial', 'aeropuerto', 'restaurante elegante', 'tienda online'],
+      props: ['tarjeta de crédito brillante', 'bolsas de compras', 'pasaporte', 'celular con app'],
+      mood: 'libertad financiera, estilo de vida aspiracional',
+      colors: ['dorado premium', 'negro elegante', 'plateado'],
+      lighting: 'iluminación premium, brillos en la tarjeta'
+    },
+    adStyle: {
+      tone: 'aspiracional pero alcanzable',
+      callToAction: 'Solicita tu tarjeta, Beneficios exclusivos'
+    }
+  },
+
+  // AUTOMOTIVE VERTICALS
+  'auto_used': {
+    name: 'Autos Usados / Used Cars',
+    keywords: ['used car', 'auto usado', 'carro usado', 'seminuevo', 'second hand', 'pre-owned', 'vehículo'],
+    visualStyle: {
+      subjects: ['persona inspeccionando auto', 'familia junto a auto', 'vendedor mostrando auto'],
+      settings: ['lote de autos', 'estacionamiento', 'calle residencial', 'concesionaria'],
+      props: ['auto sedán o SUV popular', 'llaves de auto', 'documentos de venta', 'cartel de precio'],
+      mood: 'oportunidad, buen negocio, emoción de compra',
+      colors: ['rojo auto', 'azul metálico', 'blanco', 'plateado'],
+      lighting: 'luz de día exterior, el auto debe verse brillante'
+    },
+    adStyle: {
+      tone: 'oportunidad urgente, buen trato',
+      callToAction: 'Ver ofertas, Agenda prueba de manejo'
+    }
+  },
+  'auto_rental': {
+    name: 'Renta de Autos / Car Rental',
+    keywords: ['car rental', 'renta de auto', 'alquiler', 'rent a car', 'rental'],
+    visualStyle: {
+      subjects: ['turista recogiendo auto', 'persona de negocios en aeropuerto', 'familia en road trip'],
+      settings: ['aeropuerto', 'mostrador de renta', 'carretera escénica', 'ciudad turística'],
+      props: ['auto moderno', 'maletas', 'mapa o GPS', 'llaves'],
+      mood: 'aventura, libertad, viaje',
+      colors: ['azul cielo', 'amarillo sol', 'verde naturaleza'],
+      lighting: 'luz brillante de día, sensación de vacaciones'
+    },
+    adStyle: {
+      tone: 'conveniente y emocionante',
+      callToAction: 'Reserva ahora, Mejores tarifas'
+    }
+  },
+  'auto_parts': {
+    name: 'Autopartes / Auto Parts',
+    keywords: ['auto parts', 'autopartes', 'refacciones', 'repuestos', 'spare parts', 'car parts'],
+    visualStyle: {
+      subjects: ['mecánico trabajando', 'persona instalando pieza', 'dueño de auto orgulloso'],
+      settings: ['taller mecánico', 'garage casero', 'tienda de autopartes'],
+      props: ['piezas de auto', 'herramientas', 'motor', 'llantas', 'aceite'],
+      mood: 'confianza técnica, ahorro, DIY',
+      colors: ['negro industrial', 'naranja mecánico', 'gris metal'],
+      lighting: 'luz de taller, práctica'
+    },
+    adStyle: {
+      tone: 'experto y económico',
+      callToAction: 'Encuentra tu pieza, Envío gratis'
+    }
+  },
+
+  // EDUCATION VERTICALS
+  'education_scholarships': {
+    name: 'Becas / Scholarships',
+    keywords: ['scholarship', 'beca', 'becas', 'financial aid', 'ayuda financiera', 'estudiar gratis', 'universidad'],
+    visualStyle: {
+      subjects: ['estudiante graduándose', 'joven estudiando feliz', 'grupo de estudiantes diversos'],
+      settings: ['campus universitario', 'biblioteca', 'ceremonia de graduación', 'aula'],
+      props: ['toga y birrete', 'libros', 'diploma', 'laptop', 'mochila'],
+      mood: 'esperanza, logro, futuro brillante',
+      colors: ['azul académico', 'dorado éxito', 'verde esperanza'],
+      lighting: 'luz inspiradora, rayos de sol'
+    },
+    adStyle: {
+      tone: 'inspirador y alcanzable',
+      callToAction: 'Aplica ahora, Cumple tu sueño'
+    }
+  },
+  'education_courses': {
+    name: 'Cursos Online / Online Courses',
+    keywords: ['course', 'curso', 'online learning', 'capacitación', 'training', 'certification', 'certificación'],
+    visualStyle: {
+      subjects: ['persona estudiando en laptop', 'profesional tomando notas', 'estudiante con certificado'],
+      settings: ['home office', 'café', 'escritorio moderno'],
+      props: ['laptop', 'audífonos', 'cuaderno', 'café', 'certificado'],
+      mood: 'superación personal, flexibilidad, crecimiento',
+      colors: ['azul tecnología', 'naranja energía', 'blanco limpio'],
+      lighting: 'luz de pantalla, ambiente de estudio'
+    },
+    adStyle: {
+      tone: 'accesible y profesional',
+      callToAction: 'Inscríbete hoy, Aprende a tu ritmo'
+    }
+  },
+  'education_degrees': {
+    name: 'Títulos Universitarios / University Degrees',
+    keywords: ['degree', 'título', 'universidad', 'university', 'college', 'carrera', 'licenciatura', 'maestría'],
+    visualStyle: {
+      subjects: ['estudiante en campus', 'graduado exitoso', 'profesional joven'],
+      settings: ['campus universitario prestigioso', 'aula moderna', 'biblioteca'],
+      props: ['edificios universitarios', 'libros', 'laptop', 'toga'],
+      mood: 'prestigio, inversión en futuro, orgullo',
+      colors: ['azul marino institucional', 'dorado', 'blanco'],
+      lighting: 'luz clásica institucional'
+    },
+    adStyle: {
+      tone: 'prestigioso pero accesible',
+      callToAction: 'Conoce nuestros programas, Solicita información'
+    }
+  },
+
+  // HEALTH VERTICALS
+  'health_medical': {
+    name: 'Servicios Médicos / Medical Services',
+    keywords: ['medical', 'médico', 'doctor', 'clinic', 'clínica', 'health', 'salud', 'hospital', 'treatment'],
+    visualStyle: {
+      subjects: ['doctor amable con paciente', 'enfermera sonriendo', 'paciente recuperándose'],
+      settings: ['consultorio médico limpio', 'hospital moderno', 'sala de espera'],
+      props: ['bata blanca', 'estetoscopio', 'equipos médicos', 'receta'],
+      mood: 'confianza, cuidado, profesionalismo',
+      colors: ['blanco limpieza', 'azul médico', 'verde salud'],
+      lighting: 'luz clínica pero cálida'
+    },
+    adStyle: {
+      tone: 'profesional y empático',
+      callToAction: 'Agenda tu cita, Consulta gratis'
+    }
+  },
+  'health_dental': {
+    name: 'Dental / Dentist',
+    keywords: ['dental', 'dentista', 'teeth', 'dientes', 'smile', 'sonrisa', 'orthodontics', 'ortodoncia'],
+    visualStyle: {
+      subjects: ['persona con sonrisa perfecta', 'dentista trabajando', 'antes y después dental'],
+      settings: ['consultorio dental moderno', 'espejo mostrando sonrisa'],
+      props: ['cepillo de dientes', 'hilo dental', 'silla dental', 'radiografía'],
+      mood: 'confianza, belleza, salud',
+      colors: ['blanco brillante', 'azul claro', 'menta'],
+      lighting: 'luz brillante que resalta sonrisas'
+    },
+    adStyle: {
+      tone: 'transformador y profesional',
+      callToAction: 'Sonríe con confianza, Evaluación gratis'
+    }
+  },
+  'health_weight': {
+    name: 'Pérdida de Peso / Weight Loss',
+    keywords: ['weight loss', 'pérdida de peso', 'diet', 'dieta', 'fitness', 'adelgazar', 'slim', 'gym'],
+    visualStyle: {
+      subjects: ['persona midiendo cintura', 'transformación antes/después', 'persona haciendo ejercicio'],
+      settings: ['gimnasio', 'cocina saludable', 'parque haciendo ejercicio'],
+      props: ['cinta métrica', 'ropa deportiva', 'comida saludable', 'báscula', 'pesas'],
+      mood: 'transformación, motivación, logro',
+      colors: ['verde salud', 'naranja energía', 'azul agua'],
+      lighting: 'luz energética, motivadora'
+    },
+    adStyle: {
+      tone: 'motivador y realista',
+      callToAction: 'Comienza hoy, Resultados garantizados'
+    }
+  },
+
+  // HOME & SERVICES
+  'home_solar': {
+    name: 'Energía Solar / Solar Energy',
+    keywords: ['solar', 'paneles solares', 'solar panels', 'energy', 'energía', 'renewable', 'renovable'],
+    visualStyle: {
+      subjects: ['casa con paneles solares', 'familia ahorrando', 'instalador en techo'],
+      settings: ['techo de casa residencial', 'vecindario soleado', 'factura de luz'],
+      props: ['paneles solares', 'sol brillante', 'factura reducida', 'casa moderna'],
+      mood: 'ahorro, ecología, futuro',
+      colors: ['azul cielo', 'amarillo sol', 'verde eco'],
+      lighting: 'luz solar brillante, día perfecto'
+    },
+    adStyle: {
+      tone: 'económico y ecológico',
+      callToAction: 'Ahorra en tu factura, Cotización gratis'
+    }
+  },
+  'home_improvement': {
+    name: 'Mejoras del Hogar / Home Improvement',
+    keywords: ['home improvement', 'remodelación', 'renovation', 'kitchen', 'cocina', 'bathroom', 'baño', 'remodel'],
+    visualStyle: {
+      subjects: ['familia en cocina nueva', 'contratista trabajando', 'antes y después de remodelación'],
+      settings: ['cocina moderna', 'baño renovado', 'sala remodelada'],
+      props: ['herramientas', 'planos', 'muestras de materiales', 'pintura'],
+      mood: 'transformación del hogar, orgullo, valor',
+      colors: ['blanco limpio', 'gris moderno', 'madera natural'],
+      lighting: 'luz de showroom, espacios amplios'
+    },
+    adStyle: {
+      tone: 'aspiracional y práctico',
+      callToAction: 'Transforma tu hogar, Presupuesto gratis'
+    }
+  },
+  'home_moving': {
+    name: 'Mudanzas / Moving Services',
+    keywords: ['moving', 'mudanza', 'relocation', 'mover', 'packing', 'embalaje'],
+    visualStyle: {
+      subjects: ['familia empacando', 'camión de mudanza', 'trabajadores cargando cajas'],
+      settings: ['casa en proceso de mudanza', 'camión estacionado', 'nueva casa vacía'],
+      props: ['cajas de cartón', 'cinta de embalaje', 'muebles', 'camión'],
+      mood: 'nuevo comienzo, emoción, organización',
+      colors: ['marrón cartón', 'azul confianza', 'blanco'],
+      lighting: 'luz de día, actividad'
+    },
+    adStyle: {
+      tone: 'confiable y eficiente',
+      callToAction: 'Cotiza tu mudanza, Sin estrés'
+    }
+  },
+
+  // LEGAL VERTICALS
+  'legal_injury': {
+    name: 'Accidentes / Personal Injury',
+    keywords: ['injury', 'accident', 'accidente', 'lawyer', 'abogado', 'compensation', 'compensación', 'lawsuit'],
+    visualStyle: {
+      subjects: ['persona con yeso', 'abogado profesional', 'cliente recibiendo cheque'],
+      settings: ['oficina de abogado', 'hospital', 'escena de accidente'],
+      props: ['documentos legales', 'maletín', 'yeso o vendaje', 'cheque grande'],
+      mood: 'justicia, recuperación, apoyo',
+      colors: ['azul marino profesional', 'dorado justicia', 'blanco'],
+      lighting: 'luz seria pero esperanzadora'
+    },
+    adStyle: {
+      tone: 'empático y profesional',
+      callToAction: 'Consulta gratis, Luchamos por ti'
+    }
+  },
+  'legal_immigration': {
+    name: 'Inmigración / Immigration',
+    keywords: ['immigration', 'inmigración', 'visa', 'green card', 'citizenship', 'ciudadanía', 'residencia'],
+    visualStyle: {
+      subjects: ['familia reunida', 'persona con pasaporte', 'ceremonia de ciudadanía'],
+      settings: ['aeropuerto', 'oficina de inmigración', 'nuevo hogar'],
+      props: ['pasaporte', 'bandera', 'documentos', 'maletas'],
+      mood: 'esperanza, reunión familiar, nuevo comienzo',
+      colors: ['azul cielo', 'rojo y blanco', 'verde esperanza'],
+      lighting: 'luz emotiva, cálida'
+    },
+    adStyle: {
+      tone: 'esperanzador y profesional',
+      callToAction: 'Consulta tu caso, Reunimos familias'
+    }
+  },
+
+  // ECOMMERCE & RETAIL
+  'retail_shopping': {
+    name: 'Compras / Shopping',
+    keywords: ['shopping', 'compras', 'deals', 'ofertas', 'discount', 'descuento', 'sale', 'tienda'],
+    visualStyle: {
+      subjects: ['persona con bolsas de compras', 'unboxing', 'comprando online'],
+      settings: ['centro comercial', 'tienda', 'casa recibiendo paquete'],
+      props: ['bolsas de compras', 'cajas de paquetes', 'tarjeta de crédito', 'celular'],
+      mood: 'emoción, satisfacción, buen trato',
+      colors: ['rojo oferta', 'amarillo atención', 'negro elegante'],
+      lighting: 'luz de tienda, atractiva'
+    },
+    adStyle: {
+      tone: 'urgente y emocionante',
+      callToAction: 'Compra ahora, Oferta limitada'
+    }
+  },
+
+  // DEFAULT / FALLBACK
+  'default': {
+    name: 'General',
+    keywords: [],
+    visualStyle: {
+      subjects: ['persona local interactuando con producto/servicio', 'escena cotidiana relevante'],
+      settings: ['ambiente típico del país', 'contexto urbano o residencial apropiado'],
+      props: ['elementos relacionados con la oferta', 'objetos cotidianos del país'],
+      mood: 'positivo, auténtico, confiable',
+      colors: ['colores que resuenan con la cultura local'],
+      lighting: 'luz natural, realista'
+    },
+    adStyle: {
+      tone: 'auténtico y directo',
+      callToAction: 'Descubre más, Aprovecha ahora'
+    }
+  }
 };
 
 /**
- * Generate UGC-style prompt for image generation
- * Creates authentic, lo-fi looking images that appear user-generated
+ * Classify vertical based on offer name and category
+ * Returns the matching vertical template key
+ */
+function classifyVertical(offerName: string, category: string, vertical?: string): string {
+  const searchText = `${offerName} ${category} ${vertical || ''}`.toLowerCase();
+
+  // Score each vertical by keyword matches
+  let bestMatch = 'default';
+  let bestScore = 0;
+
+  for (const [key, template] of Object.entries(VERTICAL_TEMPLATES)) {
+    if (key === 'default') continue;
+
+    let score = 0;
+    for (const keyword of template.keywords) {
+      if (searchText.includes(keyword.toLowerCase())) {
+        score += keyword.length; // Longer matches = higher score
+      }
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestMatch = key;
+    }
+  }
+
+  return bestMatch;
+}
+
+/**
+ * Get vertical template by key
+ */
+function getVerticalTemplate(verticalKey: string): VerticalTemplate {
+  return VERTICAL_TEMPLATES[verticalKey] || VERTICAL_TEMPLATES['default'];
+}
+
+/**
+ * Build intelligent UGC image prompt using vertical templates
+ * Uses a hybrid approach: template base + campaign-specific refinement
  */
 function buildUGCImagePrompt(params: UGCPromptParams): string {
   const countryName = COUNTRY_NAMES[params.country] || params.country;
   const languageName = LANGUAGE_NAMES[params.language.toLowerCase()] || params.language;
 
-  return `Una foto 1000x1000 cruda y espontánea estilo UGC de ${params.category} situada en un entorno auténtico de ${countryName}. La imagen debe tener calidad baja (lo-fi), pareciendo tomada con una cámara de celular barato antiguo o digital compacta de los 2000. Iluminación de flash directo y duro, ruido ISO alto visible, composición amateur y descentrada sin edición profesional. El fondo muestra arquitectura y caos cotidiano típico de ${countryName}. Superpuesto en la imagen, hay un texto grande y legible en ${languageName} que dice textualmente: "${params.adTitle}". El texto tiene estilo de sticker nativo de Instagram/TikTok. Estética realista, sin filtro de belleza.`;
+  // Classify the vertical
+  const verticalKey = classifyVertical(
+    params.offerName || params.category,
+    params.category,
+    params.vertical
+  );
+  const template = getVerticalTemplate(verticalKey);
+
+  // Select random elements from template for variety
+  const subject = template.visualStyle.subjects[Math.floor(Math.random() * template.visualStyle.subjects.length)];
+  const setting = template.visualStyle.settings[Math.floor(Math.random() * template.visualStyle.settings.length)];
+  const props = template.visualStyle.props.slice(0, 2).join(', ');
+  const colors = template.visualStyle.colors.slice(0, 2).join(' y ');
+
+  return `Foto cuadrada 1080x1080 estilo anuncio de redes sociales para ${params.category} en ${countryName}.
+
+ESCENA: ${subject} en ${setting}. Ambiente auténtico de ${countryName} con detalles culturales locales.
+
+ELEMENTOS VISUALES: ${props} visibles naturalmente en la escena. Paleta de colores dominante: ${colors}.
+
+ESTILO VISUAL: Foto de alta calidad pero con aspecto natural y auténtico (no stock photo). ${template.visualStyle.lighting}. Composición atractiva para scroll de redes sociales. ${template.visualStyle.mood}.
+
+TEXTO SUPERPUESTO: Incluir texto grande y legible en ${languageName} que diga exactamente: "${params.adTitle}". El texto debe tener estilo nativo de Instagram/Facebook ads con fondo semi-transparente o sombra para legibilidad.
+
+IMPORTANTE: La imagen debe verse como un anuncio real y efectivo, no como una foto amateur. Debe captar la atención y comunicar claramente el mensaje de ${template.name.toLowerCase()}.`;
 }
 
 /**
- * Generate UGC-style prompt for video generation
- * Creates authentic, amateur-looking videos that appear user-generated
+ * Build intelligent UGC video prompt using vertical templates
  */
 function buildUGCVideoPrompt(params: UGCPromptParams): string {
   const countryName = COUNTRY_NAMES[params.country] || params.country;
   const languageName = LANGUAGE_NAMES[params.language.toLowerCase()] || params.language;
 
-  return `Video vertical amateur formato 9:16. Una toma en primera persona (POV) o cámara en mano temblorosa de ${params.category} ocurriendo en una locación normal de ${countryName}. El metraje luce como contenido real de usuario (UGC) grabado con un celular Android de gama baja. Movimiento de cámara inestable, el autofoco pierde nitidez por momentos (hunting), iluminación natural pobre (ligeramente quemada o oscura). Sin corrección de color, colores lavados y realistas. Durante el video aparece un texto superpuesto en ${languageName} que dice: "${params.copyMaster}", integrado naturalmente como un caption de red social sobre el video.`;
+  // Classify the vertical
+  const verticalKey = classifyVertical(
+    params.offerName || params.category,
+    params.category,
+    params.vertical
+  );
+  const template = getVerticalTemplate(verticalKey);
+
+  const subject = template.visualStyle.subjects[Math.floor(Math.random() * template.visualStyle.subjects.length)];
+  const setting = template.visualStyle.settings[Math.floor(Math.random() * template.visualStyle.settings.length)];
+  const props = template.visualStyle.props.slice(0, 2).join(', ');
+
+  return `Video vertical 9:16 formato TikTok/Reels para ${params.category} en ${countryName}.
+
+ESCENA: ${subject} en ${setting}. Mostrar ${props} de forma natural.
+
+ESTILO: Video con movimiento suave pero dinámico. Puede ser estilo testimonial, demostración, o escena de vida real. ${template.visualStyle.lighting}. Colores vibrantes que capten atención en el feed.
+
+TONO: ${template.visualStyle.mood}. El video debe transmitir ${template.adStyle.tone}.
+
+TEXTO: Durante todo el video, mostrar texto superpuesto en ${languageName} que diga: "${params.copyMaster}". Estilo de caption de TikTok/Reels con animación sutil.
+
+DURACIÓN: 5 segundos de contenido atractivo que cuente una mini-historia visual sobre ${template.name.toLowerCase()}.
+
+IMPORTANTE: El video debe verse profesional pero auténtico, capaz de detener el scroll y generar interés inmediato.`;
 }
 
 /**
- * Generate prompt for video thumbnail (first frame style)
- * Creates an image that looks like a natural video thumbnail
+ * Build video thumbnail prompt using vertical templates
  */
 function buildVideoThumbnailPrompt(params: UGCPromptParams): string {
   const countryName = COUNTRY_NAMES[params.country] || params.country;
   const languageName = LANGUAGE_NAMES[params.language.toLowerCase()] || params.language;
 
-  return `Una miniatura de video estilo UGC para ${params.category}. Captura de pantalla de un video amateur de ${countryName}, con un texto grande superpuesto en ${languageName} que dice: "${params.adTitle}". Estilo de thumbnail de TikTok/Instagram Reels con play button sutil. Calidad lo-fi, aspecto natural de screenshot de video vertical. El encuadre muestra el tema principal de forma llamativa pero amateur.`;
+  // Classify the vertical
+  const verticalKey = classifyVertical(
+    params.offerName || params.category,
+    params.category,
+    params.vertical
+  );
+  const template = getVerticalTemplate(verticalKey);
+
+  const subject = template.visualStyle.subjects[0];
+  const colors = template.visualStyle.colors.slice(0, 2).join(' y ');
+
+  return `Thumbnail de video para ${params.category} en ${countryName}.
+
+ESCENA: Captura llamativa de ${subject}. Expresión o momento que genere curiosidad.
+
+ESTILO: Imagen vertical 9:16 estilo thumbnail de TikTok/Reels. Colores: ${colors}. Alto contraste y saturación para destacar en el feed.
+
+TEXTO: Texto grande y llamativo en ${languageName}: "${params.adTitle}". Debe ser completamente legible en tamaño pequeño.
+
+ELEMENTOS: Incluir sutilmente un ícono de play para indicar que es video.
+
+IMPORTANTE: El thumbnail debe generar curiosidad y deseo de ver el video. Debe destacar entre otros contenidos del feed.`;
 }
 
 class AIService {
@@ -1439,6 +1911,8 @@ Return JSON:
     language: string;      // Language code (e.g., "es", "en")
     adTitle: string;       // Ad headline for text overlay
     copyMaster: string;    // Copy master for video text overlay
+    offerName?: string;    // Specific offer name for better context
+    vertical?: string;     // Vertical from Tonic for classification
   }): Promise<{
     images: { url: string; gcsPath: string; prompt: string }[];
     videos: { url: string; gcsPath: string; prompt: string; thumbnailUrl?: string; thumbnailGcsPath?: string }[];
@@ -1451,13 +1925,24 @@ Return JSON:
       videos: [],
     };
 
+    // Build UGC params with new vertical classification data
     const ugcParams: UGCPromptParams = {
       category: params.category,
       country: params.country,
       language: params.language,
       adTitle: params.adTitle,
       copyMaster: params.copyMaster,
+      offerName: params.offerName,
+      vertical: params.vertical,
     };
+
+    // Log the vertical classification for debugging
+    const verticalKey = classifyVertical(
+      params.offerName || params.category,
+      params.category,
+      params.vertical
+    );
+    logger.info('ai', `🎯 Vertical classified as: ${verticalKey} (offer: ${params.offerName || 'N/A'}, category: ${params.category}, vertical: ${params.vertical || 'N/A'})`);
 
     // DEBUG: Log para verificar el count recibido
     logger.info('ai', `📊 DEBUG: generateUGCMedia called with count=${params.count}, platform=${params.platform}, mediaType=${params.mediaType}`);
