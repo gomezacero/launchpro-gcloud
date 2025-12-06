@@ -76,18 +76,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!metaAccount.metaAccessToken) {
-      logger.error('ad-rules', `Meta account missing access token: ${metaAccount.name}`);
-      return NextResponse.json(
-        { success: false, error: `La cuenta "${metaAccount.name}" no tiene Access Token configurado. Ve a Configuracion > Cuentas para configurarlo.` },
-        { status: 400 }
-      );
-    }
-
     if (!metaAccount.metaAdAccountId) {
       logger.error('ad-rules', `Meta account missing ad account ID: ${metaAccount.name}`);
       return NextResponse.json(
         { success: false, error: `La cuenta "${metaAccount.name}" no tiene Ad Account ID configurado. Ve a Configuracion > Cuentas para configurarlo.` },
+        { status: 400 }
+      );
+    }
+
+    // Get access token - use account-specific or fall back to global
+    let accessToken = metaAccount.metaAccessToken;
+    if (!accessToken) {
+      const globalSettings = await prisma.globalSettings.findFirst();
+      accessToken = globalSettings?.metaAccessToken || null;
+    }
+
+    if (!accessToken) {
+      logger.error('ad-rules', `No access token available for account: ${metaAccount.name}`);
+      return NextResponse.json(
+        { success: false, error: `No hay Access Token configurado. Ve a Configuracion para configurarlo.` },
         { status: 400 }
       );
     }
@@ -114,7 +121,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const accessToken = metaAccount.metaAccessToken;
     const adAccountId = metaAccount.metaAdAccountId;
 
     // Check if rule can execute based on schedule
