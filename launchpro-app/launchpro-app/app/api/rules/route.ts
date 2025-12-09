@@ -44,12 +44,6 @@ export async function GET(request: NextRequest) {
             accountType: true,
           },
         },
-        specificCampaign: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
         executions: {
           take: 5,
           orderBy: { executedAt: 'desc' },
@@ -169,24 +163,12 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate campaign scope
-    if (!body.applyToAllCampaigns && !body.specificCampaignId) {
+    const campaignIds = body.specificCampaignIds || [];
+    if (!body.applyToAllCampaigns && campaignIds.length === 0) {
       return NextResponse.json(
-        { success: false, error: 'Must select a specific campaign or apply to all campaigns' },
+        { success: false, error: 'Must select at least one campaign or apply to all campaigns' },
         { status: 400 }
       );
-    }
-
-    // Verify specific campaign exists if selected
-    if (body.specificCampaignId) {
-      const campaign = await prisma.campaign.findUnique({
-        where: { id: body.specificCampaignId },
-      });
-      if (!campaign) {
-        return NextResponse.json(
-          { success: false, error: 'Selected campaign not found' },
-          { status: 404 }
-        );
-      }
     }
 
     // Validate ROAS metric requires Tonic account and date range
@@ -224,7 +206,7 @@ export async function POST(request: NextRequest) {
         level: body.level as AdRuleLevel,
         targetIds: body.targetIds || [],
         applyToAllCampaigns: body.applyToAllCampaigns ?? false,
-        specificCampaignId: body.applyToAllCampaigns ? null : (body.specificCampaignId || null),
+        specificCampaignIds: body.applyToAllCampaigns ? [] : (body.specificCampaignIds || []),
         metaAccountId: body.metaAccountId,
         // Tonic account for ROAS calculation
         tonicAccountId: body.metric === 'ROAS' ? body.tonicAccountId : null,
@@ -258,12 +240,6 @@ export async function POST(request: NextRequest) {
             id: true,
             name: true,
             accountType: true,
-          },
-        },
-        specificCampaign: {
-          select: {
-            id: true,
-            name: true,
           },
         },
       },

@@ -1084,7 +1084,7 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
     const newPlatform: PlatformConfig = {
       platform,
       performanceGoal: platform === 'META' ? 'Lead Generation' : 'Lead Generation',
-      budget: '100',
+      budget: platform === 'META' ? '5' : '50',
       startDateTime: defaultDateTime,
       generateWithAI: true,
       // TikTok only allows videos, Meta allows both

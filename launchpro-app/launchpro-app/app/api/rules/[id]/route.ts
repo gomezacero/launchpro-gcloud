@@ -35,12 +35,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             accountType: true,
           },
         },
-        specificCampaign: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
         executions: {
           take: 50,
           orderBy: { executedAt: 'desc' },
@@ -137,8 +131,8 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     if (body.level !== undefined) updateData.level = body.level;
     if (body.targetIds !== undefined) updateData.targetIds = body.targetIds;
     if (body.applyToAllCampaigns !== undefined) updateData.applyToAllCampaigns = body.applyToAllCampaigns;
-    if (body.specificCampaignId !== undefined) {
-      updateData.specificCampaignId = body.applyToAllCampaigns ? null : (body.specificCampaignId || null);
+    if (body.specificCampaignIds !== undefined) {
+      updateData.specificCampaignIds = body.applyToAllCampaigns ? [] : (body.specificCampaignIds || []);
     }
     if (body.metaAccountId !== undefined) updateData.metaAccountId = body.metaAccountId;
     if (body.metric !== undefined) updateData.metric = body.metric;
@@ -186,12 +180,6 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
             id: true,
             name: true,
             accountType: true,
-          },
-        },
-        specificCampaign: {
-          select: {
-            id: true,
-            name: true,
           },
         },
       },

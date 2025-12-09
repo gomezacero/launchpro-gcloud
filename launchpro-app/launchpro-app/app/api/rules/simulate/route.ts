@@ -29,7 +29,7 @@ interface SimulationResult {
     actionValueType?: string | null;
     frequencyHours: number;
     applyToAllCampaigns: boolean;
-    specificCampaignName?: string | null;
+    specificCampaignCount?: number;
   };
   canExecuteNow: boolean;
   canExecuteReasons: string[];
@@ -99,27 +99,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get specific campaign name if applicable
-    let specificCampaignName: string | null = null;
-    let specificCampaignMetaId: string | null = null;
-    if (!body.applyToAllCampaigns && body.specificCampaignId) {
-      const campaign = await prisma.campaign.findUnique({
-        where: { id: body.specificCampaignId },
-        include: {
-          platforms: {
-            where: { platform: 'META' },
-          },
-        },
-      });
-      if (campaign) {
-        specificCampaignName = campaign.name;
-        // Get the Meta campaign ID from platforms
-        const metaPlatform = campaign.platforms.find(p => p.metaCampaignId);
-        if (metaPlatform) {
-          specificCampaignMetaId = metaPlatform.metaCampaignId;
-        }
-      }
-    }
+    // Get specific campaign IDs if applicable (these are now Meta campaign IDs directly)
+    const specificCampaignIds: string[] = body.specificCampaignIds || [];
 
     const adAccountId = metaAccount.metaAdAccountId;
 
@@ -151,36 +132,25 @@ export async function POST(request: NextRequest) {
     let entities: Array<{ id: string; name: string }> = [];
     const level = body.level as AdRuleLevel;
 
-    // If specific campaign is selected, only get entities from that campaign
-    if (!body.applyToAllCampaigns && specificCampaignMetaId) {
-      if (level === 'CAMPAIGN') {
-        // Just the specific campaign
-        entities = [{ id: specificCampaignMetaId, name: specificCampaignName || 'Campaign' }];
-      } else if (level === 'AD_SET') {
-        // Get ad sets from this specific campaign
-        const allAdSets = await metaService.getActiveAdSets(adAccountId, accessToken);
-        // Note: We'd need to filter by campaign, but for simplicity we'll get all and note this
-        entities = allAdSets.map(a => ({ id: a.id, name: a.name }));
-      } else if (level === 'AD') {
-        const allAds = await metaService.getActiveAds(adAccountId, accessToken);
-        entities = allAds.map(a => ({ id: a.id, name: a.name }));
-      }
-    } else {
-      // Get all entities of the specified level
-      switch (level) {
-        case 'CAMPAIGN':
-          const campaigns = await metaService.getActiveCampaigns(adAccountId, accessToken);
-          entities = campaigns.map(c => ({ id: c.id, name: c.name }));
-          break;
-        case 'AD_SET':
-          const adSets = await metaService.getActiveAdSets(adAccountId, accessToken);
-          entities = adSets.map(a => ({ id: a.id, name: a.name }));
-          break;
-        case 'AD':
-          const ads = await metaService.getActiveAds(adAccountId, accessToken);
-          entities = ads.map(a => ({ id: a.id, name: a.name }));
-          break;
-      }
+    // Get all entities first
+    switch (level) {
+      case 'CAMPAIGN':
+        const campaigns = await metaService.getActiveCampaigns(adAccountId, accessToken);
+        entities = campaigns.map(c => ({ id: c.id, name: c.name }));
+        break;
+      case 'AD_SET':
+        const adSets = await metaService.getActiveAdSets(adAccountId, accessToken);
+        entities = adSets.map(a => ({ id: a.id, name: a.name }));
+        break;
+      case 'AD':
+        const ads = await metaService.getActiveAds(adAccountId, accessToken);
+        entities = ads.map(a => ({ id: a.id, name: a.name }));
+        break;
+    }
+
+    // Filter by specific campaigns if not applying to all
+    if (!body.applyToAllCampaigns && specificCampaignIds.length > 0 && level === 'CAMPAIGN') {
+      entities = entities.filter(e => specificCampaignIds.includes(e.id));
     }
 
     // Evaluate each entity
@@ -288,7 +258,7 @@ export async function POST(request: NextRequest) {
         actionValueType: body.actionValueType || null,
         frequencyHours: body.frequencyHours || 3,
         applyToAllCampaigns: body.applyToAllCampaigns ?? false,
-        specificCampaignName: specificCampaignName,
+        specificCampaignCount: specificCampaignIds.length,
       },
       canExecuteNow,
       canExecuteReasons,

@@ -145,9 +145,6 @@ model Campaign {
   // Error details (when status is FAILED)
   errorDetails      Json?              // { step, message, timestamp, platform?, technicalDetails? }
 
-  // Ad Rules that target this specific campaign
-  adRules           AdRule[]
-
   // Metadata
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
@@ -402,10 +399,9 @@ model AdRule {
   // If empty, applies to ALL active entities of that level
   targetIds       String[]       @default([])
 
-  // Campaign Scope - apply to all campaigns or specific one
-  applyToAllCampaigns  Boolean   @default(false)  // false = specific campaign, true = all campaigns
-  specificCampaignId   String?   // Campaign ID if applyToAllCampaigns is false
-  specificCampaign     Campaign? @relation(fields: [specificCampaignId], references: [id])
+  // Campaign Scope - apply to all campaigns or specific ones
+  applyToAllCampaigns  Boolean   @default(false)  // false = specific campaigns, true = all campaigns
+  specificCampaignIds  String[]  @default([])     // Campaign IDs if applyToAllCampaigns is false
 
   // Account - which Meta account this rule belongs to
   metaAccountId   String
@@ -463,7 +459,6 @@ model AdRule {
   @@index([tonicAccountId])
   @@index([isActive])
   @@index([level])
-  @@index([specificCampaignId])
 }
 
 model AdRuleExecution {

@@ -68,7 +68,7 @@ interface SimulationResult {
     action: string;
     frequencyHours: number;
     applyToAllCampaigns: boolean;
-    specificCampaignName?: string | null;
+    specificCampaignCount?: number;
   };
   canExecuteNow: boolean;
   canExecuteReasons: string[];
@@ -90,7 +90,7 @@ interface RuleFormData {
   targetIds: string[];
   // Campaign scope
   applyToAllCampaigns: boolean;
-  specificCampaignId: string;
+  specificCampaignIds: string[];
   // Condition
   metric: string;
   operator: string;
@@ -210,7 +210,7 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
     level: initialData?.level || 'CAMPAIGN',
     targetIds: initialData?.targetIds || [],
     applyToAllCampaigns: initialData?.applyToAllCampaigns ?? false,
-    specificCampaignId: initialData?.specificCampaignId || '',
+    specificCampaignIds: initialData?.specificCampaignIds || [],
     metric: initialData?.metric || 'ROAS',
     operator: initialData?.operator || 'LESS_THAN',
     value: initialData?.value || '',
@@ -286,20 +286,17 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
   const fetchCampaigns = async (accountId: string) => {
     setLoadingCampaigns(true);
     try {
-      // Fetch ACTIVE campaigns that have Meta platform configured with this account
-      const response = await fetch(`/api/campaigns?status=ACTIVE`);
+      // Fetch ACTIVE campaigns directly from Meta API
+      const response = await fetch(`/api/accounts/${accountId}/meta-campaigns`);
       const data = await response.json();
 
       if (data.success && Array.isArray(data.data)) {
-        // Filter campaigns that have this Meta account
-        const filteredCampaigns = data.data.filter((campaign: any) => {
-          return campaign.platforms?.some((p: any) =>
-            p.platform === 'META' && p.metaAccountId === accountId
-          );
-        });
-        setCampaigns(filteredCampaigns);
+        setCampaigns(data.data);
       } else {
         setCampaigns([]);
+        if (data.error) {
+          console.warn('Error fetching Meta campaigns:', data.error);
+        }
       }
     } catch (err) {
       console.error('Error fetching campaigns:', err);
@@ -325,8 +322,8 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
       if (!formData.metaAccountId) {
         throw new Error('Selecciona una cuenta Meta');
       }
-      if (!formData.applyToAllCampaigns && !formData.specificCampaignId) {
-        throw new Error('Selecciona una campana especifica o marca "Aplicar a todas las campanas"');
+      if (!formData.applyToAllCampaigns && formData.specificCampaignIds.length === 0) {
+        throw new Error('Selecciona al menos una campana o marca "Aplicar a todas las campanas"');
       }
 
       // Validate ROAS specific fields
@@ -347,7 +344,7 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
         level: formData.level,
         targetIds: formData.targetIds,
         applyToAllCampaigns: formData.applyToAllCampaigns,
-        specificCampaignId: formData.applyToAllCampaigns ? null : formData.specificCampaignId,
+        specificCampaignIds: formData.applyToAllCampaigns ? [] : formData.specificCampaignIds,
         metric: formData.metric,
         operator: formData.operator,
         value: parseFloat(formData.value) || 0,
@@ -478,8 +475,8 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
       return;
     }
 
-    if (!formData.applyToAllCampaigns && !formData.specificCampaignId) {
-      setError('Selecciona una campana especifica o marca "Aplicar a todas las campanas" para simular');
+    if (!formData.applyToAllCampaigns && formData.specificCampaignIds.length === 0) {
+      setError('Selecciona al menos una campana o marca "Aplicar a todas las campanas" para simular');
       return;
     }
 
@@ -496,7 +493,7 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
           metaAccountId: formData.metaAccountId,
           level: formData.level,
           applyToAllCampaigns: formData.applyToAllCampaigns,
-          specificCampaignId: formData.specificCampaignId || null,
+          specificCampaignIds: formData.specificCampaignIds,
           metric: formData.metric,
           operator: formData.operator,
           value: formData.value,
@@ -567,7 +564,7 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
             ) : (
               <select
                 value={formData.metaAccountId}
-                onChange={e => setFormData({ ...formData, metaAccountId: e.target.value, specificCampaignId: '' })}
+                onChange={e => setFormData({ ...formData, metaAccountId: e.target.value, specificCampaignIds: [] })}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="">Seleccionar cuenta...</option>
@@ -622,8 +619,8 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
                 className="w-4 h-4 text-blue-600"
               />
               <div>
-                <span className="font-medium text-gray-900">Campana especifica</span>
-                <p className="text-xs text-gray-500">La regla solo se aplicara a una campana seleccionada</p>
+                <span className="font-medium text-gray-900">Campanas especificas</span>
+                <p className="text-xs text-gray-500">La regla se aplicara a las campanas seleccionadas</p>
               </div>
             </label>
 
@@ -632,7 +629,7 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
                 type="radio"
                 name="campaignScope"
                 checked={formData.applyToAllCampaigns}
-                onChange={() => setFormData({ ...formData, applyToAllCampaigns: true, specificCampaignId: '' })}
+                onChange={() => setFormData({ ...formData, applyToAllCampaigns: true, specificCampaignIds: [] })}
                 className="w-4 h-4 text-blue-600"
               />
               <div>
@@ -642,11 +639,11 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
             </label>
           </div>
 
-          {/* Campaign Selector - Only shown when specific campaign is selected */}
+          {/* Campaign Selector - Only shown when specific campaigns is selected */}
           {!formData.applyToAllCampaigns && formData.metaAccountId && (
             <div className="mt-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Seleccionar Campana *
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Seleccionar Campanas * ({formData.specificCampaignIds.length} seleccionada{formData.specificCampaignIds.length !== 1 ? 's' : ''})
               </label>
               {loadingCampaigns ? (
                 <div className="w-full px-4 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-500">
@@ -657,21 +654,38 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
                   No hay campanas activas con esta cuenta Meta
                 </div>
               ) : (
-                <select
-                  value={formData.specificCampaignId}
-                  onChange={e => setFormData({ ...formData, specificCampaignId: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                >
-                  <option value="">Seleccionar campana...</option>
+                <div className="border border-gray-300 rounded-lg max-h-60 overflow-y-auto">
                   {campaigns.map(campaign => (
-                    <option key={campaign.id} value={campaign.id}>
-                      {campaign.name}
-                    </option>
+                    <label
+                      key={campaign.id}
+                      className="flex items-center gap-3 px-4 py-2 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={formData.specificCampaignIds.includes(campaign.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setFormData({
+                              ...formData,
+                              specificCampaignIds: [...formData.specificCampaignIds, campaign.id]
+                            });
+                          } else {
+                            setFormData({
+                              ...formData,
+                              specificCampaignIds: formData.specificCampaignIds.filter(id => id !== campaign.id)
+                            });
+                          }
+                        }}
+                        className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                      />
+                      <span className="text-sm text-gray-900">{campaign.name}</span>
+                      <span className="text-xs text-gray-500 ml-auto">{campaign.status}</span>
+                    </label>
                   ))}
-                </select>
+                </div>
               )}
               <p className="text-xs text-gray-500 mt-1">
-                Solo se muestran campanas ACTIVAS que usan esta cuenta Meta
+                Solo se muestran campanas ACTIVAS que usan esta cuenta Meta. Selecciona una o mas campanas.
               </p>
             </div>
           )}
@@ -1085,7 +1099,7 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
           <button
             type="button"
             onClick={handleSimulate}
-            disabled={simulating || !formData.metaAccountId || (!formData.applyToAllCampaigns && !formData.specificCampaignId)}
+            disabled={simulating || !formData.metaAccountId || (!formData.applyToAllCampaigns && formData.specificCampaignIds.length === 0)}
             className="px-6 py-3 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
             {simulating ? (
@@ -1166,7 +1180,7 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
                     <span className="ml-2 font-medium">
                       {simulationResult.rule.applyToAllCampaigns
                         ? 'Todas las campanas'
-                        : simulationResult.rule.specificCampaignName || 'Campana especifica'}
+                        : `${simulationResult.rule.specificCampaignCount || 0} campana(s) especifica(s)`}
                     </span>
                   </div>
                 </div>
