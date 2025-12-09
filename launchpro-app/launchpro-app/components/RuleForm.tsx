@@ -1391,14 +1391,14 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="bg-gray-100">
-                        <th className="text-left px-3 py-2 rounded-tl-lg">Campana Meta</th>
-                        <th className="text-center px-3 py-2">Tonic ID</th>
-                        <th className="text-right px-3 py-2">Gross Revenue</th>
-                        <th className="text-right px-3 py-2">Costo</th>
-                        <th className="text-right px-3 py-2">ROAS Calculado</th>
-                        <th className="text-right px-3 py-2">ROAS Meta</th>
-                        <th className="text-center px-3 py-2 rounded-tr-lg">Estado</th>
+                      <tr className="bg-gray-200">
+                        <th className="text-left px-3 py-2 rounded-tl-lg font-semibold text-gray-900">Campana Meta</th>
+                        <th className="text-center px-3 py-2 font-semibold text-gray-900">Tonic ID</th>
+                        <th className="text-right px-3 py-2 font-semibold text-gray-900">Gross Revenue</th>
+                        <th className="text-right px-3 py-2 font-semibold text-gray-900">Costo</th>
+                        <th className="text-right px-3 py-2 font-semibold text-gray-900">ROAS Calculado</th>
+                        <th className="text-right px-3 py-2 font-semibold text-gray-900">ROAS Meta</th>
+                        <th className="text-center px-3 py-2 rounded-tr-lg font-semibold text-gray-900">Estado</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1407,21 +1407,21 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
                           <td className="px-3 py-2 font-medium text-gray-900 max-w-[200px] truncate" title={campaign.metaCampaignName}>
                             {campaign.metaCampaignName}
                           </td>
-                          <td className="px-3 py-2 text-center font-mono text-xs">
+                          <td className="px-3 py-2 text-center font-mono text-xs text-gray-800 font-medium">
                             {campaign.tonicCampaignId || (
-                              <span className="text-red-500">No encontrado</span>
+                              <span className="text-red-600 font-medium">No encontrado</span>
                             )}
                           </td>
-                          <td className="px-3 py-2 text-right font-mono text-green-600">
+                          <td className="px-3 py-2 text-right font-mono text-green-700 font-medium">
                             ${campaign.grossRevenue.toFixed(2)}
                           </td>
-                          <td className="px-3 py-2 text-right font-mono text-red-600">
+                          <td className="px-3 py-2 text-right font-mono text-red-700 font-medium">
                             ${campaign.cost.toFixed(2)}
                           </td>
-                          <td className="px-3 py-2 text-right font-mono font-bold text-blue-600">
+                          <td className="px-3 py-2 text-right font-mono font-bold text-blue-700">
                             {campaign.calculatedRoas.toFixed(2)}%
                           </td>
-                          <td className="px-3 py-2 text-right font-mono text-gray-500">
+                          <td className="px-3 py-2 text-right font-mono text-purple-700 font-medium">
                             {campaign.metaRoas.toFixed(2)}%
                           </td>
                           <td className="px-3 py-2 text-center">
