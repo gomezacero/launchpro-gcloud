@@ -37,6 +37,13 @@ export async function GET(request: NextRequest) {
             metaAdAccountId: true,
           },
         },
+        tonicAccount: {
+          select: {
+            id: true,
+            name: true,
+            accountType: true,
+          },
+        },
         specificCampaign: {
           select: {
             id: true,
@@ -182,6 +189,33 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Validate ROAS metric requires Tonic account and date range
+    if (body.metric === 'ROAS') {
+      if (!body.tonicAccountId) {
+        return NextResponse.json(
+          { success: false, error: 'ROAS metric requires a Tonic account to be selected' },
+          { status: 400 }
+        );
+      }
+      if (!body.roasDateRange) {
+        return NextResponse.json(
+          { success: false, error: 'ROAS metric requires a date range to be selected' },
+          { status: 400 }
+        );
+      }
+
+      // Verify Tonic account exists
+      const tonicAccount = await prisma.account.findUnique({
+        where: { id: body.tonicAccountId },
+      });
+      if (!tonicAccount || tonicAccount.accountType !== 'TONIC') {
+        return NextResponse.json(
+          { success: false, error: 'Tonic account not found or invalid type' },
+          { status: 404 }
+        );
+      }
+    }
+
     // Create the rule
     const rule = await prisma.adRule.create({
       data: {
@@ -192,6 +226,9 @@ export async function POST(request: NextRequest) {
         applyToAllCampaigns: body.applyToAllCampaigns ?? false,
         specificCampaignId: body.applyToAllCampaigns ? null : (body.specificCampaignId || null),
         metaAccountId: body.metaAccountId,
+        // Tonic account for ROAS calculation
+        tonicAccountId: body.metric === 'ROAS' ? body.tonicAccountId : null,
+        roasDateRange: body.metric === 'ROAS' ? body.roasDateRange : null,
         metric: body.metric as AdRuleMetric,
         operator: body.operator as AdRuleOperator,
         value: parseFloat(body.value),
@@ -214,6 +251,13 @@ export async function POST(request: NextRequest) {
             id: true,
             name: true,
             metaAdAccountId: true,
+          },
+        },
+        tonicAccount: {
+          select: {
+            id: true,
+            name: true,
+            accountType: true,
           },
         },
         specificCampaign: {

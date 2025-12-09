@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { metaService } from './meta.service';
+import { tonicService, TonicCredentials } from './tonic.service';
 import { logger } from '@/lib/logger';
 import { Resend } from 'resend';
 import {
@@ -12,7 +13,10 @@ import {
   Account,
 } from '@prisma/client';
 
-type AdRuleWithAccount = AdRule & { metaAccount: Account };
+type AdRuleWithAccount = AdRule & {
+  metaAccount: Account;
+  tonicAccount?: Account | null;
+};
 
 interface EvaluationResult {
   totalRules: number;
@@ -69,7 +73,7 @@ class AdRulesService {
       // Get all active rules with their accounts
       const rules = await prisma.adRule.findMany({
         where: { isActive: true },
-        include: { metaAccount: true },
+        include: { metaAccount: true, tonicAccount: true },
       });
 
       result.totalRules = rules.length;
@@ -142,6 +146,39 @@ class AdRulesService {
       return false;
     }
 
+    // Prepare Tonic credentials if this is a ROAS rule with Tonic account
+    let tonicCredentials: TonicCredentials | null = null;
+    let tonicRevenueMap: Map<string, number> | null = null;
+
+    if (rule.metric === 'ROAS' && rule.tonicAccount) {
+      if (rule.tonicAccount.tonicConsumerKey && rule.tonicAccount.tonicConsumerSecret) {
+        tonicCredentials = {
+          consumer_key: rule.tonicAccount.tonicConsumerKey,
+          consumer_secret: rule.tonicAccount.tonicConsumerSecret,
+        };
+
+        // Pre-fetch Tonic revenue data for the date range
+        try {
+          const tonicDate = this.getTonicDateFromRange(rule.roasDateRange || 'today');
+          logger.info('ad-rules', `Fetching Tonic stats for date: ${tonicDate}`);
+          const tonicStats = await tonicService.getStatsByCountry(tonicCredentials, tonicDate);
+
+          // Build revenue map by campaign ID
+          tonicRevenueMap = new Map();
+          for (const stat of tonicStats) {
+            const currentRevenue = tonicRevenueMap.get(stat.campaign_id) || 0;
+            tonicRevenueMap.set(stat.campaign_id, currentRevenue + parseFloat(stat.revenue || '0'));
+          }
+          logger.info('ad-rules', `Tonic revenue map built with ${tonicRevenueMap.size} campaigns`);
+        } catch (error: any) {
+          logger.error('ad-rules', `Failed to fetch Tonic stats: ${error.message}. Will use Meta ROAS as fallback.`);
+          tonicRevenueMap = null;
+        }
+      } else {
+        logger.warn('ad-rules', `Rule "${rule.name}" has ROAS metric but Tonic account missing credentials. Using Meta ROAS.`);
+      }
+    }
+
     // Get entities to evaluate
     const entities = await this.getEntitiesToEvaluate(rule, adAccountId, accessToken);
     logger.info('ad-rules', `Found ${entities.length} entities to evaluate for rule "${rule.name}"`);
@@ -157,10 +194,14 @@ class AdRulesService {
     for (const entity of entities) {
       try {
         // Get metrics for the entity
+        const datePreset = rule.metric === 'ROAS' && rule.roasDateRange
+          ? this.getMetaDatePreset(rule.roasDateRange)
+          : rule.timeWindow;
+
         const metrics = await metaService.getEntityInsights(
           entity.id,
           this.getLevelForApi(rule.level),
-          rule.timeWindow,
+          datePreset,
           accessToken
         );
 
@@ -170,7 +211,14 @@ class AdRulesService {
         }
 
         // Get the specific metric value
-        const metricValue = this.getMetricValue(metrics, rule.metric);
+        let metricValue: number;
+
+        if (rule.metric === 'ROAS' && tonicRevenueMap) {
+          // Calculate hybrid ROAS using Tonic revenue and Meta cost
+          metricValue = this.calculateHybridRoas(entity.name, tonicRevenueMap, metrics.spend, metrics.roas);
+        } else {
+          metricValue = this.getMetricValue(metrics, rule.metric);
+        }
 
         // Check if condition is met
         const conditionMet = this.checkCondition(
@@ -207,6 +255,91 @@ class AdRulesService {
     }
 
     return anyTriggered;
+  }
+
+  /**
+   * Extract Tonic campaign ID from Meta campaign name
+   * Format: "4193514_TestPromptCampaign" -> "4193514"
+   */
+  private extractTonicIdFromCampaignName(name: string): string | null {
+    const match = name.match(/^(\d+)_/);
+    return match ? match[1] : null;
+  }
+
+  /**
+   * Calculate hybrid ROAS using Tonic gross revenue and Meta cost
+   * Formula: (Tonic Gross Revenue / Meta Cost) * 100
+   * Falls back to Meta ROAS if no Tonic data available
+   */
+  private calculateHybridRoas(
+    entityName: string,
+    tonicRevenueMap: Map<string, number>,
+    metaCost: number,
+    metaRoas: number
+  ): number {
+    const tonicId = this.extractTonicIdFromCampaignName(entityName);
+
+    if (!tonicId) {
+      logger.warn('ad-rules', `Could not extract Tonic ID from "${entityName}". Using Meta ROAS: ${metaRoas}`);
+      return metaRoas;
+    }
+
+    const tonicRevenue = tonicRevenueMap.get(tonicId);
+
+    if (tonicRevenue === undefined || tonicRevenue === 0) {
+      logger.warn('ad-rules', `No Tonic revenue for campaign ID ${tonicId}. Using Meta ROAS: ${metaRoas}`);
+      return metaRoas;
+    }
+
+    if (metaCost <= 0) {
+      logger.warn('ad-rules', `Meta cost is zero for "${entityName}". Returning 0 ROAS.`);
+      return 0;
+    }
+
+    const calculatedRoas = (tonicRevenue / metaCost) * 100;
+    logger.debug('ad-rules', `Hybrid ROAS for "${entityName}": ${calculatedRoas.toFixed(2)}% (Tonic: $${tonicRevenue.toFixed(2)}, Meta: $${metaCost.toFixed(2)})`);
+
+    return calculatedRoas;
+  }
+
+  /**
+   * Convert ROAS date range to Tonic API date format (YYYY-MM-DD)
+   */
+  private getTonicDateFromRange(dateRange: string): string {
+    const now = new Date();
+
+    switch (dateRange) {
+      case 'today':
+        return now.toISOString().split('T')[0];
+      case 'yesterday':
+        now.setDate(now.getDate() - 1);
+        return now.toISOString().split('T')[0];
+      case 'last7days':
+        // For Tonic, we query today's data (aggregated in Tonic)
+        return now.toISOString().split('T')[0];
+      case 'last30days':
+        return now.toISOString().split('T')[0];
+      default:
+        return now.toISOString().split('T')[0];
+    }
+  }
+
+  /**
+   * Convert ROAS date range to Meta API date preset
+   */
+  private getMetaDatePreset(dateRange: string): string {
+    switch (dateRange) {
+      case 'today':
+        return 'today';
+      case 'yesterday':
+        return 'yesterday';
+      case 'last7days':
+        return 'last_7d';
+      case 'last30days':
+        return 'last_30d';
+      default:
+        return 'today';
+    }
   }
 
   /**

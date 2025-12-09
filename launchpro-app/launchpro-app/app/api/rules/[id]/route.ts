@@ -28,6 +28,13 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             metaAdAccountId: true,
           },
         },
+        tonicAccount: {
+          select: {
+            id: true,
+            name: true,
+            accountType: true,
+          },
+        },
         specificCampaign: {
           select: {
             id: true,
@@ -150,6 +157,19 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     if (body.cooldownMinutes !== undefined) updateData.cooldownMinutes = body.cooldownMinutes;
     if (body.maxExecutions !== undefined) updateData.maxExecutions = body.maxExecutions;
 
+    // Handle ROAS-specific fields
+    const metricToUse = body.metric !== undefined ? body.metric : existingRule.metric;
+    if (metricToUse === 'ROAS') {
+      if (body.tonicAccountId !== undefined) updateData.tonicAccountId = body.tonicAccountId;
+      if (body.roasDateRange !== undefined) updateData.roasDateRange = body.roasDateRange;
+    } else {
+      // Clear ROAS fields if metric is not ROAS
+      if (body.metric !== undefined && body.metric !== 'ROAS') {
+        updateData.tonicAccountId = null;
+        updateData.roasDateRange = null;
+      }
+    }
+
     const rule = await prisma.adRule.update({
       where: { id },
       data: updateData,
@@ -159,6 +179,13 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
             id: true,
             name: true,
             metaAdAccountId: true,
+          },
+        },
+        tonicAccount: {
+          select: {
+            id: true,
+            name: true,
+            accountType: true,
           },
         },
         specificCampaign: {

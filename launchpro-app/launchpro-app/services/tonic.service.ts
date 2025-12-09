@@ -45,6 +45,14 @@ export interface TonicArticleRequest {
   citation_links?: string[];
 }
 
+export interface TonicStatsByCountry {
+  campaign_id: string;
+  country_code: string;
+  clicks: string;
+  revenue: string;
+  rpc: string;
+}
+
 /**
  * Tonic Pixel Parameters
  * Based on Tonic API documentation for /privileged/v3/campaign/pixel/{platform}
@@ -452,6 +460,90 @@ class TonicService {
     const client = await this.getAuthenticatedClient(credentials);
     const response = await client.get('/privileged/v3/rsoc/domains');
     return response.data;
+  }
+
+  /**
+   * Get RSOC stats by country for a specific date
+   * Returns revenue, clicks, and RPC (Revenue Per Click) per campaign and country
+   *
+   * @param credentials - Tonic API credentials
+   * @param date - Date in YYYY-MM-DD format
+   * @param hour - Optional hour (0-23) for more granular data
+   * @returns Array of stats with campaign_id, country_code, clicks, revenue, rpc
+   *
+   * Note: RPC values are only calculated starting from the 10th click.
+   * Until 10 clicks are reached, the API returns 0 for rpc and clicks.
+   */
+  async getStatsByCountry(
+    credentials: TonicCredentials,
+    date: string,
+    hour?: number
+  ): Promise<TonicStatsByCountry[]> {
+    const client = await this.getAuthenticatedClient(credentials);
+
+    const params: Record<string, string | number> = { date };
+    if (hour !== undefined && hour >= 0 && hour <= 23) {
+      params.hour = hour;
+    }
+
+    logger.info('tonic', `Fetching RSOC stats by country for date: ${date}${hour !== undefined ? ` hour: ${hour}` : ''}`);
+
+    try {
+      const response = await client.get('/privileged/v3/rsoc/stats_by_country', { params });
+
+      logger.success('tonic', `Stats by country fetched successfully`, {
+        recordCount: Array.isArray(response.data) ? response.data.length : 0,
+        date,
+        hour,
+      });
+
+      return response.data;
+    } catch (error: any) {
+      logger.error('tonic', `Failed to fetch stats by country`, {
+        date,
+        hour,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        errorData: error.response?.data,
+        error: error.message,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Get aggregated gross revenue for a specific campaign ID
+   * Sums revenue across all countries for the given campaign
+   *
+   * @param credentials - Tonic API credentials
+   * @param campaignId - Tonic campaign ID
+   * @param date - Date in YYYY-MM-DD format
+   * @returns Total gross revenue for the campaign
+   */
+  async getCampaignGrossRevenue(
+    credentials: TonicCredentials,
+    campaignId: string,
+    date: string
+  ): Promise<number> {
+    const stats = await this.getStatsByCountry(credentials, date);
+
+    // Filter by campaign_id and sum revenue
+    const campaignStats = stats.filter(s => s.campaign_id === campaignId);
+
+    const totalRevenue = campaignStats.reduce((sum, stat) => {
+      return sum + parseFloat(stat.revenue || '0');
+    }, 0);
+
+    logger.info('tonic', `Campaign ${campaignId} gross revenue for ${date}: $${totalRevenue.toFixed(2)}`, {
+      countriesFound: campaignStats.length,
+      breakdown: campaignStats.map(s => ({
+        country: s.country_code,
+        revenue: s.revenue,
+        clicks: s.clicks,
+      })),
+    });
+
+    return totalRevenue;
   }
 
   // ============================================

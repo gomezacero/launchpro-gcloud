@@ -227,8 +227,9 @@ class MetaService {
   /**
    * Get campaign details
    */
-  async getCampaign(campaignId: string) {
-    const response = await this.client.get(`/${campaignId}`, {
+  async getCampaign(campaignId: string, accessToken?: string) {
+    const client = this.getClient(accessToken);
+    const response = await client.get(`/${campaignId}`, {
       params: {
         fields: 'id,name,objective,status,created_time,updated_time,daily_budget,lifetime_budget',
       },

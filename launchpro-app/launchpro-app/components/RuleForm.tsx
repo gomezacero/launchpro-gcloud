@@ -9,10 +9,41 @@ interface MetaAccount {
   metaAdAccountId: string;
 }
 
+interface TonicAccount {
+  id: string;
+  name: string;
+  accountType: string;
+}
+
 interface Campaign {
   id: string;
   name: string;
   status: string;
+}
+
+interface RoasCalculationResult {
+  success: boolean;
+  error?: string;
+  dateRange: string;
+  tonicDate: string;
+  campaigns: Array<{
+    metaCampaignId: string;
+    metaCampaignName: string;
+    tonicCampaignId: string | null;
+    grossRevenue: number;
+    cost: number;
+    calculatedRoas: number;
+    metaRoas: number;
+    error?: string;
+  }>;
+  totals: {
+    totalGrossRevenue: number;
+    totalCost: number;
+    overallRoas: number;
+    campaignsEvaluated: number;
+    campaignsWithErrors: number;
+  };
+  errors: string[];
 }
 
 interface SimulationEntity {
@@ -66,6 +97,9 @@ interface RuleFormData {
   value: string;
   valueMin: string;
   valueMax: string;
+  // ROAS specific (Tonic + Meta calculation)
+  tonicAccountId: string;
+  roasDateRange: string;
   // Frequency
   frequencyHours: string;
   // Action
@@ -131,6 +165,13 @@ const FREQUENCY_OPTIONS = [
   { value: '24', label: 'Cada 24 horas (1 vez al dia)' },
 ];
 
+const ROAS_DATE_RANGE_OPTIONS = [
+  { value: 'today', label: 'Hoy' },
+  { value: 'yesterday', label: 'Ayer' },
+  { value: 'last7days', label: 'Ultimos 7 dias' },
+  { value: 'last30days', label: 'Ultimos 30 dias' },
+];
+
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const DAYS = [
   { value: 0, label: 'Dom' },
@@ -147,6 +188,7 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [metaAccounts, setMetaAccounts] = useState<MetaAccount[]>([]);
+  const [tonicAccounts, setTonicAccounts] = useState<TonicAccount[]>([]);
   const [loadingAccounts, setLoadingAccounts] = useState(true);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loadingCampaigns, setLoadingCampaigns] = useState(false);
@@ -155,6 +197,11 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
   const [simulating, setSimulating] = useState(false);
   const [simulationResult, setSimulationResult] = useState<SimulationResult | null>(null);
   const [showSimulationModal, setShowSimulationModal] = useState(false);
+
+  // ROAS calculation state
+  const [calculatingRoas, setCalculatingRoas] = useState(false);
+  const [roasResult, setRoasResult] = useState<RoasCalculationResult | null>(null);
+  const [showRoasModal, setShowRoasModal] = useState(false);
 
   const [formData, setFormData] = useState<RuleFormData>({
     name: initialData?.name || '',
@@ -169,6 +216,8 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
     value: initialData?.value || '',
     valueMin: initialData?.valueMin || '',
     valueMax: initialData?.valueMax || '',
+    tonicAccountId: initialData?.tonicAccountId || '',
+    roasDateRange: initialData?.roasDateRange || 'today',
     frequencyHours: initialData?.frequencyHours || '3',
     action: initialData?.action || 'NOTIFY',
     actionValue: initialData?.actionValue || '',
@@ -193,23 +242,42 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
 
   const fetchMetaAccounts = async () => {
     try {
-      const response = await fetch('/api/accounts?type=META');
-      const data = await response.json();
+      // Fetch Meta accounts
+      const metaResponse = await fetch('/api/accounts?type=META');
+      const metaData = await metaResponse.json();
 
-      const accounts = data.data?.meta || data.data || [];
+      const metaAccountsList = metaData.data?.meta || metaData.data || [];
 
-      if (data.success && Array.isArray(accounts)) {
-        setMetaAccounts(accounts);
-        if (!initialData?.metaAccountId && accounts.length > 0) {
-          setFormData(prev => ({ ...prev, metaAccountId: accounts[0].id }));
+      if (metaData.success && Array.isArray(metaAccountsList)) {
+        setMetaAccounts(metaAccountsList);
+        if (!initialData?.metaAccountId && metaAccountsList.length > 0) {
+          setFormData(prev => ({ ...prev, metaAccountId: metaAccountsList[0].id }));
         }
       } else {
-        console.error('Error fetching Meta accounts:', data.error || 'Invalid response');
+        console.error('Error fetching Meta accounts:', metaData.error || 'Invalid response');
         setMetaAccounts([]);
       }
+
+      // Fetch Tonic accounts
+      const tonicResponse = await fetch('/api/accounts?type=TONIC');
+      const tonicData = await tonicResponse.json();
+
+      const tonicAccountsList = tonicData.data?.tonic || tonicData.data || [];
+
+      if (tonicData.success && Array.isArray(tonicAccountsList)) {
+        setTonicAccounts(tonicAccountsList);
+        // Auto-select first Tonic account if ROAS is selected and no account set
+        if (!initialData?.tonicAccountId && tonicAccountsList.length > 0) {
+          setFormData(prev => ({ ...prev, tonicAccountId: tonicAccountsList[0].id }));
+        }
+      } else {
+        console.error('Error fetching Tonic accounts:', tonicData.error || 'Invalid response');
+        setTonicAccounts([]);
+      }
     } catch (err) {
-      console.error('Error fetching Meta accounts:', err);
+      console.error('Error fetching accounts:', err);
       setMetaAccounts([]);
+      setTonicAccounts([]);
     } finally {
       setLoadingAccounts(false);
     }
@@ -261,6 +329,16 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
         throw new Error('Selecciona una campana especifica o marca "Aplicar a todas las campanas"');
       }
 
+      // Validate ROAS specific fields
+      if (formData.metric === 'ROAS') {
+        if (!formData.tonicAccountId) {
+          throw new Error('Para la metrica ROAS, debes seleccionar una cuenta Tonic');
+        }
+        if (!formData.roasDateRange) {
+          throw new Error('Para la metrica ROAS, debes seleccionar un rango de fecha');
+        }
+      }
+
       // Prepare data
       const payload = {
         name: formData.name.trim(),
@@ -275,6 +353,9 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
         value: parseFloat(formData.value) || 0,
         valueMin: selectedOperator?.needsRange ? (parseFloat(formData.valueMin) || 0) : null,
         valueMax: selectedOperator?.needsRange ? (parseFloat(formData.valueMax) || 0) : null,
+        // ROAS specific fields
+        tonicAccountId: formData.metric === 'ROAS' ? formData.tonicAccountId : null,
+        roasDateRange: formData.metric === 'ROAS' ? formData.roasDateRange : null,
         frequencyHours: parseInt(formData.frequencyHours) || 3,
         action: formData.action,
         actionValue: selectedAction?.needsValue ? (parseFloat(formData.actionValue) || 0) : null,
@@ -341,6 +422,53 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
       ...prev,
       scheduleDays: prev.scheduleDays.length === 7 ? [] : DAYS.map(d => d.value),
     }));
+  };
+
+  // ROAS Calculation function
+  const handleCalculateRoas = async () => {
+    if (!formData.metaAccountId) {
+      setError('Selecciona una cuenta Meta para calcular ROAS');
+      return;
+    }
+    if (!formData.tonicAccountId) {
+      setError('Selecciona una cuenta Tonic para calcular ROAS');
+      return;
+    }
+    if (!formData.roasDateRange) {
+      setError('Selecciona un rango de fecha para calcular ROAS');
+      return;
+    }
+
+    setCalculatingRoas(true);
+    setError(null);
+    setRoasResult(null);
+
+    try {
+      const response = await fetch('/api/rules/calculate-roas', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          metaAccountId: formData.metaAccountId,
+          tonicAccountId: formData.tonicAccountId,
+          dateRange: formData.roasDateRange,
+          // If specific campaign is selected, we could pass it here
+          // For now, calculate for all campaigns
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setRoasResult(data);
+        setShowRoasModal(true);
+      } else {
+        setError(data.error || 'Error al calcular ROAS');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Error al calcular ROAS');
+    } finally {
+      setCalculatingRoas(false);
+    }
   };
 
   // Simulation function
@@ -573,6 +701,100 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
               {METRICS.find(m => m.value === formData.metric)?.description}
             </p>
           </div>
+
+          {/* ROAS Specific Fields - Only shown when ROAS metric is selected */}
+          {formData.metric === 'ROAS' && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-4">
+              <div className="flex items-start gap-2 mb-2">
+                <svg className="w-5 h-5 text-blue-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <div>
+                  <h4 className="font-medium text-blue-900">Calculo de ROAS Hibrido</h4>
+                  <p className="text-xs text-blue-700">
+                    El ROAS se calculara usando: (Gross Revenue de Tonic / Costo de Meta) x 100
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Cuenta Tonic *
+                </label>
+                {tonicAccounts.length === 0 ? (
+                  <div className="w-full px-4 py-2 border border-red-200 rounded-lg bg-red-50 text-red-600 text-sm">
+                    No hay cuentas Tonic configuradas
+                  </div>
+                ) : (
+                  <select
+                    value={formData.tonicAccountId}
+                    onChange={e => setFormData({ ...formData, tonicAccountId: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="">Seleccionar cuenta Tonic...</option>
+                    {tonicAccounts.map(account => (
+                      <option key={account.id} value={account.id}>
+                        {account.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <p className="text-xs text-gray-500 mt-1">
+                  Cuenta Tonic para obtener el Gross Revenue de las campanas
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Rango de Fecha para ROAS *
+                </label>
+                <select
+                  value={formData.roasDateRange}
+                  onChange={e => setFormData({ ...formData, roasDateRange: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  {ROAS_DATE_RANGE_OPTIONS.map(option => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  Periodo de tiempo para obtener datos de Tonic y Meta
+                </p>
+              </div>
+
+              {/* Calculate ROAS Button */}
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={handleCalculateRoas}
+                  disabled={calculatingRoas || !formData.metaAccountId || !formData.tonicAccountId}
+                  className="w-full px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {calculatingRoas ? (
+                    <>
+                      <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      Calculando ROAS...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                      </svg>
+                      Calcular ROAS (Debug)
+                    </>
+                  )}
+                </button>
+                <p className="text-xs text-gray-500 mt-1 text-center">
+                  Calcula y muestra el ROAS de todas las campanas para verificar el mapeo
+                </p>
+              </div>
+            </div>
+          )}
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1091,6 +1313,156 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
             <div className="border-t bg-gray-50 px-6 py-4 flex justify-end gap-3">
               <button
                 onClick={() => setShowSimulationModal(false)}
+                className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ROAS Calculation Modal */}
+      {showRoasModal && roasResult && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-hidden">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-green-600 to-green-700 px-6 py-4 flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-bold text-white">Calculo de ROAS</h3>
+                <p className="text-green-200 text-sm">
+                  Rango: {ROAS_DATE_RANGE_OPTIONS.find(o => o.value === roasResult.dateRange)?.label} | Fecha Tonic: {roasResult.tonicDate}
+                </p>
+              </div>
+              <button
+                onClick={() => setShowRoasModal(false)}
+                className="text-white hover:bg-white/20 rounded-lg p-2 transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
+              {/* Summary Stats */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div className="bg-green-50 rounded-lg p-4 text-center">
+                  <div className="text-2xl font-bold text-green-600">${roasResult.totals.totalGrossRevenue.toFixed(2)}</div>
+                  <div className="text-sm text-green-800">Gross Revenue (Tonic)</div>
+                </div>
+                <div className="bg-red-50 rounded-lg p-4 text-center">
+                  <div className="text-2xl font-bold text-red-600">${roasResult.totals.totalCost.toFixed(2)}</div>
+                  <div className="text-sm text-red-800">Costo (Meta)</div>
+                </div>
+                <div className="bg-blue-50 rounded-lg p-4 text-center">
+                  <div className="text-2xl font-bold text-blue-600">{roasResult.totals.overallRoas.toFixed(2)}%</div>
+                  <div className="text-sm text-blue-800">ROAS Calculado</div>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-4 text-center">
+                  <div className="text-2xl font-bold text-gray-600">{roasResult.totals.campaignsEvaluated}</div>
+                  <div className="text-sm text-gray-800">Campanas Evaluadas</div>
+                </div>
+              </div>
+
+              {/* Errors Warning */}
+              {roasResult.errors.length > 0 && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+                  <div className="flex items-start gap-3">
+                    <svg className="w-5 h-5 text-yellow-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                    <div>
+                      <h4 className="font-semibold text-yellow-800">Errores de Mapeo ({roasResult.totals.campaignsWithErrors})</h4>
+                      <ul className="mt-2 text-sm text-yellow-700 space-y-1">
+                        {roasResult.errors.map((err, idx) => (
+                          <li key={idx}>• {err}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Campaigns Table */}
+              <div>
+                <h4 className="font-semibold text-gray-900 mb-3">Detalle por Campana</h4>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-gray-100">
+                        <th className="text-left px-3 py-2 rounded-tl-lg">Campana Meta</th>
+                        <th className="text-center px-3 py-2">Tonic ID</th>
+                        <th className="text-right px-3 py-2">Gross Revenue</th>
+                        <th className="text-right px-3 py-2">Costo</th>
+                        <th className="text-right px-3 py-2">ROAS Calculado</th>
+                        <th className="text-right px-3 py-2">ROAS Meta</th>
+                        <th className="text-center px-3 py-2 rounded-tr-lg">Estado</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {roasResult.campaigns.map((campaign, idx) => (
+                        <tr key={campaign.metaCampaignId} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                          <td className="px-3 py-2 font-medium text-gray-900 max-w-[200px] truncate" title={campaign.metaCampaignName}>
+                            {campaign.metaCampaignName}
+                          </td>
+                          <td className="px-3 py-2 text-center font-mono text-xs">
+                            {campaign.tonicCampaignId || (
+                              <span className="text-red-500">No encontrado</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono text-green-600">
+                            ${campaign.grossRevenue.toFixed(2)}
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono text-red-600">
+                            ${campaign.cost.toFixed(2)}
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono font-bold text-blue-600">
+                            {campaign.calculatedRoas.toFixed(2)}%
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono text-gray-500">
+                            {campaign.metaRoas.toFixed(2)}%
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            {campaign.error ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800" title={campaign.error}>
+                                Warning
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                OK
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {roasResult.campaigns.length === 0 && (
+                  <div className="text-center py-8 text-gray-500">
+                    No se encontraron campanas activas
+                  </div>
+                )}
+              </div>
+
+              {/* Formula Explanation */}
+              <div className="mt-6 bg-gray-50 rounded-lg p-4">
+                <h4 className="font-semibold text-gray-900 mb-2">Formula de ROAS</h4>
+                <p className="text-sm text-gray-600">
+                  <code className="bg-gray-200 px-2 py-1 rounded">ROAS = (Gross Revenue de Tonic / Costo de Meta) x 100</code>
+                </p>
+                <p className="text-xs text-gray-500 mt-2">
+                  El mapeo de campanas se realiza extrayendo el ID de Tonic del nombre de la campana en Meta (formato: &quot;1234567_NombreCampana&quot;)
+                </p>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="border-t bg-gray-50 px-6 py-4 flex justify-end gap-3">
+              <button
+                onClick={() => setShowRoasModal(false)}
                 className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg font-medium hover:bg-gray-50 transition-colors"
               >
                 Cerrar

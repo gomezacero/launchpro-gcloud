@@ -91,7 +91,8 @@ model Account {
   campaignsAsTikTok CampaignPlatform[] @relation("TikTokAccount")
 
   // Ad Rules
-  adRules          AdRule[]
+  adRulesAsMeta    AdRule[]       @relation("MetaRuleAccount")
+  adRulesAsTonic   AdRule[]       @relation("TonicRuleAccount")
 
   // Status
   isActive Boolean @default(true)
@@ -408,7 +409,14 @@ model AdRule {
 
   // Account - which Meta account this rule belongs to
   metaAccountId   String
-  metaAccount     Account        @relation(fields: [metaAccountId], references: [id])
+  metaAccount     Account        @relation("MetaRuleAccount", fields: [metaAccountId], references: [id])
+
+  // Tonic Account - for ROAS calculation (Gross Revenue comes from Tonic)
+  tonicAccountId  String?
+  tonicAccount    Account?       @relation("TonicRuleAccount", fields: [tonicAccountId], references: [id])
+
+  // ROAS Date Range - configurable date for Tonic stats
+  roasDateRange   String?        // "today", "yesterday", "last7days", "last30days"
 
   // Condition
   metric          AdRuleMetric
@@ -452,6 +460,7 @@ model AdRule {
   updatedAt       DateTime       @updatedAt
 
   @@index([metaAccountId])
+  @@index([tonicAccountId])
   @@index([isActive])
   @@index([level])
   @@index([specificCampaignId])
