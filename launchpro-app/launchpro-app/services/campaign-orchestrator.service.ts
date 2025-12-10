@@ -2569,8 +2569,55 @@ class CampaignOrchestratorService {
       logger.info('tiktok', `Waiting 15 seconds for TikTok to process video ${idx + 1}...`);
       await new Promise(resolve => setTimeout(resolve, 15000));
 
+      // Upload thumbnail image for SINGLE_VIDEO ad (REQUIRED by TikTok API)
+      // TikTok requires image_ids for video ads - the image is used as the video cover/thumbnail
+      // Aspect ratio of thumbnail MUST match the video aspect ratio
+      let thumbnailImageId: string | null = null;
+
+      if (videoCoverUrl) {
+        try {
+          logger.info('tiktok', `Uploading thumbnail for video ${idx + 1} from cover URL...`);
+
+          // Download the image from TikTok's CDN first, then upload as file
+          // This is more reliable than UPLOAD_BY_URL which can fail with "Unsupported image size"
+          const axios = (await import('axios')).default;
+          const imageResponse = await axios.get(videoCoverUrl, {
+            responseType: 'arraybuffer',
+            timeout: 30000,
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            },
+          });
+
+          const imageBuffer = Buffer.from(imageResponse.data);
+          logger.info('tiktok', `Downloaded thumbnail image: ${imageBuffer.length} bytes`);
+
+          // Upload the image buffer to TikTok
+          const thumbnailUploadResult = await tiktokService.uploadImage(
+            imageBuffer,
+            `${uniqueFileName.replace('.mp4', '')}_thumbnail.jpg`,
+            'UPLOAD_BY_FILE',
+            accessToken,
+            advertiserId  // Pass the correct advertiser ID
+          );
+
+          const thumbnailInfo = Array.isArray(thumbnailUploadResult) ? thumbnailUploadResult[0] : thumbnailUploadResult;
+          thumbnailImageId = thumbnailInfo?.image_id;
+
+          if (thumbnailImageId) {
+            logger.success('tiktok', `Thumbnail ${idx + 1} uploaded successfully`, { thumbnailImageId });
+          } else {
+            logger.warn('tiktok', `Thumbnail ${idx + 1} upload did not return image_id`, thumbnailUploadResult);
+          }
+        } catch (thumbError: any) {
+          logger.error('tiktok', `Failed to upload thumbnail for video ${idx + 1}: ${thumbError.message}`);
+          // Continue without thumbnail - the ad creation will fail if TikTok requires it
+        }
+      } else {
+        logger.warn('tiktok', `No video_cover_url available for video ${idx + 1}`);
+      }
+
       // Create Ad with retry logic
-      // Note: TikTok only handles videos - no image_ids needed for SINGLE_VIDEO ads
       logger.info('tiktok', `Creating TikTok ad ${idx + 1}/${videos.length}...`);
 
       let adCreationAttempts = 0;
@@ -2592,6 +2639,15 @@ class CampaignOrchestratorService {
             video_id: videoId,
             operation_status: 'DISABLE', // Ad paused (only ads are paused)
           };
+
+          // Add thumbnail image_ids if available (REQUIRED for SINGLE_VIDEO ads)
+          // The image aspect ratio must match the video aspect ratio
+          if (thumbnailImageId) {
+            adParams.image_ids = [thumbnailImageId];
+            logger.info('tiktok', `Using thumbnail image_id: ${thumbnailImageId}`);
+          } else {
+            logger.warn('tiktok', `No thumbnail available for ad ${idx + 1} - TikTok may reject the ad creation`);
+          }
 
           if (identityId && identityType && identityType !== 'ADVERTISER') {
             adParams.identity_id = identityId;

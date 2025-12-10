@@ -560,13 +560,17 @@ class TikTokService {
    * @param imageName - Optional filename
    * @param uploadType - UPLOAD_BY_URL (recommended) or UPLOAD_BY_FILE
    * @param accessToken - Optional access token override
+   * @param advertiserId - Optional advertiser ID override (uses default if not provided)
    */
   async uploadImage(
     image: Buffer | string,
     imageName?: string,
     uploadType: 'UPLOAD_BY_FILE' | 'UPLOAD_BY_URL' = 'UPLOAD_BY_URL',
-    accessToken?: string
+    accessToken?: string,
+    advertiserId?: string
   ) {
+    const effectiveAdvertiserId = advertiserId || this.advertiserId;
+
     // UPLOAD_BY_URL: Let TikTok download the image directly (RECOMMENDED)
     if (uploadType === 'UPLOAD_BY_URL' && typeof image === 'string') {
       console.log(`[TikTok] Uploading image via URL: ${image}`);
@@ -584,7 +588,7 @@ class TikTokService {
 
       // Prepare payload for URL upload
       const payload: any = {
-        advertiser_id: this.advertiserId,
+        advertiser_id: effectiveAdvertiserId,
         upload_type: 'UPLOAD_BY_URL',
         image_url: finalUrl,
       };
@@ -618,7 +622,7 @@ class TikTokService {
     }
 
     const formData = new FormData();
-    formData.append('advertiser_id', this.advertiserId);
+    formData.append('advertiser_id', effectiveAdvertiserId);
     formData.append('upload_type', 'UPLOAD_BY_FILE');
 
     // Ensure filename has extension
