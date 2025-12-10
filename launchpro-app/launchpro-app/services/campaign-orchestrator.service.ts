@@ -2566,18 +2566,48 @@ class CampaignOrchestratorService {
       logger.success('tiktok', `Video ${idx + 1} uploaded successfully`, { videoId });
 
       // Wait for TikTok to process the video
-      logger.info('tiktok', `Waiting 10 seconds for TikTok to process video ${idx + 1}...`);
-      await new Promise(resolve => setTimeout(resolve, 10000));
+      logger.info('tiktok', `Waiting 15 seconds for TikTok to process video ${idx + 1}...`);
+      await new Promise(resolve => setTimeout(resolve, 15000));
+
+      // If video_cover_url is not available from upload, query the video info
+      let finalVideoCoverUrl = videoCoverUrl;
+      if (!finalVideoCoverUrl) {
+        logger.info('tiktok', `Video ${idx + 1} cover URL not available from upload, querying video info...`);
+
+        // Try to get video info up to 3 times with increasing delays
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          const videoDetails = await tiktokService.getVideoInfo(advertiserId, videoId, accessToken);
+
+          if (videoDetails?.video_cover_url) {
+            finalVideoCoverUrl = videoDetails.video_cover_url;
+            logger.success('tiktok', `Video ${idx + 1} cover URL obtained from video info`, {
+              video_cover_url: finalVideoCoverUrl,
+              attempt,
+            });
+            break;
+          }
+
+          if (attempt < 3) {
+            const waitTime = attempt * 10000; // 10s, 20s
+            logger.info('tiktok', `Video ${idx + 1} cover URL not ready (attempt ${attempt}/3), waiting ${waitTime / 1000}s...`);
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+          }
+        }
+
+        if (!finalVideoCoverUrl) {
+          logger.warn('tiktok', `Video ${idx + 1} cover URL still not available after 3 attempts`);
+        }
+      }
 
       // Upload the video thumbnail as an image (REQUIRED for SINGLE_VIDEO ads)
       let thumbnailImageId: string | null = null;
 
-      if (videoCoverUrl) {
+      if (finalVideoCoverUrl) {
         try {
-          logger.info('tiktok', `Uploading thumbnail for video ${idx + 1}...`);
+          logger.info('tiktok', `Uploading thumbnail for video ${idx + 1} from: ${finalVideoCoverUrl}`);
 
           const thumbnailUploadResult = await tiktokService.uploadImage(
-            videoCoverUrl,
+            finalVideoCoverUrl,
             `${uniqueFileName.replace('.mp4', '')}_thumbnail.jpg`,
             'UPLOAD_BY_URL',
             accessToken
@@ -2588,10 +2618,18 @@ class CampaignOrchestratorService {
 
           if (thumbnailImageId) {
             logger.success('tiktok', `Thumbnail ${idx + 1} uploaded successfully`, { thumbnailImageId });
+          } else {
+            logger.warn('tiktok', `Thumbnail ${idx + 1} upload did not return image_id`);
           }
         } catch (thumbError: any) {
-          logger.warn('tiktok', `Failed to upload thumbnail for video ${idx + 1}: ${thumbError.message}`);
+          logger.error('tiktok', `Failed to upload thumbnail for video ${idx + 1}: ${thumbError.message}`);
         }
+      }
+
+      // TikTok REQUIRES an image for SINGLE_VIDEO ads
+      if (!thumbnailImageId) {
+        logger.error('tiktok', `No thumbnail available for video ${idx + 1}. TikTok requires an image for video ads.`);
+        throw new Error(`TikTok requires a thumbnail image for video ads. Video "${video.fileName}" does not have a cover image available. Please try re-uploading the video or use a different video format.`);
       }
 
       // Create Ad with retry logic

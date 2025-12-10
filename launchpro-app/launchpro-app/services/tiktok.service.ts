@@ -480,6 +480,53 @@ class TikTokService {
     return this.handleResponse(response);
   }
 
+  /**
+   * Get video information with custom advertiser_id
+   * Returns video details including video_cover_url
+   *
+   * @param advertiserId - TikTok advertiser ID
+   * @param videoId - Video ID to query
+   * @param accessToken - Access token for authentication
+   * @returns Video info including video_cover_url
+   */
+  async getVideoInfo(
+    advertiserId: string,
+    videoId: string,
+    accessToken?: string
+  ): Promise<{
+    video_id: string;
+    video_cover_url?: string;
+    preview_url?: string;
+    duration?: number;
+    width?: number;
+    height?: number;
+    file_name?: string;
+    format?: string;
+    displayable?: boolean;
+  } | null> {
+    try {
+      const client = this.getClient(accessToken);
+      const response = await client.get('/file/video/ad/info/', {
+        params: {
+          advertiser_id: advertiserId,
+          video_ids: JSON.stringify([videoId]),
+        },
+      });
+
+      const result = this.handleResponse(response);
+      const videos = result?.list || result;
+
+      if (Array.isArray(videos) && videos.length > 0) {
+        return videos[0];
+      }
+
+      return null;
+    } catch (error: any) {
+      console.error('[TikTok] Failed to get video info:', error.message);
+      return null;
+    }
+  }
+
   // ============================================
   // IMAGE UPLOAD & MANAGEMENT
   // ============================================
