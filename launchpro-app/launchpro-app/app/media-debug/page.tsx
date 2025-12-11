@@ -175,7 +175,7 @@ export default function MediaDebugPage() {
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
             Media Debug Generate
           </h1>
-          <p className="text-gray-600">
+          <p className="text-gray-800">
             Genera imagenes y videos de prueba usando el sistema de prompts por vertical para debugear la generacion de media AI.
           </p>
         </div>
@@ -187,7 +187,7 @@ export default function MediaDebugPage() {
 
             {/* Vertical Selection */}
             <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-900 mb-1">
                 Vertical (Opcional - se auto-detecta)
               </label>
               <select
@@ -202,14 +202,14 @@ export default function MediaDebugPage() {
                   </option>
                 ))}
               </select>
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-gray-700 mt-1">
                 Si no seleccionas, el sistema detectara automaticamente basado en category/offerName
               </p>
             </div>
 
             {/* Category */}
             <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-900 mb-1">
                 Categoria / Category <span className="text-red-500">*</span>
               </label>
               <input
@@ -223,7 +223,7 @@ export default function MediaDebugPage() {
 
             {/* Offer Name */}
             <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-900 mb-1">
                 Nombre de Oferta (Opcional)
               </label>
               <input
@@ -238,7 +238,7 @@ export default function MediaDebugPage() {
             {/* Country & Language */}
             <div className="grid grid-cols-2 gap-4 mb-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-900 mb-1">
                   Pais
                 </label>
                 <select
@@ -254,7 +254,7 @@ export default function MediaDebugPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-900 mb-1">
                   Idioma
                 </label>
                 <select
@@ -273,7 +273,7 @@ export default function MediaDebugPage() {
 
             {/* Ad Title */}
             <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-900 mb-1">
                 Ad Title (Texto de imagen) <span className="text-red-500">*</span>
               </label>
               <input
@@ -283,14 +283,14 @@ export default function MediaDebugPage() {
                 placeholder="ej: Encuentra tu auto ideal hoy!"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-gray-700 mt-1">
                 Este texto aparecera superpuesto en la imagen
               </p>
             </div>
 
             {/* Copy Master */}
             <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-900 mb-1">
                 Copy Master (Texto de video) <span className="text-red-500">*</span>
               </label>
               <textarea
@@ -300,7 +300,7 @@ export default function MediaDebugPage() {
                 placeholder="ej: Accede a los mejores autos usados con financiamiento flexible. Sin complicaciones, sin enganche."
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-gray-700 mt-1">
                 Este texto aparecera superpuesto en el video
               </p>
             </div>
@@ -308,7 +308,7 @@ export default function MediaDebugPage() {
             {/* Platform & Media Type */}
             <div className="grid grid-cols-2 gap-4 mb-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-900 mb-1">
                   Plataforma
                 </label>
                 <select
@@ -330,7 +330,7 @@ export default function MediaDebugPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-900 mb-1">
                   Tipo de Media
                 </label>
                 <select
@@ -355,7 +355,7 @@ export default function MediaDebugPage() {
 
             {/* Count */}
             <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-900 mb-1">
                 Cantidad de Media
               </label>
               <input
@@ -366,7 +366,7 @@ export default function MediaDebugPage() {
                 onChange={(e) => setCount(Math.min(5, Math.max(1, parseInt(e.target.value) || 1)))}
                 className="w-24 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
-              <span className="text-sm text-gray-500 ml-2">(max 5)</span>
+              <span className="text-sm text-gray-700 ml-2">(max 5)</span>
             </div>
 
             {/* Error */}
@@ -415,7 +415,7 @@ export default function MediaDebugPage() {
                   <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
                     {classifiedVertical}
                   </span>
-                  <span className="text-gray-500 text-sm">
+                  <span className="text-gray-700 text-sm">
                     {VERTICALS.find(v => v.key === classifiedVertical)?.name || 'Unknown'}
                   </span>
                 </div>
@@ -429,7 +429,7 @@ export default function MediaDebugPage() {
 
                 {generatedPrompts.image && (
                   <div className="mb-4">
-                    <h4 className="text-sm font-medium text-gray-700 mb-2">Prompt de Imagen:</h4>
+                    <h4 className="text-sm font-medium text-gray-900 mb-2">Prompt de Imagen:</h4>
                     <pre className="p-3 bg-gray-50 rounded-lg text-xs overflow-auto max-h-48 whitespace-pre-wrap">
                       {generatedPrompts.image}
                     </pre>
@@ -438,7 +438,7 @@ export default function MediaDebugPage() {
 
                 {generatedPrompts.video && (
                   <div>
-                    <h4 className="text-sm font-medium text-gray-700 mb-2">Prompt de Video:</h4>
+                    <h4 className="text-sm font-medium text-gray-900 mb-2">Prompt de Video:</h4>
                     <pre className="p-3 bg-gray-50 rounded-lg text-xs overflow-auto max-h-48 whitespace-pre-wrap">
                       {generatedPrompts.video}
                     </pre>
@@ -455,7 +455,7 @@ export default function MediaDebugPage() {
                 {/* Images */}
                 {generatedMedia.images.length > 0 && (
                   <div className="mb-6">
-                    <h4 className="text-sm font-medium text-gray-700 mb-3">
+                    <h4 className="text-sm font-medium text-gray-900 mb-3">
                       Imagenes ({generatedMedia.images.length})
                     </h4>
                     <div className="grid grid-cols-2 gap-4">
@@ -485,7 +485,7 @@ export default function MediaDebugPage() {
                 {/* Videos */}
                 {generatedMedia.videos.length > 0 && (
                   <div>
-                    <h4 className="text-sm font-medium text-gray-700 mb-3">
+                    <h4 className="text-sm font-medium text-gray-900 mb-3">
                       Videos ({generatedMedia.videos.length})
                     </h4>
                     <div className="grid grid-cols-1 gap-4">
@@ -498,7 +498,7 @@ export default function MediaDebugPage() {
                           />
                           {vid.thumbnailUrl && (
                             <div className="p-2 border-t">
-                              <p className="text-xs text-gray-500 mb-2">Thumbnail:</p>
+                              <p className="text-xs text-gray-700 mb-2">Thumbnail:</p>
                               <img
                                 src={vid.thumbnailUrl}
                                 alt={`Thumbnail ${idx + 1}`}
@@ -528,10 +528,10 @@ export default function MediaDebugPage() {
             {!generatedMedia && !generatedPrompts && !loading && (
               <div className="bg-white shadow rounded-lg p-12 text-center">
                 <div className="text-6xl mb-4">AI</div>
-                <p className="text-gray-600">
+                <p className="text-gray-800">
                   Configura los parametros y haz clic en "Generar Media" para probar la generacion de imagenes/videos con IA.
                 </p>
-                <p className="text-gray-500 text-sm mt-2">
+                <p className="text-gray-700 text-sm mt-2">
                   Usa "Ver Prompts" para ver los prompts que se usarian sin generar media.
                 </p>
               </div>
