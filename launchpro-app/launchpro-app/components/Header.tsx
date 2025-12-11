@@ -10,6 +10,7 @@ const navigation = [
   { name: 'New Campaign', href: '/campaigns/new', icon: '🚀' },
   { name: 'Reglas', href: '/rules', icon: '⚡' },
   { name: 'Logs', href: '/logs', icon: '📝' },
+  { name: 'Media Debug', href: '/media-debug', icon: '🎨' },
   { name: 'Settings', href: '/settings', icon: '⚙️' },
 ];
 
