@@ -11,6 +11,7 @@ const navigation = [
   { name: 'Reglas', href: '/rules', icon: '⚡' },
   { name: 'Logs', href: '/logs', icon: '📝' },
   { name: 'Media Debug', href: '/media-debug', icon: '🎨' },
+  { name: 'Tonic Debug', href: '/tonic-debug', icon: '🔍' },
   { name: 'Settings', href: '/settings', icon: '⚙️' },
 ];
 
