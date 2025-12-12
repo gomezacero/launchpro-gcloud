@@ -149,6 +149,7 @@ class AdRulesService {
     // Prepare Tonic credentials if this is a ROAS rule with Tonic account
     let tonicCredentials: TonicCredentials | null = null;
     let tonicRevenueMap: Map<string, number> | null = null;
+    let dateRange: { from: string; to: string } | null = null;
 
     if (rule.metric === 'ROAS' && rule.tonicAccount) {
       if (rule.tonicAccount.tonicConsumerKey && rule.tonicAccount.tonicConsumerSecret) {
@@ -157,19 +158,18 @@ class AdRulesService {
           consumer_secret: rule.tonicAccount.tonicConsumerSecret,
         };
 
-        // Pre-fetch Tonic revenue data for the date range
-        try {
-          const tonicDate = this.getTonicDateFromRange(rule.roasDateRange || 'today');
-          logger.info('ad-rules', `Fetching Tonic stats for date: ${tonicDate}`);
-          const tonicStats = await tonicService.getStatsByCountry(tonicCredentials, tonicDate);
+        // Calculate date range from preset
+        dateRange = this.getDateRangeFromPreset(rule.roasDateRange || 'today');
 
-          // Build revenue map by campaign ID
-          tonicRevenueMap = new Map();
-          for (const stat of tonicStats) {
-            const currentRevenue = tonicRevenueMap.get(stat.campaign_id) || 0;
-            tonicRevenueMap.set(stat.campaign_id, currentRevenue + parseFloat(stat.revenue || '0'));
-          }
-          logger.info('ad-rules', `Tonic revenue map built with ${tonicRevenueMap.size} campaigns`);
+        // Pre-fetch Tonic revenue data for the date range using EPC Final endpoint
+        try {
+          logger.info('ad-rules', `Fetching Tonic gross revenue for range: ${dateRange.from} to ${dateRange.to}`);
+          tonicRevenueMap = await tonicService.getCampaignGrossRevenueRange(
+            tonicCredentials,
+            dateRange.from,
+            dateRange.to
+          );
+          logger.info('ad-rules', `Tonic revenue map built with ${tonicRevenueMap.size} campaigns for ${rule.roasDateRange || 'today'}`);
         } catch (error: any) {
           logger.error('ad-rules', `Failed to fetch Tonic stats: ${error.message}. Will use Meta ROAS as fallback.`);
           tonicRevenueMap = null;
@@ -303,24 +303,35 @@ class AdRulesService {
   }
 
   /**
-   * Convert ROAS date range to Tonic API date format (YYYY-MM-DD)
+   * Convert ROAS date range preset to actual from/to dates (YYYY-MM-DD)
+   * Returns both dates for use with Tonic's EPC Final endpoint
    */
-  private getTonicDateFromRange(dateRange: string): string {
+  private getDateRangeFromPreset(dateRange: string): { from: string; to: string } {
     const now = new Date();
+    const today = now.toISOString().split('T')[0];
 
     switch (dateRange) {
       case 'today':
-        return now.toISOString().split('T')[0];
+        return { from: today, to: today };
+
       case 'yesterday':
-        now.setDate(now.getDate() - 1);
-        return now.toISOString().split('T')[0];
+        const yesterday = new Date(now);
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdayStr = yesterday.toISOString().split('T')[0];
+        return { from: yesterdayStr, to: yesterdayStr };
+
       case 'last7days':
-        // For Tonic, we query today's data (aggregated in Tonic)
-        return now.toISOString().split('T')[0];
+        const sevenDaysAgo = new Date(now);
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        return { from: sevenDaysAgo.toISOString().split('T')[0], to: today };
+
       case 'last30days':
-        return now.toISOString().split('T')[0];
+        const thirtyDaysAgo = new Date(now);
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        return { from: thirtyDaysAgo.toISOString().split('T')[0], to: today };
+
       default:
-        return now.toISOString().split('T')[0];
+        return { from: today, to: today };
     }
   }
 

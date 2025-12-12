@@ -699,6 +699,81 @@ class TonicService {
     });
     return response.data;
   }
+
+  /**
+   * Get gross revenue by campaign for a date range using EPC Final endpoint
+   * Returns a Map of campaignId -> totalRevenueUsd
+   *
+   * @param credentials - Tonic API credentials
+   * @param from - Start date in YYYY-MM-DD format
+   * @param to - End date in YYYY-MM-DD format
+   * @returns Map with campaignId as key and total revenueUsd as value
+   */
+  async getCampaignGrossRevenueRange(
+    credentials: TonicCredentials,
+    from: string,
+    to: string
+  ): Promise<Map<string, number>> {
+    logger.info('tonic', `Fetching gross revenue for date range: ${from} to ${to}`);
+
+    try {
+      const epcData = await this.getFinalEPC(credentials, from, to);
+
+      // Build revenue map by campaignId
+      const revenueMap = new Map<string, number>();
+
+      if (Array.isArray(epcData)) {
+        for (const record of epcData) {
+          const campaignId = record.campaignId || record.campaign_id;
+          if (!campaignId) continue;
+
+          const revenue = parseFloat(record.revenueUsd || record.revenue || '0');
+          const currentRevenue = revenueMap.get(campaignId) || 0;
+          revenueMap.set(campaignId, currentRevenue + revenue);
+        }
+      }
+
+      logger.success('tonic', `Revenue map built for ${revenueMap.size} campaigns`, {
+        dateRange: `${from} to ${to}`,
+        totalRecords: Array.isArray(epcData) ? epcData.length : 0,
+        campaignCount: revenueMap.size,
+        totalRevenue: Array.from(revenueMap.values()).reduce((sum, v) => sum + v, 0).toFixed(2),
+      });
+
+      return revenueMap;
+    } catch (error: any) {
+      logger.error('tonic', `Failed to fetch gross revenue range`, {
+        from,
+        to,
+        error: error.message,
+        status: error.response?.status,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Get gross revenue for a specific campaign for a date range
+   *
+   * @param credentials - Tonic API credentials
+   * @param campaignId - Tonic campaign ID
+   * @param from - Start date in YYYY-MM-DD format
+   * @param to - End date in YYYY-MM-DD format
+   * @returns Total gross revenue for the campaign
+   */
+  async getCampaignGrossRevenueForRange(
+    credentials: TonicCredentials,
+    campaignId: string,
+    from: string,
+    to: string
+  ): Promise<number> {
+    const revenueMap = await this.getCampaignGrossRevenueRange(credentials, from, to);
+    const revenue = revenueMap.get(campaignId) || 0;
+
+    logger.info('tonic', `Campaign ${campaignId} gross revenue for ${from} to ${to}: $${revenue.toFixed(2)}`);
+
+    return revenue;
+  }
 }
 
 // Export singleton instance
