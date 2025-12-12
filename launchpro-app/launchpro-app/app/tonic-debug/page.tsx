@@ -285,7 +285,7 @@ export default function TonicDebugPage() {
                 ))}
               </select>
               {currentEndpoint && (
-                <p className="text-xs text-gray-600 mt-1">{currentEndpoint.description}</p>
+                <p className="text-xs text-gray-700 mt-1">{currentEndpoint.description}</p>
               )}
             </div>
 
@@ -327,21 +327,21 @@ export default function TonicDebugPage() {
                 <button
                   type="button"
                   onClick={() => setParams({ ...params, date: today, from: today, to: today })}
-                  className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                  className="px-3 py-1 text-sm text-gray-900 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
                 >
                   Hoy
                 </button>
                 <button
                   type="button"
                   onClick={() => setParams({ ...params, date: yesterday, from: yesterday, to: yesterday })}
-                  className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                  className="px-3 py-1 text-sm text-gray-900 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
                 >
                   Ayer
                 </button>
                 <button
                   type="button"
                   onClick={() => setParams({ ...params, from: sevenDaysAgo, to: today })}
-                  className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                  className="px-3 py-1 text-sm text-gray-900 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
                 >
                   Ultimos 7 dias
                 </button>
@@ -351,7 +351,7 @@ export default function TonicDebugPage() {
                     const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
                     setParams({ ...params, from: thirtyDaysAgo, to: today });
                   }}
-                  className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                  className="px-3 py-1 text-sm text-gray-900 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
                 >
                   Ultimos 30 dias
                 </button>
@@ -438,21 +438,21 @@ export default function TonicDebugPage() {
                 <h3 className="text-lg font-semibold mb-3">Informacion de Respuesta</h3>
                 <div className="grid grid-cols-3 gap-4 text-sm">
                   <div>
-                    <span className="text-gray-600">Endpoint:</span>
+                    <span className="text-gray-800">Endpoint:</span>
                     <span className="ml-2 font-mono text-gray-900">{result.endpoint}</span>
                   </div>
                   <div>
-                    <span className="text-gray-600">Duracion:</span>
+                    <span className="text-gray-800">Duracion:</span>
                     <span className="ml-2 font-mono text-gray-900">{result.duration}</span>
                   </div>
                   <div>
-                    <span className="text-gray-600">Registros:</span>
+                    <span className="text-gray-800">Registros:</span>
                     <span className="ml-2 font-mono text-gray-900">{result.recordCount}</span>
                   </div>
                 </div>
                 {result.params && (
                   <div className="mt-3 pt-3 border-t">
-                    <span className="text-gray-600 text-sm">Parametros:</span>
+                    <span className="text-gray-800 text-sm">Parametros:</span>
                     <pre className="mt-1 text-xs bg-gray-50 p-2 rounded overflow-auto">
                       {JSON.stringify(result.params, null, 2)}
                     </pre>
@@ -490,9 +490,9 @@ export default function TonicDebugPage() {
             {ENDPOINTS.map((endpoint) => (
               <div key={endpoint.value} className="border rounded-lg p-4">
                 <h4 className="font-medium text-gray-900 mb-1">{endpoint.name}</h4>
-                <p className="text-sm text-gray-600 mb-2">{endpoint.description}</p>
+                <p className="text-sm text-gray-700 mb-2">{endpoint.description}</p>
                 <div className="text-xs">
-                  <span className="font-medium text-gray-700">Parametros: </span>
+                  <span className="font-medium text-gray-800">Parametros: </span>
                   {endpoint.params.map((p, idx) => (
                     <span key={p.name} className="font-mono">
                       {p.name}
