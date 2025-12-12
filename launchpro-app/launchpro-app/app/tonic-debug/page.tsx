@@ -200,7 +200,7 @@ export default function TonicDebugPage() {
   const calculateTotals = () => {
     if (!result?.data) return null;
 
-    // For stats_by_country (array of records)
+    // For stats_by_country (array of records with 'revenue' field)
     if (Array.isArray(result.data) && result.data.length > 0 && result.data[0]?.revenue !== undefined) {
       const totalRevenue = result.data.reduce((sum: number, item: any) => sum + parseFloat(item.revenue || '0'), 0);
       const totalClicks = result.data.reduce((sum: number, item: any) => sum + parseInt(item.clicks || '0'), 0);
@@ -210,7 +210,7 @@ export default function TonicDebugPage() {
     // For aggregated data
     if (result.data?.aggregatedByCampaign) {
       const totalRevenue = result.data.aggregatedByCampaign.reduce((sum: number, item: any) => sum + parseFloat(item.total_revenue || '0'), 0);
-      const totalClicks = result.data.aggregatedByCampaign.reduce((sum: number, item: any) => sum + parseInt(item.total_clicks || '0'), 0);
+      const totalClicks = result.data.aggregatedByCampaign.reduce((sum: number, item: any) => sum + parseInt(item.clicks || '0'), 0);
       return {
         totalRevenue: totalRevenue.toFixed(2),
         totalClicks,
@@ -219,7 +219,29 @@ export default function TonicDebugPage() {
       };
     }
 
-    // For EPC data
+    // For EPC Final data (with 'revenueUsd' field) - ROAS calculation
+    if (Array.isArray(result.data) && result.data.length > 0 && result.data[0]?.revenueUsd !== undefined) {
+      const totalRevenueUsd = result.data.reduce((sum: number, item: any) => sum + parseFloat(item.revenueUsd || '0'), 0);
+      const totalClicks = result.data.reduce((sum: number, item: any) => sum + parseInt(item.clicks || '0'), 0);
+
+      // Group by campaignId for campaign-level totals
+      const byCampaign = new Map<string, { revenue: number; clicks: number }>();
+      result.data.forEach((item: any) => {
+        const existing = byCampaign.get(item.campaignId) || { revenue: 0, clicks: 0 };
+        existing.revenue += parseFloat(item.revenueUsd || '0');
+        existing.clicks += parseInt(item.clicks || '0');
+        byCampaign.set(item.campaignId, existing);
+      });
+
+      return {
+        totalRevenueUsd: totalRevenueUsd.toFixed(2),
+        totalClicks,
+        recordCount: result.data.length,
+        campaignCount: byCampaign.size,
+      };
+    }
+
+    // For EPC Daily data (with 'epc' and 'earnings' fields)
     if (Array.isArray(result.data) && result.data.length > 0 && result.data[0]?.epc !== undefined) {
       const totalClicks = result.data.reduce((sum: number, item: any) => sum + parseInt(item.clicks || '0'), 0);
       const totalEarnings = result.data.reduce((sum: number, item: any) => sum + parseFloat(item.earnings || '0'), 0);
@@ -394,38 +416,44 @@ export default function TonicDebugPage() {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   {totals.totalRevenue !== undefined && (
                     <div className="bg-green-50 rounded-lg p-3 text-center">
-                      <div className="text-xl font-bold text-green-600">${totals.totalRevenue}</div>
-                      <div className="text-xs text-green-800">Revenue Total</div>
+                      <div className="text-xl font-bold text-green-700">${totals.totalRevenue}</div>
+                      <div className="text-xs text-green-900 font-medium">Revenue Total</div>
+                    </div>
+                  )}
+                  {totals.totalRevenueUsd !== undefined && (
+                    <div className="bg-green-100 rounded-lg p-3 text-center border-2 border-green-400">
+                      <div className="text-2xl font-bold text-green-700">${totals.totalRevenueUsd}</div>
+                      <div className="text-xs text-green-900 font-semibold">GROSS REVENUE (USD)</div>
                     </div>
                   )}
                   {totals.totalEarnings !== undefined && (
                     <div className="bg-green-50 rounded-lg p-3 text-center">
-                      <div className="text-xl font-bold text-green-600">${totals.totalEarnings}</div>
-                      <div className="text-xs text-green-800">Earnings Total</div>
+                      <div className="text-xl font-bold text-green-700">${totals.totalEarnings}</div>
+                      <div className="text-xs text-green-900 font-medium">Earnings Total</div>
                     </div>
                   )}
                   {totals.totalClicks !== undefined && (
                     <div className="bg-blue-50 rounded-lg p-3 text-center">
-                      <div className="text-xl font-bold text-blue-600">{totals.totalClicks.toLocaleString()}</div>
-                      <div className="text-xs text-blue-800">Clicks Total</div>
+                      <div className="text-xl font-bold text-blue-700">{totals.totalClicks.toLocaleString()}</div>
+                      <div className="text-xs text-blue-900 font-medium">Clicks Total</div>
                     </div>
                   )}
                   {totals.recordCount !== undefined && (
-                    <div className="bg-gray-50 rounded-lg p-3 text-center">
-                      <div className="text-xl font-bold text-gray-600">{totals.recordCount}</div>
-                      <div className="text-xs text-gray-800">Registros</div>
+                    <div className="bg-slate-100 rounded-lg p-3 text-center">
+                      <div className="text-xl font-bold text-slate-700">{totals.recordCount}</div>
+                      <div className="text-xs text-slate-900 font-medium">Registros</div>
                     </div>
                   )}
                   {totals.campaignCount !== undefined && (
                     <div className="bg-purple-50 rounded-lg p-3 text-center">
-                      <div className="text-xl font-bold text-purple-600">{totals.campaignCount}</div>
-                      <div className="text-xs text-purple-800">Campanas</div>
+                      <div className="text-xl font-bold text-purple-700">{totals.campaignCount}</div>
+                      <div className="text-xs text-purple-900 font-medium">Campanas</div>
                     </div>
                   )}
                   {totals.daysQueried !== undefined && (
                     <div className="bg-orange-50 rounded-lg p-3 text-center">
-                      <div className="text-xl font-bold text-orange-600">{totals.daysQueried}</div>
-                      <div className="text-xs text-orange-800">Dias Consultados</div>
+                      <div className="text-xl font-bold text-orange-700">{totals.daysQueried}</div>
+                      <div className="text-xs text-orange-900 font-medium">Dias Consultados</div>
                     </div>
                   )}
                 </div>
@@ -435,25 +463,25 @@ export default function TonicDebugPage() {
             {/* Response Info */}
             {result && (
               <div className="bg-white shadow rounded-lg p-6">
-                <h3 className="text-lg font-semibold mb-3">Informacion de Respuesta</h3>
+                <h3 className="text-lg font-semibold text-gray-900 mb-3">Informacion de Respuesta</h3>
                 <div className="grid grid-cols-3 gap-4 text-sm">
                   <div>
-                    <span className="text-gray-800">Endpoint:</span>
-                    <span className="ml-2 font-mono text-gray-900">{result.endpoint}</span>
+                    <span className="text-gray-900 font-medium">Endpoint:</span>
+                    <span className="ml-2 font-mono text-blue-700 font-semibold">{result.endpoint}</span>
                   </div>
                   <div>
-                    <span className="text-gray-800">Duracion:</span>
-                    <span className="ml-2 font-mono text-gray-900">{result.duration}</span>
+                    <span className="text-gray-900 font-medium">Duracion:</span>
+                    <span className="ml-2 font-mono text-green-700 font-semibold">{result.duration}</span>
                   </div>
                   <div>
-                    <span className="text-gray-800">Registros:</span>
-                    <span className="ml-2 font-mono text-gray-900">{result.recordCount}</span>
+                    <span className="text-gray-900 font-medium">Registros:</span>
+                    <span className="ml-2 font-mono text-purple-700 font-semibold">{result.recordCount}</span>
                   </div>
                 </div>
                 {result.params && (
-                  <div className="mt-3 pt-3 border-t">
-                    <span className="text-gray-800 text-sm">Parametros:</span>
-                    <pre className="mt-1 text-xs bg-gray-50 p-2 rounded overflow-auto">
+                  <div className="mt-3 pt-3 border-t border-gray-200">
+                    <span className="text-gray-900 text-sm font-medium">Parametros:</span>
+                    <pre className="mt-1 text-xs bg-slate-100 p-2 rounded overflow-auto text-slate-800">
                       {JSON.stringify(result.params, null, 2)}
                     </pre>
                   </div>
@@ -464,8 +492,8 @@ export default function TonicDebugPage() {
             {/* Raw Data */}
             {result && (
               <div className="bg-white shadow rounded-lg p-6">
-                <h3 className="text-lg font-semibold mb-3">Datos Raw</h3>
-                <pre className="text-xs bg-gray-50 p-4 rounded-lg overflow-auto max-h-[500px]">
+                <h3 className="text-lg font-semibold text-gray-900 mb-3">Datos Raw</h3>
+                <pre className="text-xs bg-slate-100 p-4 rounded-lg overflow-auto max-h-[500px] text-slate-800">
                   {JSON.stringify(result.data, null, 2)}
                 </pre>
               </div>
@@ -475,7 +503,7 @@ export default function TonicDebugPage() {
             {!result && !loading && (
               <div className="bg-white shadow rounded-lg p-12 text-center">
                 <div className="text-6xl mb-4">API</div>
-                <p className="text-gray-700">
+                <p className="text-gray-900 font-medium">
                   Selecciona un endpoint y parametros, luego haz clic en "Ejecutar Endpoint" para ver los resultados.
                 </p>
               </div>
@@ -485,19 +513,19 @@ export default function TonicDebugPage() {
 
         {/* Documentation */}
         <div className="mt-8 bg-white shadow rounded-lg p-6">
-          <h3 className="text-lg font-semibold mb-4">Documentacion de Endpoints</h3>
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Documentacion de Endpoints</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {ENDPOINTS.map((endpoint) => (
-              <div key={endpoint.value} className="border rounded-lg p-4">
-                <h4 className="font-medium text-gray-900 mb-1">{endpoint.name}</h4>
-                <p className="text-sm text-gray-700 mb-2">{endpoint.description}</p>
+              <div key={endpoint.value} className="border border-gray-200 rounded-lg p-4">
+                <h4 className="font-semibold text-gray-900 mb-1">{endpoint.name}</h4>
+                <p className="text-sm text-gray-800 mb-2">{endpoint.description}</p>
                 <div className="text-xs">
-                  <span className="font-medium text-gray-800">Parametros: </span>
+                  <span className="font-semibold text-gray-900">Parametros: </span>
                   {endpoint.params.map((p, idx) => (
-                    <span key={p.name} className="font-mono">
+                    <span key={p.name} className="font-mono text-blue-700">
                       {p.name}
-                      {p.required && <span className="text-red-500">*</span>}
-                      {idx < endpoint.params.length - 1 && ', '}
+                      {p.required && <span className="text-red-600">*</span>}
+                      {idx < endpoint.params.length - 1 && <span className="text-gray-500">, </span>}
                     </span>
                   ))}
                 </div>
