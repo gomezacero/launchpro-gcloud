@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 
 // Simple log interface for inline display
@@ -85,7 +85,9 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
   const [loadingClone, setLoadingClone] = useState(!!cloneFromId);
 
   // Unique session ID to namespace temp files (prevents race conditions when creating multiple campaigns)
-  const [wizardSessionId, setWizardSessionId] = useState(() => `wizard-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`);
+  // Using useRef to ensure the ID never changes during the component's lifecycle
+  const wizardSessionIdRef = useRef(`wizard-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`);
+  const wizardSessionId = wizardSessionIdRef.current;
 
   // Estado para logs inline durante el lanzamiento
   const [isLaunching, setIsLaunching] = useState(false);
@@ -3513,7 +3515,7 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
                     setErrorDetails(null);
                     setShowErrorDetails(false);
                     // Generate new session ID for next campaign (prevents race conditions)
-                    setWizardSessionId(`wizard-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`);
+                    wizardSessionIdRef.current = `wizard-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
                   }}
                   className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
                 >

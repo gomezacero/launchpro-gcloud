@@ -32,7 +32,9 @@
       "Bash(git rm:*)",
       "WebFetch(domain:developers.facebook.com)",
       "Bash(grep:*)",
-      "Bash(npx cross-env:*)"
+      "Bash(npx cross-env:*)",
+      "Bash(git checkout:*)",
+      "Bash(git merge:*)"
     ],
     "deny": [],
     "ask": []
