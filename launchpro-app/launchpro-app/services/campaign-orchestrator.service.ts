@@ -2584,48 +2584,88 @@ class CampaignOrchestratorService {
       // TikTok requires image_ids for video ads - the image is used as the video cover/thumbnail
       // Aspect ratio of thumbnail MUST match the video aspect ratio
       let thumbnailImageId: string | null = null;
+      let effectiveCoverUrl = videoCoverUrl;
 
-      if (videoCoverUrl) {
-        try {
-          logger.info('tiktok', `Uploading thumbnail for video ${idx + 1} from cover URL...`);
-
-          // Download the image from TikTok's CDN first, then upload as file
-          // This is more reliable than UPLOAD_BY_URL which can fail with "Unsupported image size"
-          const axios = (await import('axios')).default;
-          const imageResponse = await axios.get(videoCoverUrl, {
-            responseType: 'arraybuffer',
-            timeout: 30000,
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            },
-          });
-
-          const imageBuffer = Buffer.from(imageResponse.data);
-          logger.info('tiktok', `Downloaded thumbnail image: ${imageBuffer.length} bytes`);
-
-          // Upload the image buffer to TikTok
-          const thumbnailUploadResult = await tiktokService.uploadImage(
-            imageBuffer,
-            `${uniqueFileName.replace('.mp4', '')}_thumbnail.jpg`,
-            'UPLOAD_BY_FILE',
-            accessToken,
-            advertiserId  // Pass the correct advertiser ID
-          );
-
-          const thumbnailInfo = Array.isArray(thumbnailUploadResult) ? thumbnailUploadResult[0] : thumbnailUploadResult;
-          thumbnailImageId = thumbnailInfo?.image_id;
-
-          if (thumbnailImageId) {
-            logger.success('tiktok', `Thumbnail ${idx + 1} uploaded successfully`, { thumbnailImageId });
-          } else {
-            logger.warn('tiktok', `Thumbnail ${idx + 1} upload did not return image_id`, thumbnailUploadResult);
+      // If video_cover_url was not returned initially, try to fetch it from TikTok
+      // The cover URL may not be immediately available after upload
+      if (!effectiveCoverUrl) {
+        logger.info('tiktok', `No cover URL from upload, fetching video info to get cover URL...`);
+        const maxCoverRetries = 3;
+        for (let retry = 0; retry < maxCoverRetries; retry++) {
+          const videoInfoResult = await tiktokService.getVideoInfo(advertiserId, videoId, accessToken);
+          if (videoInfoResult?.video_cover_url) {
+            effectiveCoverUrl = videoInfoResult.video_cover_url;
+            logger.success('tiktok', `Got video cover URL on retry ${retry + 1}`, { effectiveCoverUrl });
+            break;
           }
-        } catch (thumbError: any) {
-          logger.error('tiktok', `Failed to upload thumbnail for video ${idx + 1}: ${thumbError.message}`);
-          // Continue without thumbnail - the ad creation will fail if TikTok requires it
+          if (retry < maxCoverRetries - 1) {
+            const waitTime = 10000 * (retry + 1); // 10s, 20s, 30s
+            logger.info('tiktok', `Cover URL not ready, waiting ${waitTime / 1000}s before retry ${retry + 2}...`);
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+          }
+        }
+      }
+
+      if (effectiveCoverUrl) {
+        // Try multiple times to download and upload the thumbnail
+        const maxThumbnailAttempts = 3;
+        for (let attempt = 0; attempt < maxThumbnailAttempts; attempt++) {
+          try {
+            logger.info('tiktok', `Uploading thumbnail for video ${idx + 1} (attempt ${attempt + 1}/${maxThumbnailAttempts})...`);
+
+            // Download the image from TikTok's CDN first, then upload as file
+            // This is more reliable than UPLOAD_BY_URL which can fail with "Unsupported image size"
+            const axios = (await import('axios')).default;
+            const imageResponse = await axios.get(effectiveCoverUrl, {
+              responseType: 'arraybuffer',
+              timeout: 30000,
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+              },
+            });
+
+            const imageBuffer = Buffer.from(imageResponse.data);
+            logger.info('tiktok', `Downloaded thumbnail image: ${imageBuffer.length} bytes`);
+
+            // Upload the image buffer to TikTok
+            const thumbnailUploadResult = await tiktokService.uploadImage(
+              imageBuffer,
+              `${uniqueFileName.replace('.mp4', '')}_thumbnail.jpg`,
+              'UPLOAD_BY_FILE',
+              accessToken,
+              advertiserId  // Pass the correct advertiser ID
+            );
+
+            const thumbnailInfo = Array.isArray(thumbnailUploadResult) ? thumbnailUploadResult[0] : thumbnailUploadResult;
+            thumbnailImageId = thumbnailInfo?.image_id;
+
+            if (thumbnailImageId) {
+              logger.success('tiktok', `Thumbnail ${idx + 1} uploaded successfully`, { thumbnailImageId });
+              break; // Success, exit retry loop
+            } else {
+              logger.warn('tiktok', `Thumbnail ${idx + 1} upload did not return image_id`, thumbnailUploadResult);
+            }
+          } catch (thumbError: any) {
+            logger.error('tiktok', `Thumbnail upload attempt ${attempt + 1} failed: ${thumbError.message}`);
+            if (attempt < maxThumbnailAttempts - 1) {
+              const waitTime = 5000 * (attempt + 1);
+              logger.info('tiktok', `Waiting ${waitTime / 1000}s before thumbnail retry...`);
+              await new Promise(resolve => setTimeout(resolve, waitTime));
+            }
+          }
         }
       } else {
-        logger.warn('tiktok', `No video_cover_url available for video ${idx + 1}`);
+        logger.error('tiktok', `No video_cover_url available for video ${idx + 1} after all retries`);
+      }
+
+      // CRITICAL: TikTok REQUIRES image_ids for SINGLE_VIDEO ads
+      // If we don't have a thumbnail, throw a clear error instead of letting TikTok fail with error 40002
+      if (!thumbnailImageId) {
+        throw new Error(
+          `TikTok requiere una imagen de miniatura (thumbnail) para anuncios de video. ` +
+          `No se pudo obtener la miniatura del video "${video.fileName}". ` +
+          `Por favor, intenta subir el video nuevamente o contacta soporte si el problema persiste.`
+        );
       }
 
       // Create Ad with retry logic
