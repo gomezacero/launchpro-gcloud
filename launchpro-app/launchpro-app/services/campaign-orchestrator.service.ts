@@ -1192,11 +1192,22 @@ class CampaignOrchestratorService {
         // ============================================
         allSuccessful = platformResults.every((r) => r.success);
 
+        // Build errorDetails if there are failures
+        const failedPlatforms = platformResults.filter(r => !r.success);
+        const errorDetailsData = !allSuccessful && failedPlatforms.length > 0 ? {
+          step: 'platform-launch',
+          message: failedPlatforms.map(p => `${p.platform}: ${'error' in p ? p.error : 'Unknown error'}`).join('; '),
+          timestamp: new Date().toISOString(),
+          platform: failedPlatforms.map(p => p.platform).join(', '),
+          technicalDetails: JSON.stringify(failedPlatforms, null, 2),
+        } : undefined;
+
         await prisma.campaign.update({
           where: { id: campaign.id },
           data: {
             status: allSuccessful ? CampaignStatus.ACTIVE : CampaignStatus.FAILED,
             launchedAt: new Date(),
+            ...(errorDetailsData && { errorDetails: errorDetailsData }),
           },
         });
 
@@ -2847,11 +2858,22 @@ class CampaignOrchestratorService {
       // Update final status
       const allSuccessful = platformResults.every((r) => r.success);
 
+      // Build errorDetails if there are failures
+      const failedPlatformsAsync = platformResults.filter(r => !r.success);
+      const errorDetailsAsync = !allSuccessful && failedPlatformsAsync.length > 0 ? {
+        step: 'platform-launch',
+        message: failedPlatformsAsync.map(p => `${p.platform}: ${'error' in p ? p.error : 'Unknown error'}`).join('; '),
+        timestamp: new Date().toISOString(),
+        platform: failedPlatformsAsync.map(p => p.platform).join(', '),
+        technicalDetails: JSON.stringify(failedPlatformsAsync, null, 2),
+      } : undefined;
+
       await prisma.campaign.update({
         where: { id: campaignId },
         data: {
           status: allSuccessful ? CampaignStatus.ACTIVE : CampaignStatus.FAILED,
           launchedAt: new Date(),
+          ...(errorDetailsAsync && { errorDetails: errorDetailsAsync }),
         },
       });
 
@@ -2876,10 +2898,18 @@ class CampaignOrchestratorService {
         stack: error.stack,
       });
 
-      // Update campaign status to FAILED
+      // Update campaign status to FAILED with errorDetails
       await prisma.campaign.update({
         where: { id: campaignId },
-        data: { status: CampaignStatus.FAILED },
+        data: {
+          status: CampaignStatus.FAILED,
+          errorDetails: {
+            step: 'platform-launch',
+            message: error.message,
+            timestamp: new Date().toISOString(),
+            technicalDetails: error.stack || error.message,
+          },
+        },
       });
 
       throw new Error(`Failed to launch campaign to platforms: ${error.message} `);

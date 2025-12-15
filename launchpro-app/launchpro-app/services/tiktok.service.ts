@@ -932,6 +932,7 @@ class TikTokService {
     // Fallback map for common countries using correct COUNTRY level IDs (GeoNames)
     // These are verified country-level IDs, not region IDs
     const countryIdMap: Record<string, string> = {
+      // Latin America (TG accounts)
       'CO': '3686110', // Colombia (country) - NOT 3685413 which is Cundinamarca
       'US': '6252001', // United States
       'MX': '3996063', // Mexico
@@ -953,6 +954,22 @@ class TikTokService {
       'UY': '3439705', // Uruguay
       'PY': '3437598', // Paraguay
       'BO': '3923057', // Bolivia
+      // Anglo/English-speaking countries (TY accounts)
+      'ZA': '953987',  // South Africa
+      'GB': '2635167', // United Kingdom
+      'AU': '2077456', // Australia
+      'CA': '6251999', // Canada
+      'NZ': '2186224', // New Zealand
+      'IE': '2963597', // Ireland
+      'PH': '1694008', // Philippines
+      'IN': '1269750', // India
+      'PK': '1168579', // Pakistan
+      'NG': '2328926', // Nigeria
+      'KE': '192950',  // Kenya
+      'GH': '2300660', // Ghana
+      'EG': '357994',  // Egypt
+      'MY': '1733045', // Malaysia
+      'SG': '1880251', // Singapore
     };
 
     try {

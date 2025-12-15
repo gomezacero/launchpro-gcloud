@@ -21,6 +21,8 @@ const STEP_NAMES: Record<string, { name: string; icon: string; description: stri
   'tiktok_campaign': { name: 'Campaña TikTok', icon: '🎵', description: 'Creando campaña en TikTok' },
   'tiktok_video': { name: 'Video TikTok', icon: '🎬', description: 'Subiendo video a TikTok' },
   'tiktok_ad': { name: 'Anuncio TikTok', icon: '🎵', description: 'Creando anuncio en TikTok' },
+  'platform-launch': { name: 'Lanzamiento a Plataforma', icon: '🚀', description: 'Enviando campaña a plataformas de ads' },
+  'launch': { name: 'Lanzamiento', icon: '🚀', description: 'Proceso de lanzamiento de campaña' },
   'complete': { name: 'Completado', icon: '✅', description: 'Campaña lanzada exitosamente' },
   'error': { name: 'Error', icon: '❌', description: 'Error durante el lanzamiento' },
 };
@@ -43,6 +45,12 @@ function getErrorSuggestion(step: string, message: string): string | null {
   }
   if (lowerMessage.includes('image') || lowerMessage.includes('video') || lowerMessage.includes('media')) {
     return 'Hubo un problema con los archivos multimedia. Verifica el formato y tamaño de los archivos.';
+  }
+  if (lowerMessage.includes('location id not found') || lowerMessage.includes('country code')) {
+    return 'El país seleccionado no está disponible para la cuenta de TikTok asignada. Verifica que estés usando la cuenta TikTok correcta (TG para Latam, TY para países anglo).';
+  }
+  if (lowerMessage.includes('advertiser') && lowerMessage.includes('not found')) {
+    return 'El Advertiser ID de TikTok no es válido. Verifica la configuración de la cuenta en Settings.';
   }
   if (step.includes('tonic')) {
     return 'Error relacionado con Tonic. Verifica las credenciales y que la oferta esté activa.';
