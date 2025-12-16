@@ -1410,8 +1410,8 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
                         <th className="text-center px-3 py-2 font-semibold text-gray-900">Tonic ID</th>
                         <th className="text-right px-3 py-2 font-semibold text-gray-900">Gross Revenue</th>
                         <th className="text-right px-3 py-2 font-semibold text-gray-900">Costo</th>
+                        <th className="text-right px-3 py-2 font-semibold text-gray-900">ROAS Meta (API)</th>
                         <th className="text-right px-3 py-2 font-semibold text-gray-900">ROAS Calculado</th>
-                        <th className="text-right px-3 py-2 font-semibold text-gray-900">ROAS Meta</th>
                         <th className="text-center px-3 py-2 rounded-tr-lg font-semibold text-gray-900">Estado</th>
                       </tr>
                     </thead>
@@ -1432,11 +1432,11 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
                           <td className="px-3 py-2 text-right font-mono text-red-700 font-medium">
                             ${campaign.cost.toFixed(2)}
                           </td>
-                          <td className="px-3 py-2 text-right font-mono font-bold text-blue-700">
-                            {campaign.calculatedRoas.toFixed(2)}%
-                          </td>
                           <td className="px-3 py-2 text-right font-mono text-purple-700 font-medium">
                             {campaign.metaRoas.toFixed(2)}%
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono font-bold text-blue-700">
+                            {campaign.calculatedRoas.toFixed(2)}%
                           </td>
                           <td className="px-3 py-2 text-center">
                             {campaign.error ? (
@@ -1464,10 +1464,16 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
               {/* Formula Explanation */}
               <div className="mt-6 bg-gray-50 rounded-lg p-4">
                 <h4 className="font-semibold text-gray-900 mb-2">Formula de ROAS</h4>
-                <p className="text-sm text-gray-600">
-                  <code className="bg-gray-200 px-2 py-1 rounded">ROAS = (Gross Revenue de Tonic / Costo de Meta) x 100</code>
-                </p>
-                <p className="text-xs text-gray-500 mt-2">
+                <div className="space-y-2 text-sm text-gray-600">
+                  <p>
+                    <span className="font-semibold text-purple-700">ROAS Meta (API):</span> Valor reportado directamente por la API de Meta
+                  </p>
+                  <p>
+                    <span className="font-semibold text-blue-700">ROAS Calculado:</span>{' '}
+                    <code className="bg-gray-200 px-2 py-1 rounded">(Gross Revenue de Tonic / Costo de Meta) x 100</code>
+                  </p>
+                </div>
+                <p className="text-xs text-gray-500 mt-3">
                   El mapeo de campanas se realiza extrayendo el ID de Tonic del nombre de la campana en Meta (formato: &quot;1234567_NombreCampana&quot;)
                 </p>
               </div>
