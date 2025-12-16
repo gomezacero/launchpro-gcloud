@@ -213,7 +213,8 @@ export async function POST(request: NextRequest) {
       );
 
       const cost = metaInsights?.spend || 0;
-      const metaRoas = metaInsights?.roas || 0;
+      // Meta returns ROAS as ratio (e.g., 0.39 = $0.39 per $1). Multiply by 100 for percentage.
+      const metaRoas = (metaInsights?.roas || 0) * 100;
 
       // Get Tonic revenue
       let grossRevenue = 0;
