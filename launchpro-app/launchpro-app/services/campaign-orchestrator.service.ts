@@ -1580,10 +1580,10 @@ class CampaignOrchestratorService {
       'en': [24],
       'english': [24],
       'inglés': [24],
-      // Portugués
-      'pt': [10],
-      'portuguese': [10],
-      'portugués': [10],
+      // Portugués (17 = Portugal, 18 = Brazil)
+      'pt': [17, 18],
+      'portuguese': [17, 18],
+      'portugués': [17, 18],
       // Francés
       'fr': [9],
       'french': [9],
@@ -1592,6 +1592,10 @@ class CampaignOrchestratorService {
       'de': [7],
       'german': [7],
       'alemán': [7],
+      // Italiano
+      'it': [10],
+      'italian': [10],
+      'italiano': [10],
     };
 
     // Normalize language input (lowercase, trim)
