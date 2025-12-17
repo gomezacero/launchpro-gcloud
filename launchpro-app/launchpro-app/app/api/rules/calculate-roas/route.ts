@@ -80,37 +80,35 @@ function getMetaDatePreset(dateRange: string): string {
 
 /**
  * Convert date range to Tonic from/to dates for EPC Final endpoint
+ * NOTE: EPC Final has a ~24h delay, so we always use yesterday as the most recent date
  */
 function getTonicDateRange(dateRange: string): { from: string; to: string } {
   const now = new Date();
   const formatDate = (d: Date) => d.toISOString().split('T')[0];
 
+  // Yesterday is the most recent date with data in EPC Final
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = formatDate(yesterday);
+
   switch (dateRange) {
-    case 'today': {
-      const today = formatDate(now);
-      return { from: today, to: today };
-    }
+    case 'today':
     case 'yesterday': {
-      const yesterday = new Date(now);
-      yesterday.setDate(yesterday.getDate() - 1);
-      const yesterdayStr = formatDate(yesterday);
+      // For "today" or "yesterday", use yesterday (most recent available data)
       return { from: yesterdayStr, to: yesterdayStr };
     }
     case 'last7days': {
-      const to = formatDate(now);
-      const from = new Date(now);
+      const from = new Date(yesterday);
       from.setDate(from.getDate() - 6);
-      return { from: formatDate(from), to };
+      return { from: formatDate(from), to: yesterdayStr };
     }
     case 'last30days': {
-      const to = formatDate(now);
-      const from = new Date(now);
+      const from = new Date(yesterday);
       from.setDate(from.getDate() - 29);
-      return { from: formatDate(from), to };
+      return { from: formatDate(from), to: yesterdayStr };
     }
     default: {
-      const today = formatDate(now);
-      return { from: today, to: today };
+      return { from: yesterdayStr, to: yesterdayStr };
     }
   }
 }

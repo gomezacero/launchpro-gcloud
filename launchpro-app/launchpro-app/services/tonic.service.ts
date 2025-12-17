@@ -724,9 +724,11 @@ class TonicService {
 
       if (Array.isArray(epcData)) {
         for (const record of epcData) {
-          const campaignId = record.campaignId || record.campaign_id;
-          if (!campaignId) continue;
+          const rawCampaignId = record.campaignId || record.campaign_id;
+          if (!rawCampaignId) continue;
 
+          // Always convert to string for consistent map lookup
+          const campaignId = String(rawCampaignId);
           const revenue = parseFloat(record.revenueUsd || record.revenue || '0');
           const currentRevenue = revenueMap.get(campaignId) || 0;
           revenueMap.set(campaignId, currentRevenue + revenue);
