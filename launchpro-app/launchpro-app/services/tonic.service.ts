@@ -719,17 +719,26 @@ class TonicService {
     try {
       const epcData = await this.getFinalEPC(credentials, from, to);
 
+      // Log sample data to debug field names
+      logger.info('tonic', `EPC Final raw response type: ${typeof epcData}, isArray: ${Array.isArray(epcData)}`);
+      if (Array.isArray(epcData) && epcData.length > 0) {
+        logger.info('tonic', `EPC Final sample record fields: ${Object.keys(epcData[0]).join(', ')}`);
+        logger.info('tonic', `EPC Final sample record: ${JSON.stringify(epcData[0])}`);
+      }
+
       // Build revenue map by campaignId
       const revenueMap = new Map<string, number>();
 
       if (Array.isArray(epcData)) {
         for (const record of epcData) {
-          const rawCampaignId = record.campaignId || record.campaign_id;
+          // Check multiple possible field names for campaignId
+          const rawCampaignId = record.campaignId || record.campaign_id || record.CampaignId || record.id;
           if (!rawCampaignId) continue;
 
           // Always convert to string for consistent map lookup
           const campaignId = String(rawCampaignId);
-          const revenue = parseFloat(record.revenueUsd || record.revenue || '0');
+          // Check multiple possible field names for revenue
+          const revenue = parseFloat(record.revenueUsd || record.revenue || record.RevenueUsd || record.Revenue || '0');
           const currentRevenue = revenueMap.get(campaignId) || 0;
           revenueMap.set(campaignId, currentRevenue + revenue);
         }
