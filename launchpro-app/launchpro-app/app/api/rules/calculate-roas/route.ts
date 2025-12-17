@@ -80,21 +80,23 @@ function getMetaDatePreset(dateRange: string): string {
 
 /**
  * Convert date range to Tonic from/to dates for EPC Final endpoint
- * NOTE: EPC Final has a ~24h delay, so we always use yesterday as the most recent date
  */
 function getTonicDateRange(dateRange: string): { from: string; to: string } {
   const now = new Date();
   const formatDate = (d: Date) => d.toISOString().split('T')[0];
 
-  // Yesterday is the most recent date with data in EPC Final
+  // Yesterday - EPC Final has data up to yesterday
   const yesterday = new Date(now);
   yesterday.setDate(yesterday.getDate() - 1);
   const yesterdayStr = formatDate(yesterday);
 
+  console.log(`[ROAS-DATE] dateRange=${dateRange}, now=${formatDate(now)}, yesterday=${yesterdayStr}`);
+
   switch (dateRange) {
-    case 'today':
+    case 'today': {
+      return { from: yesterdayStr, to: yesterdayStr };
+    }
     case 'yesterday': {
-      // For "today" or "yesterday", use yesterday (most recent available data)
       return { from: yesterdayStr, to: yesterdayStr };
     }
     case 'last7days': {
