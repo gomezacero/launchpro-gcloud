@@ -78,6 +78,43 @@ function getMetaDatePreset(dateRange: string): string {
   }
 }
 
+/**
+ * Convert date range to Tonic from/to dates for EPC Final endpoint
+ */
+function getTonicDateRange(dateRange: string): { from: string; to: string } {
+  const now = new Date();
+  const formatDate = (d: Date) => d.toISOString().split('T')[0];
+
+  switch (dateRange) {
+    case 'today': {
+      const today = formatDate(now);
+      return { from: today, to: today };
+    }
+    case 'yesterday': {
+      const yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = formatDate(yesterday);
+      return { from: yesterdayStr, to: yesterdayStr };
+    }
+    case 'last7days': {
+      const to = formatDate(now);
+      const from = new Date(now);
+      from.setDate(from.getDate() - 6);
+      return { from: formatDate(from), to };
+    }
+    case 'last30days': {
+      const to = formatDate(now);
+      const from = new Date(now);
+      from.setDate(from.getDate() - 29);
+      return { from: formatDate(from), to };
+    }
+    default: {
+      const today = formatDate(now);
+      return { from: today, to: today };
+    }
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body: CalculateRoasRequest = await request.json();
@@ -150,29 +187,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get date for Tonic API
-    const tonicDate = getDateFromRange(dateRange);
+    // Get date range for Tonic API (EPC Final uses from/to dates)
     const metaDatePreset = getMetaDatePreset(dateRange);
+    const { from: tonicFrom, to: tonicTo } = getTonicDateRange(dateRange);
 
-    // Get Tonic stats for the date
-    console.log(`[ROAS] Fetching Tonic stats for date: ${tonicDate}`);
-    let tonicStats;
+    // Get Tonic revenue using EPC Final endpoint (uses revenueUsd for accurate values)
+    console.log(`[ROAS] Fetching Tonic revenue (EPC Final) for date range: ${tonicFrom} to ${tonicTo}`);
+    let tonicRevenueMap: Map<string, number>;
     try {
-      tonicStats = await tonicService.getStatsByCountry(tonicCredentials, tonicDate);
-      console.log(`[ROAS] Tonic stats fetched: ${tonicStats.length} records`);
+      tonicRevenueMap = await tonicService.getCampaignGrossRevenueRange(tonicCredentials, tonicFrom, tonicTo);
+      console.log(`[ROAS] Tonic revenue fetched: ${tonicRevenueMap.size} campaigns`);
     } catch (error: any) {
-      console.error(`[ROAS] Failed to fetch Tonic stats:`, error.message);
+      console.error(`[ROAS] Failed to fetch Tonic revenue:`, error.message);
       return NextResponse.json(
-        { error: `Failed to fetch Tonic stats: ${error.message}` },
+        { error: `Failed to fetch Tonic revenue: ${error.message}` },
         { status: 500 }
       );
-    }
-
-    // Create a map of Tonic campaign ID -> total revenue
-    const tonicRevenueMap = new Map<string, number>();
-    for (const stat of tonicStats) {
-      const currentRevenue = tonicRevenueMap.get(stat.campaign_id) || 0;
-      tonicRevenueMap.set(stat.campaign_id, currentRevenue + parseFloat(stat.revenue || '0'));
     }
 
     console.log(`[ROAS] Tonic revenue map:`, Object.fromEntries(tonicRevenueMap));
@@ -213,8 +243,7 @@ export async function POST(request: NextRequest) {
       );
 
       const cost = metaInsights?.spend || 0;
-      // Meta returns ROAS as ratio (e.g., 0.39 = $0.39 per $1). Multiply by 100 for percentage.
-      const metaRoas = (metaInsights?.roas || 0) * 100;
+      const metaRoas = metaInsights?.roas || 0;
 
       // Get Tonic revenue
       let grossRevenue = 0;
@@ -253,7 +282,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       dateRange,
-      tonicDate,
+      tonicDate: `${tonicFrom} to ${tonicTo}`,
       metaDatePreset,
       campaigns: results,
       totals: {
