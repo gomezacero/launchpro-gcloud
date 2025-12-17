@@ -694,9 +694,22 @@ class TonicService {
    */
   async getFinalEPC(credentials: TonicCredentials, from: string, to: string, campaignId?: number) {
     const client = await this.getAuthenticatedClient(credentials);
-    const response = await client.get('/privileged/v3/epc/final', {
-      params: { from, to, campaign_id: campaignId, output: 'json' },
+    const params: Record<string, string | number> = { from, to, output: 'json' };
+    if (campaignId !== undefined) {
+      params.campaign_id = campaignId;
+    }
+
+    logger.info('tonic', `Calling EPC Final endpoint`, { from, to, campaignId, params });
+
+    const response = await client.get('/privileged/v3/epc/final', { params });
+
+    logger.info('tonic', `EPC Final response received`, {
+      status: response.status,
+      dataType: typeof response.data,
+      isArray: Array.isArray(response.data),
+      recordCount: Array.isArray(response.data) ? response.data.length : 'N/A'
     });
+
     return response.data;
   }
 
