@@ -448,8 +448,8 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
           metaAccountId: formData.metaAccountId,
           tonicAccountId: formData.tonicAccountId,
           dateRange: formData.roasDateRange,
-          // If specific campaign is selected, we could pass it here
-          // For now, calculate for all campaigns
+          // Pass specific campaign IDs if selected (otherwise calculate for all)
+          campaignIds: !formData.applyToAllCampaigns ? formData.specificCampaignIds : [],
         }),
       });
 

@@ -606,18 +606,39 @@ class AdRulesService {
       return rule.targetIds.map(id => ({ id, name: `Entity ${id}` }));
     }
 
-    // Otherwise, get all active entities of the specified level
+    const specificCampaignIds = rule.specificCampaignIds || [];
+    const shouldFilterByCampaign = !rule.applyToAllCampaigns && specificCampaignIds.length > 0;
+
+    // Get entities based on level
     switch (rule.level) {
       case 'CAMPAIGN':
         const campaigns = await metaService.getActiveCampaigns(adAccountId, accessToken);
+        // Filter campaigns by specific IDs if not applying to all
+        if (shouldFilterByCampaign) {
+          const filtered = campaigns.filter(c => specificCampaignIds.includes(c.id));
+          logger.info('ad-rules', `Filtered campaigns: ${filtered.length} of ${campaigns.length} (specific IDs: ${specificCampaignIds.join(', ')})`);
+          return filtered.map(c => ({ id: c.id, name: c.name }));
+        }
         return campaigns.map(c => ({ id: c.id, name: c.name }));
 
       case 'AD_SET':
         const adSets = await metaService.getActiveAdSets(adAccountId, accessToken);
+        // Filter ad sets by their parent campaign if not applying to all
+        if (shouldFilterByCampaign) {
+          const filtered = adSets.filter(a => specificCampaignIds.includes(a.campaign_id));
+          logger.info('ad-rules', `Filtered ad sets: ${filtered.length} of ${adSets.length} (from campaigns: ${specificCampaignIds.join(', ')})`);
+          return filtered.map(a => ({ id: a.id, name: a.name }));
+        }
         return adSets.map(a => ({ id: a.id, name: a.name }));
 
       case 'AD':
         const ads = await metaService.getActiveAds(adAccountId, accessToken);
+        // Filter ads by their parent campaign if not applying to all
+        if (shouldFilterByCampaign) {
+          const filtered = ads.filter(a => specificCampaignIds.includes(a.campaign_id));
+          logger.info('ad-rules', `Filtered ads: ${filtered.length} of ${ads.length} (from campaigns: ${specificCampaignIds.join(', ')})`);
+          return filtered.map(a => ({ id: a.id, name: a.name }));
+        }
         return ads.map(a => ({ id: a.id, name: a.name }));
 
       default:

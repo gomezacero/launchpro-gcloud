@@ -14,7 +14,8 @@ interface CalculateRoasRequest {
   metaAccountId: string;
   tonicAccountId: string;
   dateRange: 'today' | 'yesterday' | 'last7days' | 'last30days';
-  campaignId?: string; // Meta campaign ID (optional, if null calculates for all)
+  campaignId?: string; // Meta campaign ID (optional, if null calculates for all) - DEPRECATED
+  campaignIds?: string[]; // Array of Meta campaign IDs (optional, if empty calculates for all)
 }
 
 interface CampaignRoasResult {
@@ -118,7 +119,10 @@ function getTonicDateRange(dateRange: string): { from: string; to: string } {
 export async function POST(request: NextRequest) {
   try {
     const body: CalculateRoasRequest = await request.json();
-    const { metaAccountId, tonicAccountId, dateRange, campaignId } = body;
+    const { metaAccountId, tonicAccountId, dateRange, campaignId, campaignIds } = body;
+
+    // Support both single campaignId (deprecated) and campaignIds array
+    const targetCampaignIds = campaignIds?.length ? campaignIds : (campaignId ? [campaignId] : []);
 
     // Validate required fields
     if (!metaAccountId || !tonicAccountId || !dateRange) {
@@ -209,20 +213,19 @@ export async function POST(request: NextRequest) {
 
     // Get Meta campaigns
     let metaCampaigns: Array<{ id: string; name: string; status: string }>;
-    if (campaignId) {
-      // Get specific campaign
-      try {
-        const campaign = await metaService.getCampaign(campaignId, accessToken);
-        metaCampaigns = campaign ? [{ id: campaign.id, name: campaign.name, status: campaign.status }] : [];
-      } catch {
-        metaCampaigns = [];
-      }
+
+    // Get all active campaigns first
+    const allCampaigns = await metaService.getActiveCampaigns(metaAccount.metaAdAccountId, accessToken);
+
+    // Filter by specific campaign IDs if provided
+    if (targetCampaignIds.length > 0) {
+      metaCampaigns = allCampaigns.filter(c => targetCampaignIds.includes(c.id));
+      console.log(`[ROAS] Filtered to ${metaCampaigns.length} campaigns from ${targetCampaignIds.length} specified IDs`);
     } else {
-      // Get all active campaigns
-      metaCampaigns = await metaService.getActiveCampaigns(metaAccount.metaAdAccountId, accessToken);
+      metaCampaigns = allCampaigns;
     }
 
-    console.log(`[ROAS] Meta campaigns found: ${metaCampaigns.length}`);
+    console.log(`[ROAS] Meta campaigns to evaluate: ${metaCampaigns.length}`);
 
     // Calculate ROAS for each campaign
     const results: CampaignRoasResult[] = [];

@@ -1051,12 +1051,12 @@ class MetaService {
   /**
    * Get all active ads for an ad account
    */
-  async getActiveAds(adAccountId: string, accessToken?: string): Promise<Array<{ id: string; name: string; status: string; adset_id: string }>> {
+  async getActiveAds(adAccountId: string, accessToken?: string): Promise<Array<{ id: string; name: string; status: string; adset_id: string; campaign_id: string }>> {
     try {
       const client = this.getClient(accessToken);
       const response = await client.get(`/${adAccountId}/ads`, {
         params: {
-          fields: 'id,name,status,adset_id',
+          fields: 'id,name,status,adset_id,campaign_id',
           filtering: JSON.stringify([{ field: 'effective_status', operator: 'IN', value: ['ACTIVE'] }]),
           limit: 500,
         },

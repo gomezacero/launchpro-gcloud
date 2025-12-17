@@ -129,7 +129,7 @@ export async function POST(request: NextRequest) {
     const canExecuteNow = canExecuteReasons.length === 0;
 
     // Get entities to evaluate
-    let entities: Array<{ id: string; name: string }> = [];
+    let entities: Array<{ id: string; name: string; campaign_id?: string }> = [];
     const level = body.level as AdRuleLevel;
 
     // Get all entities first
@@ -140,17 +140,24 @@ export async function POST(request: NextRequest) {
         break;
       case 'AD_SET':
         const adSets = await metaService.getActiveAdSets(adAccountId, accessToken);
-        entities = adSets.map(a => ({ id: a.id, name: a.name }));
+        entities = adSets.map(a => ({ id: a.id, name: a.name, campaign_id: a.campaign_id }));
         break;
       case 'AD':
         const ads = await metaService.getActiveAds(adAccountId, accessToken);
-        entities = ads.map(a => ({ id: a.id, name: a.name }));
+        entities = ads.map(a => ({ id: a.id, name: a.name, campaign_id: a.campaign_id }));
         break;
     }
 
     // Filter by specific campaigns if not applying to all
-    if (!body.applyToAllCampaigns && specificCampaignIds.length > 0 && level === 'CAMPAIGN') {
-      entities = entities.filter(e => specificCampaignIds.includes(e.id));
+    if (!body.applyToAllCampaigns && specificCampaignIds.length > 0) {
+      if (level === 'CAMPAIGN') {
+        // Filter campaigns directly by ID
+        entities = entities.filter(e => specificCampaignIds.includes(e.id));
+      } else if (level === 'AD_SET' || level === 'AD') {
+        // Filter ad sets and ads by their parent campaign_id
+        entities = entities.filter(e => e.campaign_id && specificCampaignIds.includes(e.campaign_id));
+      }
+      logger.info('ad-rules', `Filtered to ${entities.length} entities from specific campaigns: ${specificCampaignIds.join(', ')}`);
     }
 
     // Evaluate each entity
