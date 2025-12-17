@@ -744,17 +744,21 @@ class TonicService {
 
       if (Array.isArray(epcData)) {
         for (const record of epcData) {
-          // Check multiple possible field names for campaignId
-          const rawCampaignId = record.campaignId || record.campaign_id || record.CampaignId || record.id;
-          if (!rawCampaignId) continue;
+          // EPC Final uses snake_case: campaign_id (string), revenueUsd (string decimal)
+          const rawCampaignId = record.campaign_id;
+          if (!rawCampaignId) {
+            logger.warn('tonic', `Record missing campaign_id field`);
+            continue;
+          }
 
           // Always convert to string for consistent map lookup
           const campaignId = String(rawCampaignId);
-          // Check multiple possible field names for revenue
-          const revenue = parseFloat(record.revenueUsd || record.revenue || record.RevenueUsd || record.Revenue || '0');
+          const revenue = parseFloat(record.revenueUsd || '0');
           const currentRevenue = revenueMap.get(campaignId) || 0;
           revenueMap.set(campaignId, currentRevenue + revenue);
         }
+      } else {
+        logger.error('tonic', `EPC Final did not return an array`, { type: typeof epcData, data: epcData });
       }
 
       logger.success('tonic', `Revenue map built for ${revenueMap.size} campaigns`, {
