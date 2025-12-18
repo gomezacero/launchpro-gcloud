@@ -1156,28 +1156,28 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
                 <h4 className="font-semibold text-gray-900 mb-3">Configuracion de la Regla</h4>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
                   <div>
-                    <span className="text-gray-500">Nivel:</span>
-                    <span className="ml-2 font-medium">{simulationResult.rule.level}</span>
+                    <span className="text-gray-700 font-medium">Nivel:</span>
+                    <span className="ml-2 font-semibold text-purple-700">{simulationResult.rule.level}</span>
                   </div>
                   <div>
-                    <span className="text-gray-500">Metrica:</span>
-                    <span className="ml-2 font-medium">{simulationResult.rule.metric}</span>
+                    <span className="text-gray-700 font-medium">Metrica:</span>
+                    <span className="ml-2 font-semibold text-purple-700">{simulationResult.rule.metric}</span>
                   </div>
                   <div>
-                    <span className="text-gray-500">Condicion:</span>
-                    <span className="ml-2 font-medium">{simulationResult.rule.operator} {simulationResult.rule.value}</span>
+                    <span className="text-gray-700 font-medium">Condicion:</span>
+                    <span className="ml-2 font-semibold text-purple-700">{simulationResult.rule.operator} {simulationResult.rule.value}</span>
                   </div>
                   <div>
-                    <span className="text-gray-500">Accion:</span>
-                    <span className="ml-2 font-medium">{simulationResult.rule.action}</span>
+                    <span className="text-gray-700 font-medium">Accion:</span>
+                    <span className="ml-2 font-semibold text-purple-700">{simulationResult.rule.action}</span>
                   </div>
                   <div>
-                    <span className="text-gray-500">Frecuencia:</span>
-                    <span className="ml-2 font-medium">Cada {simulationResult.rule.frequencyHours}h</span>
+                    <span className="text-gray-700 font-medium">Frecuencia:</span>
+                    <span className="ml-2 font-semibold text-purple-700">Cada {simulationResult.rule.frequencyHours}h</span>
                   </div>
                   <div>
-                    <span className="text-gray-500">Alcance:</span>
-                    <span className="ml-2 font-medium">
+                    <span className="text-gray-700 font-medium">Alcance:</span>
+                    <span className="ml-2 font-semibold text-purple-700">
                       {simulationResult.rule.applyToAllCampaigns
                         ? 'Todas las campanas'
                         : `${simulationResult.rule.specificCampaignCount || 0} campana(s) especifica(s)`}
