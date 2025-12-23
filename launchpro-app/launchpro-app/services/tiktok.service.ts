@@ -1034,6 +1034,60 @@ class TikTokService {
   }
 
   /**
+   * Get metrics for ALL campaigns in a single API call
+   * Much more efficient than calling getEntityInsights for each campaign
+   *
+   * @returns Map of campaign_id -> spend
+   */
+  async getAllCampaignsSpend(
+    advertiserId: string,
+    accessToken: string,
+    datePreset: string
+  ): Promise<Map<string, number>> {
+    const spendMap = new Map<string, number>();
+
+    try {
+      const client = this.getClient(accessToken);
+      const { startDate, endDate } = this.getDateRangeFromPreset(datePreset);
+
+      console.log(`[TikTok] Fetching ALL campaign spend for ${advertiserId}, dates: ${startDate} to ${endDate}`);
+
+      const response = await client.get('/report/integrated/get/', {
+        params: {
+          advertiser_id: advertiserId,
+          report_type: 'BASIC',
+          data_level: 'AUCTION_CAMPAIGN',
+          dimensions: JSON.stringify(['campaign_id']),
+          metrics: JSON.stringify(['spend', 'impressions', 'clicks']),
+          start_date: startDate,
+          end_date: endDate,
+          page_size: 1000,
+        },
+      });
+
+      const data = this.handleResponse(response);
+      const rows = data?.list || [];
+
+      console.log(`[TikTok] Got ${rows.length} campaign rows from report API`);
+
+      for (const row of rows) {
+        const campaignId = row.dimensions?.campaign_id;
+        const spend = parseFloat(row.metrics?.spend) || 0;
+
+        if (campaignId) {
+          spendMap.set(campaignId, spend);
+          console.log(`[TikTok] Campaign ${campaignId}: spend=$${spend.toFixed(2)}`);
+        }
+      }
+
+      return spendMap;
+    } catch (error: any) {
+      console.error(`[TikTok] Failed to get all campaigns spend:`, error.message);
+      return spendMap;
+    }
+  }
+
+  /**
    * Convert date preset string to start/end dates
    */
   private getDateRangeFromPreset(datePreset: string): { startDate: string; endDate: string } {

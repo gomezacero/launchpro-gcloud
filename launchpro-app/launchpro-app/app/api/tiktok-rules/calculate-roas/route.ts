@@ -215,6 +215,15 @@ export async function POST(request: NextRequest) {
 
     console.log(`[TIKTOK-ROAS] TikTok campaigns to evaluate: ${tiktokCampaigns.length}`);
 
+    // Get ALL campaign spend in a single API call (much more efficient)
+    console.log(`[TIKTOK-ROAS] Fetching ALL campaign spend via bulk API...`);
+    const campaignSpendMap = await tiktokService.getAllCampaignsSpend(
+      advertiserId,
+      accessToken,
+      dateRange
+    );
+    console.log(`[TIKTOK-ROAS] Got spend data for ${campaignSpendMap.size} campaigns`);
+
     // Calculate ROAS for each campaign
     const results: CampaignRoasResult[] = [];
     const errors: string[] = [];
@@ -225,16 +234,9 @@ export async function POST(request: NextRequest) {
       const tonicId = extractTonicIdFromCampaignName(campaign.name);
       let error: string | undefined;
 
-      // Get TikTok insights (spend)
-      const tiktokInsights = await tiktokService.getEntityInsights(
-        campaign.id,
-        'campaign',
-        dateRange,
-        accessToken,
-        advertiserId
-      );
-
-      const cost = tiktokInsights?.spend || 0;
+      // Get TikTok spend from the bulk map
+      const cost = campaignSpendMap.get(campaign.id) || 0;
+      console.log(`[TIKTOK-ROAS] Campaign ${campaign.id} (${campaign.name}): cost=${cost.toFixed(2)}`);
 
       // Get Tonic revenue
       let grossRevenue = 0;
