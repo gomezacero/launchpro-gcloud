@@ -808,6 +808,442 @@ class TikTokService {
   }
 
   // ============================================
+  // AD RULES - Active Entities & Insights
+  // ============================================
+
+  /**
+   * Get all ACTIVE campaigns for an advertiser (for ad rules)
+   * Returns campaigns with ENABLE status
+   */
+  async getActiveCampaigns(
+    advertiserId: string,
+    accessToken: string
+  ): Promise<Array<{ id: string; name: string; status: string }>> {
+    try {
+      const client = this.getClient(accessToken);
+      const response = await client.get('/campaign/get/', {
+        params: {
+          advertiser_id: advertiserId,
+          page: 1,
+          page_size: 1000,
+          filtering: JSON.stringify({
+            primary_status: 'STATUS_DELIVERY_OK', // Only delivering campaigns
+          }),
+        },
+      });
+
+      const data = this.handleResponse(response);
+      const campaigns = data?.list || [];
+
+      return campaigns
+        .filter((c: any) => c.operation_status === 'ENABLE')
+        .map((c: any) => ({
+          id: c.campaign_id,
+          name: c.campaign_name,
+          status: c.operation_status,
+        }));
+    } catch (error: any) {
+      console.error('[TikTok] Failed to get active campaigns:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Get all ACTIVE ad groups for an advertiser (for ad rules)
+   * Returns ad groups with ENABLE status, including their parent campaign_id
+   */
+  async getActiveAdGroups(
+    advertiserId: string,
+    accessToken: string
+  ): Promise<Array<{ id: string; name: string; status: string; campaign_id: string }>> {
+    try {
+      const client = this.getClient(accessToken);
+      const response = await client.get('/adgroup/get/', {
+        params: {
+          advertiser_id: advertiserId,
+          page: 1,
+          page_size: 1000,
+          filtering: JSON.stringify({
+            primary_status: 'STATUS_DELIVERY_OK', // Only delivering ad groups
+          }),
+        },
+      });
+
+      const data = this.handleResponse(response);
+      const adGroups = data?.list || [];
+
+      return adGroups
+        .filter((a: any) => a.operation_status === 'ENABLE')
+        .map((a: any) => ({
+          id: a.adgroup_id,
+          name: a.adgroup_name,
+          status: a.operation_status,
+          campaign_id: a.campaign_id,
+        }));
+    } catch (error: any) {
+      console.error('[TikTok] Failed to get active ad groups:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Get all ACTIVE ads for an advertiser (for ad rules)
+   * Returns ads with ENABLE status, including their parent campaign_id
+   */
+  async getActiveAds(
+    advertiserId: string,
+    accessToken: string
+  ): Promise<Array<{ id: string; name: string; status: string; campaign_id: string; adgroup_id: string }>> {
+    try {
+      const client = this.getClient(accessToken);
+      const response = await client.get('/ad/get/', {
+        params: {
+          advertiser_id: advertiserId,
+          page: 1,
+          page_size: 1000,
+          filtering: JSON.stringify({
+            primary_status: 'STATUS_DELIVERY_OK', // Only delivering ads
+          }),
+        },
+      });
+
+      const data = this.handleResponse(response);
+      const ads = data?.list || [];
+
+      return ads
+        .filter((a: any) => a.operation_status === 'ENABLE')
+        .map((a: any) => ({
+          id: a.ad_id,
+          name: a.ad_name,
+          status: a.operation_status,
+          campaign_id: a.campaign_id,
+          adgroup_id: a.adgroup_id,
+        }));
+    } catch (error: any) {
+      console.error('[TikTok] Failed to get active ads:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Get insights/metrics for a specific entity (for ad rules)
+   * Similar to Meta's getEntityInsights
+   *
+   * @param entityId - Campaign, Ad Group, or Ad ID
+   * @param level - 'campaign' | 'adgroup' | 'ad'
+   * @param datePreset - 'today' | 'yesterday' | 'last_7d' | 'last_30d'
+   * @param accessToken - TikTok access token
+   * @param advertiserId - TikTok advertiser ID
+   */
+  async getEntityInsights(
+    entityId: string,
+    level: 'campaign' | 'adgroup' | 'ad',
+    datePreset: string,
+    accessToken: string,
+    advertiserId: string
+  ): Promise<{
+    spend: number;
+    impressions: number;
+    clicks: number;
+    ctr: number;
+    cpc: number;
+    cpm: number;
+    conversions: number;
+    cpa: number;
+    roas: number; // TikTok doesn't provide ROAS, will be 0
+  } | null> {
+    try {
+      const client = this.getClient(accessToken);
+
+      // Convert date preset to actual dates
+      const { startDate, endDate } = this.getDateRangeFromPreset(datePreset);
+
+      // Map level to TikTok data_level
+      const dataLevelMap: Record<string, string> = {
+        campaign: 'AUCTION_CAMPAIGN',
+        adgroup: 'AUCTION_ADGROUP',
+        ad: 'AUCTION_AD',
+      };
+
+      // Map level to field name for filtering
+      const fieldNameMap: Record<string, string> = {
+        campaign: 'campaign_id',
+        adgroup: 'adgroup_id',
+        ad: 'ad_id',
+      };
+
+      // Map level to dimension
+      const dimensionMap: Record<string, string> = {
+        campaign: 'campaign_id',
+        adgroup: 'adgroup_id',
+        ad: 'ad_id',
+      };
+
+      const response = await client.get('/report/integrated/get/', {
+        params: {
+          advertiser_id: advertiserId,
+          report_type: 'BASIC',
+          data_level: dataLevelMap[level],
+          dimensions: JSON.stringify([dimensionMap[level]]),
+          metrics: JSON.stringify([
+            'spend',
+            'impressions',
+            'clicks',
+            'ctr',
+            'cpc',
+            'cpm',
+            'conversions',
+            'cost_per_conversion',
+          ]),
+          start_date: startDate,
+          end_date: endDate,
+          filtering: JSON.stringify([
+            {
+              field_name: fieldNameMap[level],
+              filter_type: 'IN',
+              filter_value: [entityId],
+            },
+          ]),
+        },
+      });
+
+      const data = this.handleResponse(response);
+      const rows = data?.list || [];
+
+      if (rows.length === 0) {
+        return null;
+      }
+
+      const metrics = rows[0].metrics || rows[0];
+
+      return {
+        spend: parseFloat(metrics.spend) || 0,
+        impressions: parseInt(metrics.impressions) || 0,
+        clicks: parseInt(metrics.clicks) || 0,
+        ctr: parseFloat(metrics.ctr) || 0,
+        cpc: parseFloat(metrics.cpc) || 0,
+        cpm: parseFloat(metrics.cpm) || 0,
+        conversions: parseInt(metrics.conversions) || 0,
+        cpa: parseFloat(metrics.cost_per_conversion) || 0,
+        roas: 0, // TikTok doesn't provide ROAS - will be calculated with Tonic
+      };
+    } catch (error: any) {
+      console.error(`[TikTok] Failed to get entity insights for ${level} ${entityId}:`, error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Convert date preset string to start/end dates
+   */
+  private getDateRangeFromPreset(datePreset: string): { startDate: string; endDate: string } {
+    const now = new Date();
+    const formatDate = (d: Date) => d.toISOString().split('T')[0];
+
+    switch (datePreset.toLowerCase()) {
+      case 'today':
+        return { startDate: formatDate(now), endDate: formatDate(now) };
+
+      case 'yesterday': {
+        const yesterday = new Date(now);
+        yesterday.setDate(yesterday.getDate() - 1);
+        return { startDate: formatDate(yesterday), endDate: formatDate(yesterday) };
+      }
+
+      case 'last_7d':
+      case 'last7days': {
+        const start = new Date(now);
+        start.setDate(start.getDate() - 6);
+        return { startDate: formatDate(start), endDate: formatDate(now) };
+      }
+
+      case 'last_30d':
+      case 'last30days': {
+        const start = new Date(now);
+        start.setDate(start.getDate() - 29);
+        return { startDate: formatDate(start), endDate: formatDate(now) };
+      }
+
+      default:
+        return { startDate: formatDate(now), endDate: formatDate(now) };
+    }
+  }
+
+  /**
+   * Update campaign status (for ad rules - PAUSE/UNPAUSE)
+   * Wrapper for multi-account support
+   */
+  async updateCampaignStatusForRule(
+    campaignId: string,
+    status: 'ENABLE' | 'DISABLE',
+    advertiserId: string,
+    accessToken: string
+  ): Promise<boolean> {
+    try {
+      const client = this.getClient(accessToken);
+      const response = await client.post('/campaign/status/update/', {
+        advertiser_id: advertiserId,
+        campaign_ids: [campaignId],
+        operation_status: status,
+      });
+      this.handleResponse(response);
+      return true;
+    } catch (error: any) {
+      console.error(`[TikTok] Failed to update campaign ${campaignId} status:`, error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Update ad group status (for ad rules - PAUSE/UNPAUSE)
+   */
+  async updateAdGroupStatusForRule(
+    adGroupId: string,
+    status: 'ENABLE' | 'DISABLE',
+    advertiserId: string,
+    accessToken: string
+  ): Promise<boolean> {
+    try {
+      const client = this.getClient(accessToken);
+      const response = await client.post('/adgroup/status/update/', {
+        advertiser_id: advertiserId,
+        adgroup_ids: [adGroupId],
+        operation_status: status,
+      });
+      this.handleResponse(response);
+      return true;
+    } catch (error: any) {
+      console.error(`[TikTok] Failed to update ad group ${adGroupId} status:`, error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Update ad status (for ad rules - PAUSE/UNPAUSE)
+   */
+  async updateAdStatusForRule(
+    adId: string,
+    status: 'ENABLE' | 'DISABLE',
+    advertiserId: string,
+    accessToken: string
+  ): Promise<boolean> {
+    try {
+      const client = this.getClient(accessToken);
+      const response = await client.post('/ad/status/update/', {
+        advertiser_id: advertiserId,
+        ad_ids: [adId],
+        operation_status: status,
+      });
+      this.handleResponse(response);
+      return true;
+    } catch (error: any) {
+      console.error(`[TikTok] Failed to update ad ${adId} status:`, error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Update campaign budget (for ad rules - INCREASE/DECREASE_BUDGET)
+   * TikTok budgets are in DOLLARS (not cents like Meta)
+   */
+  async updateCampaignBudgetForRule(
+    campaignId: string,
+    newBudget: number, // In dollars
+    advertiserId: string,
+    accessToken: string
+  ): Promise<boolean> {
+    try {
+      const client = this.getClient(accessToken);
+      const response = await client.post('/campaign/update/', {
+        advertiser_id: advertiserId,
+        campaign_id: campaignId,
+        budget: newBudget, // TikTok accepts dollars directly
+      });
+      this.handleResponse(response);
+      return true;
+    } catch (error: any) {
+      console.error(`[TikTok] Failed to update campaign ${campaignId} budget:`, error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Update ad group budget (for ad rules - INCREASE/DECREASE_BUDGET)
+   * TikTok budgets are in DOLLARS (not cents like Meta)
+   */
+  async updateAdGroupBudgetForRule(
+    adGroupId: string,
+    newBudget: number, // In dollars
+    advertiserId: string,
+    accessToken: string
+  ): Promise<boolean> {
+    try {
+      const client = this.getClient(accessToken);
+      const response = await client.post('/adgroup/update/', {
+        advertiser_id: advertiserId,
+        adgroup_id: adGroupId,
+        budget: newBudget, // TikTok accepts dollars directly
+      });
+      this.handleResponse(response);
+      return true;
+    } catch (error: any) {
+      console.error(`[TikTok] Failed to update ad group ${adGroupId} budget:`, error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Get budget info for an entity (for ad rules simulation)
+   */
+  async getBudgetInfo(
+    entityId: string,
+    level: 'campaign' | 'adgroup',
+    advertiserId: string,
+    accessToken: string
+  ): Promise<{ budget: number; budget_mode: string } | null> {
+    try {
+      const client = this.getClient(accessToken);
+
+      if (level === 'campaign') {
+        const response = await client.get('/campaign/get/', {
+          params: {
+            advertiser_id: advertiserId,
+            campaign_ids: JSON.stringify([entityId]),
+          },
+        });
+        const data = this.handleResponse(response);
+        const campaign = data?.list?.[0];
+        if (campaign) {
+          return {
+            budget: campaign.budget || 0, // Already in dollars
+            budget_mode: campaign.budget_mode || 'BUDGET_MODE_DAY',
+          };
+        }
+      } else {
+        const response = await client.get('/adgroup/get/', {
+          params: {
+            advertiser_id: advertiserId,
+            adgroup_ids: JSON.stringify([entityId]),
+          },
+        });
+        const data = this.handleResponse(response);
+        const adGroup = data?.list?.[0];
+        if (adGroup) {
+          return {
+            budget: adGroup.budget || 0, // Already in dollars
+            budget_mode: adGroup.budget_mode || 'BUDGET_MODE_DAY',
+          };
+        }
+      }
+
+      return null;
+    } catch (error: any) {
+      console.error(`[TikTok] Failed to get budget info for ${level} ${entityId}:`, error.message);
+      return null;
+    }
+  }
+
+  // ============================================
   // REPORTING
   // ============================================
 

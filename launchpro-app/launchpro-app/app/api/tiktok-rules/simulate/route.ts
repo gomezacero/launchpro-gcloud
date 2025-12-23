@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { metaService } from '@/services/meta.service';
+import { tiktokService } from '@/services/tiktok.service';
 import { logger } from '@/lib/logger';
 import { AdRuleLevel, AdRuleMetric, AdRuleOperator, AdRuleAction } from '@prisma/client';
 
@@ -44,8 +44,8 @@ interface SimulationResult {
 }
 
 /**
- * POST /api/rules/simulate
- * Simulate a rule without executing any actions
+ * POST /api/tiktok-rules/simulate
+ * Simulate a TikTok rule without executing any actions
  */
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
@@ -53,56 +53,56 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
-    logger.info('ad-rules', 'Simulating rule', { ruleName: body.name });
+    logger.info('ad-rules', 'Simulating TikTok rule', { ruleName: body.name });
 
     // Validate required fields
-    if (!body.metaAccountId) {
+    if (!body.tiktokAccountId) {
       return NextResponse.json(
-        { success: false, error: 'Meta account ID is required' },
+        { success: false, error: 'TikTok account ID is required' },
         { status: 400 }
       );
     }
 
-    // Get Meta account
-    const metaAccount = await prisma.account.findUnique({
-      where: { id: body.metaAccountId },
+    // Get TikTok account
+    const tiktokAccount = await prisma.account.findUnique({
+      where: { id: body.tiktokAccountId },
     });
 
-    if (!metaAccount) {
-      logger.error('ad-rules', `Meta account not found: ${body.metaAccountId}`);
+    if (!tiktokAccount) {
+      logger.error('ad-rules', `TikTok account not found: ${body.tiktokAccountId}`);
       return NextResponse.json(
-        { success: false, error: 'Cuenta Meta no encontrada' },
+        { success: false, error: 'Cuenta TikTok no encontrada' },
         { status: 404 }
       );
     }
 
-    if (!metaAccount.metaAdAccountId) {
-      logger.error('ad-rules', `Meta account missing ad account ID: ${metaAccount.name}`);
+    if (!tiktokAccount.tiktokAdvertiserId) {
+      logger.error('ad-rules', `TikTok account missing advertiser ID: ${tiktokAccount.name}`);
       return NextResponse.json(
-        { success: false, error: `La cuenta "${metaAccount.name}" no tiene Ad Account ID configurado. Ve a Configuracion > Cuentas para configurarlo.` },
+        { success: false, error: `La cuenta "${tiktokAccount.name}" no tiene Advertiser ID configurado. Ve a Configuracion > Cuentas para configurarlo.` },
         { status: 400 }
       );
     }
 
-    // Get access token - use account-specific or fall back to global
-    let accessToken = metaAccount.metaAccessToken;
+    // Get access token
+    let accessToken = tiktokAccount.tiktokAccessToken;
     if (!accessToken) {
       const globalSettings = await prisma.globalSettings.findFirst();
-      accessToken = globalSettings?.metaAccessToken || null;
+      accessToken = globalSettings?.tiktokAccessToken || null;
     }
 
     if (!accessToken) {
-      logger.error('ad-rules', `No access token available for account: ${metaAccount.name}`);
+      logger.error('ad-rules', `No access token available for account: ${tiktokAccount.name}`);
       return NextResponse.json(
         { success: false, error: `No hay Access Token configurado. Ve a Configuracion para configurarlo.` },
         { status: 400 }
       );
     }
 
-    // Get specific campaign IDs if applicable (these are now Meta campaign IDs directly)
+    // Get specific campaign IDs if applicable
     const specificCampaignIds: string[] = body.specificCampaignIds || [];
 
-    const adAccountId = metaAccount.metaAdAccountId;
+    const advertiserId = tiktokAccount.tiktokAdvertiserId;
 
     // Check if rule can execute based on schedule
     const canExecuteReasons: string[] = [];
@@ -135,15 +135,15 @@ export async function POST(request: NextRequest) {
     // Get all entities first
     switch (level) {
       case 'CAMPAIGN':
-        const campaigns = await metaService.getActiveCampaigns(adAccountId, accessToken);
+        const campaigns = await tiktokService.getActiveCampaigns(advertiserId, accessToken);
         entities = campaigns.map(c => ({ id: c.id, name: c.name }));
         break;
-      case 'AD_SET':
-        const adSets = await metaService.getActiveAdSets(adAccountId, accessToken);
-        entities = adSets.map(a => ({ id: a.id, name: a.name, campaign_id: a.campaign_id }));
+      case 'AD_GROUP':
+        const adGroups = await tiktokService.getActiveAdGroups(advertiserId, accessToken);
+        entities = adGroups.map(a => ({ id: a.id, name: a.name, campaign_id: a.campaign_id }));
         break;
       case 'AD':
-        const ads = await metaService.getActiveAds(adAccountId, accessToken);
+        const ads = await tiktokService.getActiveAds(advertiserId, accessToken);
         entities = ads.map(a => ({ id: a.id, name: a.name, campaign_id: a.campaign_id }));
         break;
     }
@@ -153,8 +153,8 @@ export async function POST(request: NextRequest) {
       if (level === 'CAMPAIGN') {
         // Filter campaigns directly by ID
         entities = entities.filter(e => specificCampaignIds.includes(e.id));
-      } else if (level === 'AD_SET' || level === 'AD') {
-        // Filter ad sets and ads by their parent campaign_id
+      } else if (level === 'AD_GROUP' || level === 'AD') {
+        // Filter ad groups and ads by their parent campaign_id
         entities = entities.filter(e => e.campaign_id && specificCampaignIds.includes(e.campaign_id));
       }
       logger.info('ad-rules', `Filtered to ${entities.length} entities from specific campaigns: ${specificCampaignIds.join(', ')}`);
@@ -169,11 +169,12 @@ export async function POST(request: NextRequest) {
     for (const entity of entities.slice(0, 20)) { // Limit to 20 for simulation
       try {
         // Get metrics for the entity
-        const metrics = await metaService.getEntityInsights(
+        const metrics = await tiktokService.getEntityInsights(
           entity.id,
           getLevelForApi(level),
-          body.timeWindow || 'TODAY',
-          accessToken
+          body.timeWindow || 'today',
+          accessToken,
+          advertiserId
         );
 
         if (!metrics) {
@@ -209,11 +210,12 @@ export async function POST(request: NextRequest) {
           wouldExecuteAction: conditionMet,
         };
 
-        // If budget action, get current budget
+        // If budget action, get current budget (TikTok budgets are in dollars)
         if ((body.action === 'INCREASE_BUDGET' || body.action === 'DECREASE_BUDGET') && conditionMet) {
-          const budgetInfo = await metaService.getBudgetInfo(entity.id, accessToken);
+          const budgetLevel = level === 'AD' ? 'adgroup' : (level === 'CAMPAIGN' ? 'campaign' : 'adgroup');
+          const budgetInfo = await tiktokService.getBudgetInfo(entity.id, budgetLevel, advertiserId, accessToken);
           if (budgetInfo) {
-            const currentBudget = (budgetInfo.daily_budget ?? budgetInfo.lifetime_budget ?? 0) / 100; // Convert from cents
+            const currentBudget = budgetInfo.budget; // Already in dollars
             simulatedEntity.currentBudget = currentBudget;
 
             // Calculate projected new budget
@@ -253,7 +255,7 @@ export async function POST(request: NextRequest) {
     const result: SimulationResult = {
       success: true,
       rule: {
-        name: body.name || 'Nueva Regla',
+        name: body.name || 'Nueva Regla TikTok',
         level: body.level,
         metric: body.metric,
         operator: body.operator,
@@ -280,14 +282,14 @@ export async function POST(request: NextRequest) {
     };
 
     const duration = Date.now() - startTime;
-    logger.success('ad-rules', `Simulation completed`, {
+    logger.success('ad-rules', `TikTok simulation completed`, {
       totalEntities: entities.length,
       matching: entitiesMatchingCondition
     }, duration);
 
     return NextResponse.json(result);
   } catch (error: any) {
-    logger.error('ad-rules', `Simulation failed: ${error.message}`, { stack: error.stack });
+    logger.error('ad-rules', `TikTok simulation failed: ${error.message}`, { stack: error.stack });
     return NextResponse.json(
       { success: false, error: error.message },
       { status: 500 }
@@ -296,11 +298,11 @@ export async function POST(request: NextRequest) {
 }
 
 // Helper functions
-function getLevelForApi(level: AdRuleLevel): 'campaign' | 'adset' | 'ad' {
+function getLevelForApi(level: AdRuleLevel): 'campaign' | 'adgroup' | 'ad' {
   switch (level) {
     case 'CAMPAIGN': return 'campaign';
-    case 'AD_SET': return 'adset';
-    case 'AD_GROUP': return 'adset'; // TikTok uses AD_GROUP, map to adset for Meta
+    case 'AD_GROUP': return 'adgroup';
+    case 'AD_SET': return 'adgroup'; // Map AD_SET to adgroup for compatibility
     case 'AD': return 'ad';
     default: return 'campaign';
   }

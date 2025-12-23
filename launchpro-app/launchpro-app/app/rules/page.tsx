@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
+type Platform = 'META' | 'TIKTOK';
+
 interface AdRuleExecution {
   id: string;
   targetType: string;
@@ -20,13 +22,20 @@ interface AdRule {
   id: string;
   name: string;
   isActive: boolean;
+  platform: Platform;
   level: string;
   targetIds: string[];
-  metaAccountId: string;
-  metaAccount: {
+  metaAccountId?: string;
+  metaAccount?: {
     id: string;
     name: string;
     metaAdAccountId: string;
+  };
+  tiktokAccountId?: string;
+  tiktokAccount?: {
+    id: string;
+    name: string;
+    tiktokAdvertiserId: string;
   };
   metric: string;
   operator: string;
@@ -73,6 +82,7 @@ const actionLabels: Record<string, string> = {
 const levelLabels: Record<string, string> = {
   CAMPAIGN: 'Campana',
   AD_SET: 'Ad Set',
+  AD_GROUP: 'Ad Group',
   AD: 'Anuncio',
 };
 
@@ -92,49 +102,77 @@ const timeWindowLabels: Record<string, string> = {
 
 export default function RulesPage() {
   const router = useRouter();
-  const [rules, setRules] = useState<AdRule[]>([]);
+  const [activeTab, setActiveTab] = useState<Platform>('META');
+  const [metaRules, setMetaRules] = useState<AdRule[]>([]);
+  const [tiktokRules, setTiktokRules] = useState<AdRule[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [togglingRule, setTogglingRule] = useState<string | null>(null);
   const [deletingRule, setDeletingRule] = useState<string | null>(null);
 
+  // Get rules based on active tab
+  const rules = activeTab === 'META' ? metaRules : tiktokRules;
+  const setRules = activeTab === 'META' ? setMetaRules : setTiktokRules;
+
   useEffect(() => {
-    fetchRules();
+    fetchAllRules();
   }, []);
 
-  const fetchRules = async () => {
+  const fetchAllRules = async () => {
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch('/api/rules');
-      const data = await response.json();
 
-      if (data.success && Array.isArray(data.data)) {
-        setRules(data.data);
+      // Fetch both Meta and TikTok rules in parallel
+      const [metaResponse, tiktokResponse] = await Promise.all([
+        fetch('/api/rules'),
+        fetch('/api/tiktok-rules'),
+      ]);
+
+      const metaData = await metaResponse.json();
+      const tiktokData = await tiktokResponse.json();
+
+      if (metaData.success && Array.isArray(metaData.data)) {
+        setMetaRules(metaData.data);
       } else {
-        setError(data.error || 'Error al cargar las reglas');
-        setRules([]);
+        console.error('Error fetching Meta rules:', metaData.error);
+        setMetaRules([]);
+      }
+
+      if (tiktokData.success && Array.isArray(tiktokData.data)) {
+        setTiktokRules(tiktokData.data);
+      } else {
+        console.error('Error fetching TikTok rules:', tiktokData.error);
+        setTiktokRules([]);
       }
     } catch (err: any) {
       setError(err.message || 'Error al cargar las reglas');
-      setRules([]);
+      setMetaRules([]);
+      setTiktokRules([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const toggleRule = async (ruleId: string) => {
+  const toggleRule = async (ruleId: string, platform: Platform) => {
     try {
       setTogglingRule(ruleId);
-      const response = await fetch(`/api/rules/${ruleId}/toggle`, {
+      const apiPath = platform === 'TIKTOK' ? '/api/tiktok-rules' : '/api/rules';
+      const response = await fetch(`${apiPath}/${ruleId}/toggle`, {
         method: 'POST',
       });
       const data = await response.json();
 
       if (data.success) {
-        setRules(rules.map(r =>
-          r.id === ruleId ? { ...r, isActive: data.data.isActive } : r
-        ));
+        if (platform === 'TIKTOK') {
+          setTiktokRules(prev => prev.map(r =>
+            r.id === ruleId ? { ...r, isActive: data.data.isActive } : r
+          ));
+        } else {
+          setMetaRules(prev => prev.map(r =>
+            r.id === ruleId ? { ...r, isActive: data.data.isActive } : r
+          ));
+        }
       } else {
         alert(data.error || 'Error al cambiar estado de la regla');
       }
@@ -145,20 +183,25 @@ export default function RulesPage() {
     }
   };
 
-  const deleteRule = async (ruleId: string, ruleName: string) => {
+  const deleteRule = async (ruleId: string, ruleName: string, platform: Platform) => {
     if (!confirm(`Estas seguro de eliminar la regla "${ruleName}"?`)) {
       return;
     }
 
     try {
       setDeletingRule(ruleId);
-      const response = await fetch(`/api/rules/${ruleId}`, {
+      const apiPath = platform === 'TIKTOK' ? '/api/tiktok-rules' : '/api/rules';
+      const response = await fetch(`${apiPath}/${ruleId}`, {
         method: 'DELETE',
       });
       const data = await response.json();
 
       if (data.success) {
-        setRules(rules.filter(r => r.id !== ruleId));
+        if (platform === 'TIKTOK') {
+          setTiktokRules(prev => prev.filter(r => r.id !== ruleId));
+        } else {
+          setMetaRules(prev => prev.filter(r => r.id !== ruleId));
+        }
       } else {
         alert(data.error || 'Error al eliminar la regla');
       }
@@ -212,24 +255,61 @@ export default function RulesPage() {
     );
   }
 
+  // Get the correct link for new rule based on platform
+  const newRuleLink = activeTab === 'META' ? '/rules/new' : '/rules/new-tiktok';
+
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Reglas Automatizadas</h1>
             <p className="text-gray-600 mt-1">
-              Automatiza acciones basadas en el rendimiento de tus campanas Meta
+              Automatiza acciones basadas en el rendimiento de tus campanas
             </p>
           </div>
           <Link
-            href="/rules/new"
-            className="bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center gap-2"
+            href={newRuleLink}
+            className={`px-6 py-3 rounded-lg font-medium transition-colors flex items-center gap-2 ${
+              activeTab === 'META'
+                ? 'bg-blue-600 text-white hover:bg-blue-700'
+                : 'bg-black text-white hover:bg-gray-800'
+            }`}
           >
             <span>+</span>
-            Nueva Regla
+            Nueva Regla {activeTab === 'TIKTOK' ? 'TikTok' : 'Meta'}
           </Link>
+        </div>
+
+        {/* Platform Tabs */}
+        <div className="flex gap-2 mb-6">
+          <button
+            onClick={() => setActiveTab('META')}
+            className={`px-6 py-3 rounded-lg font-medium transition-colors flex items-center gap-2 ${
+              activeTab === 'META'
+                ? 'bg-blue-600 text-white'
+                : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-200'
+            }`}
+          >
+            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 2C6.477 2 2 6.477 2 12c0 4.991 3.657 9.128 8.438 9.879V14.89h-2.54V12h2.54V9.797c0-2.506 1.492-3.89 3.777-3.89 1.094 0 2.238.195 2.238.195v2.46h-1.26c-1.243 0-1.63.771-1.63 1.562V12h2.773l-.443 2.89h-2.33v6.989C18.343 21.129 22 16.99 22 12c0-5.523-4.477-10-10-10z"/>
+            </svg>
+            Meta ({metaRules.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('TIKTOK')}
+            className={`px-6 py-3 rounded-lg font-medium transition-colors flex items-center gap-2 ${
+              activeTab === 'TIKTOK'
+                ? 'bg-black text-white'
+                : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-200'
+            }`}
+          >
+            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5 20.1a6.34 6.34 0 0 0 10.86-4.43v-7a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1-.1z"/>
+            </svg>
+            TikTok ({tiktokRules.length})
+          </button>
         </div>
 
         {error && (
@@ -241,19 +321,23 @@ export default function RulesPage() {
         {/* Rules Grid */}
         {rules.length === 0 ? (
           <div className="bg-white rounded-xl shadow-sm p-12 text-center">
-            <div className="text-6xl mb-4">⚡</div>
+            <div className="text-6xl mb-4">{activeTab === 'TIKTOK' ? '🎵' : '⚡'}</div>
             <h3 className="text-xl font-semibold text-gray-900 mb-2">
-              No hay reglas configuradas
+              No hay reglas {activeTab === 'TIKTOK' ? 'TikTok' : 'Meta'} configuradas
             </h3>
             <p className="text-gray-600 mb-6">
-              Crea tu primera regla automatizada para optimizar tus campanas
+              Crea tu primera regla automatizada para optimizar tus campanas {activeTab === 'TIKTOK' ? 'TikTok' : 'Meta'}
             </p>
             <Link
-              href="/rules/new"
-              className="inline-flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors"
+              href={newRuleLink}
+              className={`inline-flex items-center gap-2 px-6 py-3 rounded-lg font-medium transition-colors ${
+                activeTab === 'META'
+                  ? 'bg-blue-600 text-white hover:bg-blue-700'
+                  : 'bg-black text-white hover:bg-gray-800'
+              }`}
             >
               <span>+</span>
-              Crear Primera Regla
+              Crear Primera Regla {activeTab === 'TIKTOK' ? 'TikTok' : 'Meta'}
             </Link>
           </div>
         ) : (
@@ -273,11 +357,13 @@ export default function RulesPage() {
                         {rule.name}
                       </h3>
                       <p className="text-sm text-gray-500 mt-1">
-                        {rule.metaAccount.name}
+                        {rule.platform === 'TIKTOK'
+                          ? rule.tiktokAccount?.name || 'Sin cuenta'
+                          : rule.metaAccount?.name || 'Sin cuenta'}
                       </p>
                     </div>
                     <button
-                      onClick={() => toggleRule(rule.id)}
+                      onClick={() => toggleRule(rule.id, rule.platform || 'META')}
                       disabled={togglingRule === rule.id}
                       className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
                         rule.isActive ? 'bg-green-500' : 'bg-gray-300'
@@ -338,20 +424,28 @@ export default function RulesPage() {
                 {/* Card Footer */}
                 <div className="px-5 py-3 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
                   <Link
-                    href={`/rules/${rule.id}/history`}
+                    href={rule.platform === 'TIKTOK'
+                      ? `/rules/tiktok/${rule.id}/history`
+                      : `/rules/${rule.id}/history`}
                     className="text-sm text-gray-600 hover:text-gray-900"
                   >
                     Ver historial
                   </Link>
                   <div className="flex items-center gap-2">
                     <Link
-                      href={`/rules/${rule.id}`}
-                      className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+                      href={rule.platform === 'TIKTOK'
+                        ? `/rules/tiktok/${rule.id}`
+                        : `/rules/${rule.id}`}
+                      className={`text-sm font-medium ${
+                        rule.platform === 'TIKTOK'
+                          ? 'text-gray-900 hover:text-black'
+                          : 'text-blue-600 hover:text-blue-700'
+                      }`}
                     >
                       Editar
                     </Link>
                     <button
-                      onClick={() => deleteRule(rule.id, rule.name)}
+                      onClick={() => deleteRule(rule.id, rule.name, rule.platform || 'META')}
                       disabled={deletingRule === rule.id}
                       className="text-sm text-red-600 hover:text-red-700 font-medium disabled:opacity-50"
                     >

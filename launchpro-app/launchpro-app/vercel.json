@@ -11,6 +11,10 @@
     {
       "path": "/api/cron/evaluate-rules",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/evaluate-tiktok-rules",
+      "schedule": "*/15 * * * *"
     }
   ],
   "functions": {
@@ -24,6 +28,9 @@
       "maxDuration": 800
     },
     "app/api/cron/evaluate-rules/route.ts": {
+      "maxDuration": 300
+    },
+    "app/api/cron/evaluate-tiktok-rules/route.ts": {
       "maxDuration": 300
     }
   }

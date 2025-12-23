@@ -92,6 +92,7 @@ model Account {
 
   // Ad Rules
   adRulesAsMeta    AdRule[]       @relation("MetaRuleAccount")
+  adRulesAsTikTok  AdRule[]       @relation("TikTokRuleAccount")
   adRulesAsTonic   AdRule[]       @relation("TonicRuleAccount")
 
   // Status
@@ -351,12 +352,18 @@ model InvitationCode {
 }
 
 // ============================================
-// AD RULES - Automated Rules for Meta Ads
+// AD RULES - Automated Rules for Meta & TikTok Ads
 // ============================================
+
+enum AdRulePlatform {
+  META
+  TIKTOK
+}
 
 enum AdRuleLevel {
   CAMPAIGN
-  AD_SET
+  AD_SET      // Meta terminology
+  AD_GROUP    // TikTok terminology (equivalent to AD_SET)
   AD
 }
 
@@ -392,10 +399,13 @@ model AdRule {
   name            String
   isActive        Boolean        @default(true)
 
+  // Platform - META or TIKTOK
+  platform        AdRulePlatform @default(META)
+
   // Scope - what level this rule applies to
   level           AdRuleLevel
 
-  // Target - which Meta entity IDs this applies to
+  // Target - which entity IDs this applies to
   // If empty, applies to ALL active entities of that level
   targetIds       String[]       @default([])
 
@@ -403,9 +413,13 @@ model AdRule {
   applyToAllCampaigns  Boolean   @default(false)  // false = specific campaigns, true = all campaigns
   specificCampaignIds  String[]  @default([])     // Campaign IDs if applyToAllCampaigns is false
 
-  // Account - which Meta account this rule belongs to
-  metaAccountId   String
-  metaAccount     Account        @relation("MetaRuleAccount", fields: [metaAccountId], references: [id])
+  // Meta Account - for META platform rules (optional)
+  metaAccountId   String?
+  metaAccount     Account?       @relation("MetaRuleAccount", fields: [metaAccountId], references: [id])
+
+  // TikTok Account - for TIKTOK platform rules (optional)
+  tiktokAccountId String?
+  tiktokAccount   Account?       @relation("TikTokRuleAccount", fields: [tiktokAccountId], references: [id])
 
   // Tonic Account - for ROAS calculation (Gross Revenue comes from Tonic)
   tonicAccountId  String?
@@ -455,7 +469,9 @@ model AdRule {
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 
+  @@index([platform])
   @@index([metaAccountId])
+  @@index([tiktokAccountId])
   @@index([tonicAccountId])
   @@index([isActive])
   @@index([level])

@@ -1,26 +1,18 @@
 import { prisma } from '@/lib/prisma';
-import { metaService } from './meta.service';
+import { tiktokService } from './tiktok.service';
 import { tonicService, TonicCredentials } from './tonic.service';
 import { logger } from '@/lib/logger';
 import { Resend } from 'resend';
 import {
   AdRule,
-  AdRuleExecution,
   AdRuleLevel,
   AdRuleMetric,
   AdRuleOperator,
-  AdRuleAction,
   Account,
 } from '@prisma/client';
 
-type AdRuleWithAccount = AdRule & {
-  metaAccount: Account | null;
-  tonicAccount?: Account | null;
-};
-
-// Type for rules that have been verified to have a Meta account
-type AdRuleWithMetaAccount = AdRule & {
-  metaAccount: Account;
+type TikTokAdRuleWithAccount = AdRule & {
+  tiktokAccount: Account;
   tonicAccount?: Account | null;
 };
 
@@ -45,12 +37,11 @@ interface MetricData {
   cpm: number;
   ctr: number;
   conversions: number;
-  conversionValue: number;
-  roas: number;
   cpa: number;
+  roas: number;
 }
 
-class AdRulesService {
+class TikTokAdRulesService {
   private resend: Resend | null = null;
 
   constructor() {
@@ -60,12 +51,12 @@ class AdRulesService {
   }
 
   /**
-   * Evaluate all active rules
+   * Evaluate all active TikTok rules
    * Called by the cron job
    */
   async evaluateAllRules(): Promise<EvaluationResult> {
     const startTime = Date.now();
-    logger.info('ad-rules', 'Starting evaluation of all active rules');
+    logger.info('ad-rules', 'Starting evaluation of all active TikTok rules');
 
     const result: EvaluationResult = {
       totalRules: 0,
@@ -76,23 +67,23 @@ class AdRulesService {
     };
 
     try {
-      // Get all active META rules with their accounts (not TikTok - those are handled separately)
+      // Get all active TikTok rules with their accounts
       const rules = await prisma.adRule.findMany({
         where: {
           isActive: true,
-          platform: 'META', // Only Meta rules
+          platform: 'TIKTOK',
         },
-        include: { metaAccount: true, tonicAccount: true },
+        include: { tiktokAccount: true, tonicAccount: true },
       });
 
       result.totalRules = rules.length;
-      logger.info('ad-rules', `Found ${rules.length} active META rules to evaluate`);
+      logger.info('ad-rules', `Found ${rules.length} active TikTok rules to evaluate`);
 
       for (const rule of rules) {
         try {
-          // Skip if no Meta account is configured
-          if (!rule.metaAccount) {
-            logger.warn('ad-rules', `Rule "${rule.name}" skipped: No Meta account configured`);
+          // Validate TikTok account exists
+          if (!rule.tiktokAccount) {
+            logger.warn('ad-rules', `Rule "${rule.name}" skipped: No TikTok account configured`);
             continue;
           }
 
@@ -102,7 +93,7 @@ class AdRulesService {
             continue;
           }
 
-          const triggered = await this.evaluateRule(rule as AdRuleWithMetaAccount);
+          const triggered = await this.evaluateRule(rule as TikTokAdRuleWithAccount);
           result.evaluated++;
 
           if (triggered) {
@@ -142,10 +133,10 @@ class AdRulesService {
   }
 
   /**
-   * Evaluate a single rule
+   * Evaluate a single TikTok rule
    * Returns true if the rule was triggered for any entity
    */
-  async evaluateRule(rule: AdRuleWithMetaAccount): Promise<boolean> {
+  async evaluateRule(rule: TikTokAdRuleWithAccount): Promise<boolean> {
     logger.info('ad-rules', `Evaluating rule: ${rule.name}`, {
       level: rule.level,
       metric: rule.metric,
@@ -153,11 +144,11 @@ class AdRulesService {
       value: rule.value,
     });
 
-    const accessToken = rule.metaAccount.metaAccessToken;
-    const adAccountId = rule.metaAccount.metaAdAccountId;
+    const accessToken = rule.tiktokAccount.tiktokAccessToken;
+    const advertiserId = rule.tiktokAccount.tiktokAdvertiserId;
 
-    if (!accessToken || !adAccountId) {
-      logger.warn('ad-rules', `Rule "${rule.name}" skipped: Missing access token or ad account ID`);
+    if (!accessToken || !advertiserId) {
+      logger.warn('ad-rules', `Rule "${rule.name}" skipped: Missing access token or advertiser ID`);
       return false;
     }
 
@@ -186,16 +177,16 @@ class AdRulesService {
           );
           logger.info('ad-rules', `Tonic revenue map built with ${tonicRevenueMap.size} campaigns for ${rule.roasDateRange || 'today'}`);
         } catch (error: any) {
-          logger.error('ad-rules', `Failed to fetch Tonic stats: ${error.message}. Will use Meta ROAS as fallback.`);
+          logger.error('ad-rules', `Failed to fetch Tonic stats: ${error.message}. ROAS will be 0.`);
           tonicRevenueMap = null;
         }
       } else {
-        logger.warn('ad-rules', `Rule "${rule.name}" has ROAS metric but Tonic account missing credentials. Using Meta ROAS.`);
+        logger.warn('ad-rules', `Rule "${rule.name}" has ROAS metric but Tonic account missing credentials. ROAS will be 0.`);
       }
     }
 
     // Get entities to evaluate
-    const entities = await this.getEntitiesToEvaluate(rule, adAccountId, accessToken);
+    const entities = await this.getEntitiesToEvaluate(rule, advertiserId, accessToken);
     logger.info('ad-rules', `Found ${entities.length} entities to evaluate for rule "${rule.name}"`);
 
     let anyTriggered = false;
@@ -210,14 +201,15 @@ class AdRulesService {
       try {
         // Get metrics for the entity
         const datePreset = rule.metric === 'ROAS' && rule.roasDateRange
-          ? this.getMetaDatePreset(rule.roasDateRange)
+          ? this.getTikTokDatePreset(rule.roasDateRange)
           : rule.timeWindow;
 
-        const metrics = await metaService.getEntityInsights(
+        const metrics = await tiktokService.getEntityInsights(
           entity.id,
           this.getLevelForApi(rule.level),
           datePreset,
-          accessToken
+          accessToken,
+          advertiserId
         );
 
         if (!metrics) {
@@ -229,8 +221,8 @@ class AdRulesService {
         let metricValue: number;
 
         if (rule.metric === 'ROAS' && tonicRevenueMap) {
-          // Calculate hybrid ROAS using Tonic revenue and Meta cost
-          metricValue = this.calculateHybridRoas(entity.name, tonicRevenueMap, metrics.spend, metrics.roas);
+          // Calculate hybrid ROAS using Tonic revenue and TikTok cost
+          metricValue = this.calculateHybridRoas(entity.name, tonicRevenueMap, metrics.spend);
         } else {
           metricValue = this.getMetricValue(metrics, rule.metric);
         }
@@ -248,7 +240,7 @@ class AdRulesService {
 
         if (conditionMet) {
           // Execute the action
-          const actionResult = await this.executeAction(rule, entity, metricValue, accessToken);
+          const actionResult = await this.executeAction(rule, entity, metricValue, accessToken, advertiserId);
 
           // Record execution
           await this.recordExecution(rule, entity, metricValue, conditionMet, actionResult);
@@ -273,7 +265,7 @@ class AdRulesService {
   }
 
   /**
-   * Extract Tonic campaign ID from Meta campaign name
+   * Extract Tonic campaign ID from TikTok campaign name
    * Format: "4193514_TestPromptCampaign" -> "4193514"
    */
   private extractTonicIdFromCampaignName(name: string): string | null {
@@ -282,44 +274,42 @@ class AdRulesService {
   }
 
   /**
-   * Calculate hybrid ROAS using Tonic gross revenue and Meta cost
-   * Formula: (Tonic Gross Revenue / Meta Cost) * 100
-   * Falls back to Meta ROAS if no Tonic data available
+   * Calculate hybrid ROAS using Tonic gross revenue and TikTok cost
+   * Formula: (Tonic Gross Revenue / TikTok Cost) * 100
+   * Returns 0 if no Tonic data available (TikTok doesn't provide ROAS natively)
    */
   private calculateHybridRoas(
     entityName: string,
     tonicRevenueMap: Map<string, number>,
-    metaCost: number,
-    metaRoas: number
+    tiktokCost: number
   ): number {
     const tonicId = this.extractTonicIdFromCampaignName(entityName);
 
     if (!tonicId) {
-      logger.warn('ad-rules', `Could not extract Tonic ID from "${entityName}". Using Meta ROAS: ${metaRoas}`);
-      return metaRoas;
+      logger.warn('ad-rules', `Could not extract Tonic ID from "${entityName}". ROAS = 0`);
+      return 0;
     }
 
     const tonicRevenue = tonicRevenueMap.get(tonicId);
 
     if (tonicRevenue === undefined || tonicRevenue === 0) {
-      logger.warn('ad-rules', `No Tonic revenue for campaign ID ${tonicId}. Using Meta ROAS: ${metaRoas}`);
-      return metaRoas;
-    }
-
-    if (metaCost <= 0) {
-      logger.warn('ad-rules', `Meta cost is zero for "${entityName}". Returning 0 ROAS.`);
+      logger.warn('ad-rules', `No Tonic revenue for campaign ID ${tonicId}. ROAS = 0`);
       return 0;
     }
 
-    const calculatedRoas = (tonicRevenue / metaCost) * 100;
-    logger.debug('ad-rules', `Hybrid ROAS for "${entityName}": ${calculatedRoas.toFixed(2)}% (Tonic: $${tonicRevenue.toFixed(2)}, Meta: $${metaCost.toFixed(2)})`);
+    if (tiktokCost <= 0) {
+      logger.warn('ad-rules', `TikTok cost is zero for "${entityName}". Returning 0 ROAS.`);
+      return 0;
+    }
+
+    const calculatedRoas = (tonicRevenue / tiktokCost) * 100;
+    logger.debug('ad-rules', `Hybrid ROAS for "${entityName}": ${calculatedRoas.toFixed(2)}% (Tonic: $${tonicRevenue.toFixed(2)}, TikTok: $${tiktokCost.toFixed(2)})`);
 
     return calculatedRoas;
   }
 
   /**
    * Convert ROAS date range preset to actual from/to dates (YYYY-MM-DD)
-   * Returns both dates for use with Tonic's EPC Final endpoint
    */
   private getDateRangeFromPreset(dateRange: string): { from: string; to: string } {
     const now = new Date();
@@ -351,9 +341,9 @@ class AdRulesService {
   }
 
   /**
-   * Convert ROAS date range to Meta API date preset
+   * Convert ROAS date range to TikTok API date preset
    */
-  private getMetaDatePreset(dateRange: string): string {
+  private getTikTokDatePreset(dateRange: string): string {
     switch (dateRange) {
       case 'today':
         return 'today';
@@ -441,10 +431,11 @@ class AdRulesService {
    * Execute the action for a rule
    */
   async executeAction(
-    rule: AdRuleWithAccount,
+    rule: TikTokAdRuleWithAccount,
     entity: { id: string; name: string },
     metricValue: number,
-    accessToken: string
+    accessToken: string,
+    advertiserId: string
   ): Promise<{ success: boolean; action: string; details?: any }> {
     logger.info('ad-rules', `Executing action "${rule.action}" for entity ${entity.id}`);
 
@@ -455,18 +446,16 @@ class AdRulesService {
           return { success: true, action: 'NOTIFY' };
 
         case 'PAUSE':
-          const pauseResult = await metaService.pauseEntity(entity.id, accessToken);
-          return { success: pauseResult, action: 'PAUSE' };
+          return await this.pauseEntity(rule.level, entity.id, advertiserId, accessToken);
 
         case 'UNPAUSE':
-          const unpauseResult = await metaService.unpauseEntity(entity.id, accessToken);
-          return { success: unpauseResult, action: 'UNPAUSE' };
+          return await this.unpauseEntity(rule.level, entity.id, advertiserId, accessToken);
 
         case 'INCREASE_BUDGET':
-          return await this.adjustBudget(rule, entity.id, 'increase', accessToken);
+          return await this.adjustBudget(rule, entity.id, 'increase', accessToken, advertiserId);
 
         case 'DECREASE_BUDGET':
-          return await this.adjustBudget(rule, entity.id, 'decrease', accessToken);
+          return await this.adjustBudget(rule, entity.id, 'decrease', accessToken, advertiserId);
 
         default:
           return { success: false, action: rule.action, details: 'Unknown action' };
@@ -478,55 +467,129 @@ class AdRulesService {
   }
 
   /**
+   * Pause an entity (campaign, ad group, or ad)
+   */
+  private async pauseEntity(
+    level: AdRuleLevel,
+    entityId: string,
+    advertiserId: string,
+    accessToken: string
+  ): Promise<{ success: boolean; action: string; details?: any }> {
+    try {
+      switch (level) {
+        case 'CAMPAIGN':
+          await tiktokService.updateCampaignStatusForRule(entityId, 'DISABLE', advertiserId, accessToken);
+          break;
+        case 'AD_GROUP':
+          await tiktokService.updateAdGroupStatusForRule(entityId, 'DISABLE', advertiserId, accessToken);
+          break;
+        case 'AD':
+          await tiktokService.updateAdStatusForRule(entityId, 'DISABLE', advertiserId, accessToken);
+          break;
+        default:
+          return { success: false, action: 'PAUSE', details: 'Invalid level' };
+      }
+      return { success: true, action: 'PAUSE' };
+    } catch (error: any) {
+      return { success: false, action: 'PAUSE', details: error.message };
+    }
+  }
+
+  /**
+   * Unpause an entity (campaign, ad group, or ad)
+   */
+  private async unpauseEntity(
+    level: AdRuleLevel,
+    entityId: string,
+    advertiserId: string,
+    accessToken: string
+  ): Promise<{ success: boolean; action: string; details?: any }> {
+    try {
+      switch (level) {
+        case 'CAMPAIGN':
+          await tiktokService.updateCampaignStatusForRule(entityId, 'ENABLE', advertiserId, accessToken);
+          break;
+        case 'AD_GROUP':
+          await tiktokService.updateAdGroupStatusForRule(entityId, 'ENABLE', advertiserId, accessToken);
+          break;
+        case 'AD':
+          await tiktokService.updateAdStatusForRule(entityId, 'ENABLE', advertiserId, accessToken);
+          break;
+        default:
+          return { success: false, action: 'UNPAUSE', details: 'Invalid level' };
+      }
+      return { success: true, action: 'UNPAUSE' };
+    } catch (error: any) {
+      return { success: false, action: 'UNPAUSE', details: error.message };
+    }
+  }
+
+  /**
    * Adjust budget (increase or decrease)
+   * TikTok budgets are in DOLLARS (not cents like Meta)
    */
   private async adjustBudget(
     rule: AdRule,
     entityId: string,
     direction: 'increase' | 'decrease',
-    accessToken: string
+    accessToken: string,
+    advertiserId: string
   ): Promise<{ success: boolean; action: string; details?: any }> {
+    // Only campaigns and ad groups have budgets in TikTok
+    const level = rule.level === 'AD' ? 'adgroup' : (rule.level === 'CAMPAIGN' ? 'campaign' : 'adgroup');
+
     // Get current budget
-    const budgetInfo = await metaService.getBudgetInfo(entityId, accessToken);
+    const budgetInfo = await tiktokService.getBudgetInfo(entityId, level, advertiserId, accessToken);
     if (!budgetInfo) {
       return { success: false, action: `${direction.toUpperCase()}_BUDGET`, details: 'Could not get current budget' };
     }
 
-    const currentBudget = budgetInfo.daily_budget ?? budgetInfo.lifetime_budget ?? 0;
-    const budgetType = budgetInfo.daily_budget ? 'daily' : 'lifetime';
+    const currentBudget = budgetInfo.budget;
 
     if (currentBudget === 0) {
       return { success: false, action: `${direction.toUpperCase()}_BUDGET`, details: 'No budget found' };
     }
 
-    // Calculate new budget
+    // Calculate new budget (TikTok uses dollars, not cents)
     let newBudget: number;
     if (rule.actionValueType === 'PERCENTAGE') {
       const change = currentBudget * ((rule.actionValue ?? 0) / 100);
       newBudget = direction === 'increase' ? currentBudget + change : currentBudget - change;
     } else {
-      // Fixed amount (in cents)
-      const change = (rule.actionValue ?? 0) * 100; // Convert to cents
+      // Fixed amount (already in dollars for TikTok)
+      const change = rule.actionValue ?? 0;
       newBudget = direction === 'increase' ? currentBudget + change : currentBudget - change;
     }
 
-    // Ensure budget doesn't go below minimum (1 dollar = 100 cents)
-    newBudget = Math.max(newBudget, 100);
-    newBudget = Math.round(newBudget); // Must be integer
+    // Ensure budget doesn't go below minimum ($1)
+    newBudget = Math.max(newBudget, 1);
+    newBudget = Math.round(newBudget * 100) / 100; // Round to 2 decimals
 
-    const result = await metaService.updateBudget(entityId, newBudget, budgetType, accessToken);
+    try {
+      if (level === 'campaign') {
+        await tiktokService.updateCampaignBudgetForRule(entityId, newBudget, advertiserId, accessToken);
+      } else {
+        await tiktokService.updateAdGroupBudgetForRule(entityId, newBudget, advertiserId, accessToken);
+      }
 
-    return {
-      success: result.success,
-      action: `${direction.toUpperCase()}_BUDGET`,
-      details: {
-        previousBudget: result.previousBudget,
-        newBudget: result.newBudget,
-        budgetType,
-        changeType: rule.actionValueType,
-        changeValue: rule.actionValue,
-      },
-    };
+      return {
+        success: true,
+        action: `${direction.toUpperCase()}_BUDGET`,
+        details: {
+          previousBudget: currentBudget,
+          newBudget: newBudget,
+          budgetMode: budgetInfo.budget_mode,
+          changeType: rule.actionValueType,
+          changeValue: rule.actionValue,
+        },
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        action: `${direction.toUpperCase()}_BUDGET`,
+        details: error.message,
+      };
+    }
   }
 
   /**
@@ -559,11 +622,12 @@ class AdRulesService {
       await this.resend.emails.send({
         from: 'LaunchPro <notifications@launchpro.app>',
         to: emails,
-        subject: `Regla "${rule.name}" activada`,
+        subject: `[TikTok] Regla "${rule.name}" activada`,
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #1a1a1a;">Regla Automatizada Activada</h2>
+            <h2 style="color: #1a1a1a;">Regla TikTok Automatizada Activada</h2>
             <div style="background: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
+              <p style="margin: 8px 0;"><strong>Plataforma:</strong> TikTok</p>
               <p style="margin: 8px 0;"><strong>Regla:</strong> ${rule.name}</p>
               <p style="margin: 8px 0;"><strong>Entidad:</strong> ${targetName}</p>
               <p style="margin: 8px 0;"><strong>Métrica:</strong> ${rule.metric} = ${metricValue.toFixed(2)}</p>
@@ -612,8 +676,8 @@ class AdRulesService {
    * Get entities to evaluate based on rule level and targets
    */
   private async getEntitiesToEvaluate(
-    rule: AdRuleWithAccount,
-    adAccountId: string,
+    rule: TikTokAdRuleWithAccount,
+    advertiserId: string,
     accessToken: string
   ): Promise<Array<{ id: string; name: string }>> {
     // If specific targets are defined, use them
@@ -627,7 +691,7 @@ class AdRulesService {
     // Get entities based on level
     switch (rule.level) {
       case 'CAMPAIGN':
-        const campaigns = await metaService.getActiveCampaigns(adAccountId, accessToken);
+        const campaigns = await tiktokService.getActiveCampaigns(advertiserId, accessToken);
         // Filter campaigns by specific IDs if not applying to all
         if (shouldFilterByCampaign) {
           const filtered = campaigns.filter(c => specificCampaignIds.includes(c.id));
@@ -636,18 +700,18 @@ class AdRulesService {
         }
         return campaigns.map(c => ({ id: c.id, name: c.name }));
 
-      case 'AD_SET':
-        const adSets = await metaService.getActiveAdSets(adAccountId, accessToken);
-        // Filter ad sets by their parent campaign if not applying to all
+      case 'AD_GROUP':
+        const adGroups = await tiktokService.getActiveAdGroups(advertiserId, accessToken);
+        // Filter ad groups by their parent campaign if not applying to all
         if (shouldFilterByCampaign) {
-          const filtered = adSets.filter(a => specificCampaignIds.includes(a.campaign_id));
-          logger.info('ad-rules', `Filtered ad sets: ${filtered.length} of ${adSets.length} (from campaigns: ${specificCampaignIds.join(', ')})`);
+          const filtered = adGroups.filter(a => specificCampaignIds.includes(a.campaign_id));
+          logger.info('ad-rules', `Filtered ad groups: ${filtered.length} of ${adGroups.length} (from campaigns: ${specificCampaignIds.join(', ')})`);
           return filtered.map(a => ({ id: a.id, name: a.name }));
         }
-        return adSets.map(a => ({ id: a.id, name: a.name }));
+        return adGroups.map(a => ({ id: a.id, name: a.name }));
 
       case 'AD':
-        const ads = await metaService.getActiveAds(adAccountId, accessToken);
+        const ads = await tiktokService.getActiveAds(advertiserId, accessToken);
         // Filter ads by their parent campaign if not applying to all
         if (shouldFilterByCampaign) {
           const filtered = ads.filter(a => specificCampaignIds.includes(a.campaign_id));
@@ -667,7 +731,7 @@ class AdRulesService {
   private getMetricValue(metrics: MetricData, metric: AdRuleMetric): number {
     switch (metric) {
       case 'ROAS':
-        return metrics.roas;
+        return metrics.roas; // Will be 0 from TikTok, use hybrid calculation instead
       case 'CPA':
         return metrics.cpa;
       case 'CPM':
@@ -691,15 +755,16 @@ class AdRulesService {
 
   /**
    * Convert rule level to API format
+   * Note: TikTok uses "adgroup" not "adset"
    */
-  private getLevelForApi(level: AdRuleLevel): 'campaign' | 'adset' | 'ad' {
+  private getLevelForApi(level: AdRuleLevel): 'campaign' | 'adgroup' | 'ad' {
     switch (level) {
       case 'CAMPAIGN':
         return 'campaign';
-      case 'AD_SET':
-        return 'adset';
-      case 'AD_GROUP': // TikTok uses AD_GROUP, map to adset for Meta
-        return 'adset';
+      case 'AD_GROUP':
+        return 'adgroup';
+      case 'AD_SET': // For compatibility, map AD_SET to adgroup
+        return 'adgroup';
       case 'AD':
         return 'ad';
       default:
@@ -767,5 +832,5 @@ class AdRulesService {
 }
 
 // Export singleton instance
-export const adRulesService = new AdRulesService();
-export default adRulesService;
+export const tiktokAdRulesService = new TikTokAdRulesService();
+export default tiktokAdRulesService;
