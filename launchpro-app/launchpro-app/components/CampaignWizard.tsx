@@ -2472,6 +2472,32 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
                       )}
                     </div>
 
+                    {/* Ads per AdSet - Only for ABO campaigns */}
+                    {formData.campaignType === 'ABO' && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Ads per AdSet
+                          <span className="text-xs text-purple-600 ml-2 font-normal">
+                            (ABO mode)
+                          </span>
+                        </label>
+                        <select
+                          value={platform.adsPerAdSet || 1}
+                          onChange={(e) => updatePlatform(index, 'adsPerAdSet', parseInt(e.target.value))}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value={1}>1 ad per adset (default)</option>
+                          <option value={2}>2 ads per adset</option>
+                          <option value={3}>3 ads per adset</option>
+                          <option value={4}>4 ads per adset</option>
+                          <option value={5}>5 ads per adset</option>
+                        </select>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Groups your creatives into adsets. Example: 10 images with "3 ads per adset" = 4 adsets (3+3+3+1)
+                        </p>
+                      </div>
+                    )}
+
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         Start Date & Time
@@ -2564,29 +2590,6 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
                             </select>
                           </div>
 
-                          {/* Ads per AdSet - Only for ABO */}
-                          {formData.campaignType === 'ABO' && (
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-2">
-                                Ads per AdSet
-                                <span className="text-xs text-gray-500 ml-1">(ABO)</span>
-                              </label>
-                              <select
-                                value={platform.adsPerAdSet || 1}
-                                onChange={(e) => updatePlatform(index, 'adsPerAdSet', parseInt(e.target.value))}
-                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
-                              >
-                                <option value={1}>1 ad per adset</option>
-                                <option value={2}>2 ads per adset</option>
-                                <option value={3}>3 ads per adset</option>
-                                <option value={4}>4 ads per adset</option>
-                                <option value={5}>5 ads per adset</option>
-                              </select>
-                              <p className="text-xs text-gray-500 mt-1">
-                                Groups your creatives into adsets with this many ads each
-                              </p>
-                            </div>
-                          )}
                         </div>
 
                         {/* Generate Images Button - Only for Meta with IMAGE or BOTH */}
