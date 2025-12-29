@@ -45,6 +45,7 @@ interface PlatformConfig {
   generateWithAI: boolean;
   aiMediaType?: 'IMAGE' | 'VIDEO' | 'BOTH';  // What type of media to generate with AI
   aiMediaCount?: number;  // How many images/videos to generate (1-5)
+  adsPerAdSet?: number;  // For ABO: How many ads to put in each ad set (1-5)
   uploadedImages?: UploadedFile[];
   uploadedVideos?: UploadedFile[];
   specialAdCategories?: string[];
@@ -1092,6 +1093,7 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
       // TikTok only allows videos, Meta allows both
       aiMediaType: platform === 'TIKTOK' ? 'VIDEO' : 'IMAGE',
       aiMediaCount: 1,
+      adsPerAdSet: 1, // For ABO: How many ads per ad set
       specialAdCategories: [],
     };
     setFormData((prev) => ({
@@ -2561,6 +2563,30 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
                               <option value={5}>5 creatives</option>
                             </select>
                           </div>
+
+                          {/* Ads per AdSet - Only for ABO */}
+                          {formData.campaignType === 'ABO' && (
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Ads per AdSet
+                                <span className="text-xs text-gray-500 ml-1">(ABO)</span>
+                              </label>
+                              <select
+                                value={platform.adsPerAdSet || 1}
+                                onChange={(e) => updatePlatform(index, 'adsPerAdSet', parseInt(e.target.value))}
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                              >
+                                <option value={1}>1 ad per adset</option>
+                                <option value={2}>2 ads per adset</option>
+                                <option value={3}>3 ads per adset</option>
+                                <option value={4}>4 ads per adset</option>
+                                <option value={5}>5 ads per adset</option>
+                              </select>
+                              <p className="text-xs text-gray-500 mt-1">
+                                Groups your creatives into adsets with this many ads each
+                              </p>
+                            </div>
+                          )}
                         </div>
 
                         {/* Generate Images Button - Only for Meta with IMAGE or BOTH */}

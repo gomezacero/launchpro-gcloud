@@ -131,6 +131,7 @@ export async function POST(request: NextRequest) {
           // AI media generation settings
           aiMediaType: p.aiMediaType || (p.platform === 'TIKTOK' ? 'VIDEO' : 'IMAGE'),
           aiMediaCount: parseInt(String(p.aiMediaCount)) || 1,
+          adsPerAdSet: parseInt(String(p.adsPerAdSet)) || 1, // For ABO: ads per ad set
           specialAdCategories: p.specialAdCategories,
           metaPageId: p.metaPageId,
           tiktokIdentityId: p.tiktokIdentityId,

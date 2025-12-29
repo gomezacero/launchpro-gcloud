@@ -70,6 +70,7 @@ export interface CreateCampaignParams {
     generateWithAI: boolean; // Generate images/videos with AI?
     aiMediaType?: 'IMAGE' | 'VIDEO' | 'BOTH'; // What type of media to generate (IMAGE for Meta, VIDEO for TikTok)
     aiMediaCount?: number; // How many media items to generate (1-5)
+    adsPerAdSet?: number; // For ABO: How many ads to put in each ad set (1-5)
     specialAdCategories?: string[];
     // Fan Page for Meta (user selected in wizard)
     metaPageId?: string;
@@ -287,6 +288,7 @@ class CampaignOrchestratorService {
               generateWithAI: p.generateWithAI,
               aiMediaType: p.aiMediaType || (p.platform === Platform.TIKTOK ? 'VIDEO' : 'IMAGE'),
               aiMediaCount: Number(p.aiMediaCount) || 1,
+              adsPerAdSet: Number(p.adsPerAdSet) || 1,
               specialAdCategories: p.specialAdCategories || [],
               status: CampaignStatus.DRAFT,
               // Manual Ad Copy (for Meta)
@@ -1932,103 +1934,197 @@ class CampaignOrchestratorService {
     } else if (hasMultipleVideos) {
       // MULTIPLE VIDEO ADS - Handle differently for CBO vs ABO
       // CBO: One ad set with multiple video ads
-      // ABO: Each video gets its OWN ad set with FULL budget
+      // ABO: Group videos into ad sets based on adsPerAdSet configuration
+
+      const axios = require('axios');
+      const adsPerAdSet = platformConfig.adsPerAdSet || 1;
 
       if (isCBO) {
         logger.info('meta', `Creating ${videos.length} Video Ads in single Ad Set (CBO mode)`);
-      } else {
-        logger.info('meta', `Creating ${videos.length} Video Ad Sets + Ads (ABO mode - each ad set gets full budget)`);
-      }
 
-      const axios = require('axios');
+        // CBO: All videos go into the single ad set created at the start
+        for (let idx = 0; idx < videos.length; idx++) {
+          const video = videos[idx];
 
-      for (let idx = 0; idx < videos.length; idx++) {
-        const video = videos[idx];
+          // Upload video
+          logger.info('meta', `Uploading video ${idx + 1}/${videos.length}: ${video.fileName}`);
+          const videoResponse = await axios.get(video.url, { responseType: 'arraybuffer' });
+          const videoBuffer = Buffer.from(videoResponse.data);
+          const uploadedVideoId = await metaService.uploadVideo(videoBuffer, video.fileName, adAccountId, accessToken);
 
-        // ABO: Create a separate ad set for THIS video with FULL budget
-        // CBO: Use the single ad set created at the start
-        let videoAdSet = adSet;
-        if (!isCBO) {
-          aboCounter++;
-          videoAdSet = await createMetaAdSet(`ABO${aboCounter}`);
-          logger.success('meta', `ABO: Created ad set ABO${aboCounter} for video: ${videoAdSet.id}`);
-        }
-
-        // Upload video
-        logger.info('meta', `Uploading video ${idx + 1}/${videos.length}: ${video.fileName}`);
-        const videoResponse = await axios.get(video.url, { responseType: 'arraybuffer' });
-        const videoBuffer = Buffer.from(videoResponse.data);
-        const uploadedVideoId = await metaService.uploadVideo(videoBuffer, video.fileName, adAccountId, accessToken);
-
-        await prisma.media.update({
-          where: { id: video.id },
-          data: { usedInMeta: true },
-        });
-
-        // Get linked thumbnail or fallback to image at same index
-        let thumbnailImage: any;
-        if (video.thumbnailMediaId) {
-          thumbnailImage = await prisma.media.findUnique({
-            where: { id: video.thumbnailMediaId },
+          await prisma.media.update({
+            where: { id: video.id },
+            data: { usedInMeta: true },
           });
-          logger.info('meta', `Using linked thumbnail for video ${idx + 1}: ${thumbnailImage?.fileName}`);
-        }
-        if (!thumbnailImage && images.length > 0) {
-          thumbnailImage = images[idx] || images[0];
-          logger.info('meta', `Using fallback thumbnail for video ${idx + 1}: ${thumbnailImage?.fileName}`);
-        }
 
-        if (!thumbnailImage) {
-          throw new Error(`No thumbnail available for video ${video.fileName}. Please upload a thumbnail image.`);
-        }
+          // Get linked thumbnail or fallback to image at same index
+          let thumbnailImage: any;
+          if (video.thumbnailMediaId) {
+            thumbnailImage = await prisma.media.findUnique({
+              where: { id: video.thumbnailMediaId },
+            });
+            logger.info('meta', `Using linked thumbnail for video ${idx + 1}: ${thumbnailImage?.fileName}`);
+          }
+          if (!thumbnailImage && images.length > 0) {
+            thumbnailImage = images[idx] || images[0];
+            logger.info('meta', `Using fallback thumbnail for video ${idx + 1}: ${thumbnailImage?.fileName}`);
+          }
 
-        // Upload thumbnail
-        const thumbResponse = await axios.get(thumbnailImage.url, { responseType: 'arraybuffer' });
-        const thumbBuffer = Buffer.from(thumbResponse.data);
-        const thumbHash = await metaService.uploadImage(thumbBuffer, thumbnailImage.fileName, adAccountId, accessToken);
+          if (!thumbnailImage) {
+            throw new Error(`No thumbnail available for video ${video.fileName}. Please upload a thumbnail image.`);
+          }
 
-        await prisma.media.update({
-          where: { id: thumbnailImage.id },
-          data: { usedInMeta: true, metaHash: thumbHash },
-        });
+          // Upload thumbnail
+          const thumbResponse = await axios.get(thumbnailImage.url, { responseType: 'arraybuffer' });
+          const thumbBuffer = Buffer.from(thumbResponse.data);
+          const thumbHash = await metaService.uploadImage(thumbBuffer, thumbnailImage.fileName, adAccountId, accessToken);
 
-        // Create video creative
-        const videoCreative = await metaService.createAdCreative({
-          name: `${campaign.name} - Video Creative ${idx + 1}`,
-          object_story_spec: {
-            page_id: effectivePageId,
-            ...(instagramActorId && { instagram_user_id: instagramActorId }),
-            video_data: {
-              video_id: uploadedVideoId,
-              image_hash: thumbHash,
-              title: adCopy.headline,
-              message: adCopy.primaryText,
-              call_to_action: {
-                type: 'LEARN_MORE',
-                value: { link: finalLink },
+          await prisma.media.update({
+            where: { id: thumbnailImage.id },
+            data: { usedInMeta: true, metaHash: thumbHash },
+          });
+
+          // Create video creative
+          const videoCreative = await metaService.createAdCreative({
+            name: `${campaign.name} - Video Creative ${idx + 1}`,
+            object_story_spec: {
+              page_id: effectivePageId,
+              ...(instagramActorId && { instagram_user_id: instagramActorId }),
+              video_data: {
+                video_id: uploadedVideoId,
+                image_hash: thumbHash,
+                title: adCopy.headline,
+                message: adCopy.primaryText,
+                call_to_action: {
+                  type: 'LEARN_MORE',
+                  value: { link: finalLink },
+                },
               },
             },
-          },
-        }, adAccountId, accessToken);
+          }, adAccountId, accessToken);
 
-        // Create ad in THIS video's ad set
-        const videoAd = await metaService.createAd({
-          name: `${getTomorrowDate()}_${idx + 1}`,
-          adset_id: videoAdSet.id, // Use the ad set created for THIS video
-          creative: { creative_id: videoCreative.id },
-          status: 'PAUSED',
-        }, adAccountId, accessToken);
+          // Create ad in the single CBO ad set
+          const videoAd = await metaService.createAd({
+            name: `${getTomorrowDate()}_${idx + 1}`,
+            adset_id: adSet.id,
+            creative: { creative_id: videoCreative.id },
+            status: 'PAUSED',
+          }, adAccountId, accessToken);
 
-        createdAds.push({ adId: videoAd.id, creativeId: videoCreative.id, adSetId: videoAdSet.id });
-        logger.success('meta', `Video Ad ${idx + 1}/${videos.length} created${!isCBO ? ' in its own ad set' : ''}`, {
-          adSetId: videoAdSet.id,
-          adId: videoAd.id,
-          videoId: uploadedVideoId,
-          thumbnailHash: thumbHash,
+          createdAds.push({ adId: videoAd.id, creativeId: videoCreative.id, adSetId: adSet.id });
+          logger.success('meta', `Video Ad ${idx + 1}/${videos.length} created in CBO ad set`, {
+            adSetId: adSet.id,
+            adId: videoAd.id,
+            videoId: uploadedVideoId,
+            thumbnailHash: thumbHash,
+          });
+        }
+      } else {
+        // ABO: Group videos into ad sets based on adsPerAdSet configuration
+        const totalVideos = videos.length;
+        const totalAdSets = Math.ceil(totalVideos / adsPerAdSet);
+
+        logger.info('meta', `Creating ${totalAdSets} Video Ad Sets with up to ${adsPerAdSet} ads each (ABO mode)`, {
+          totalVideos,
+          adsPerAdSet,
+          totalAdSets,
         });
 
-        // Keep track of the last ad set for backwards compatibility
-        if (!isCBO) {
+        // Group videos into chunks based on adsPerAdSet
+        const videoChunks: typeof videos[] = [];
+        for (let i = 0; i < totalVideos; i += adsPerAdSet) {
+          videoChunks.push(videos.slice(i, i + adsPerAdSet));
+        }
+
+        for (let chunkIdx = 0; chunkIdx < videoChunks.length; chunkIdx++) {
+          const chunk = videoChunks[chunkIdx];
+
+          // ABO: Create an ad set for this group of videos
+          aboCounter++;
+          const videoAdSet = await createMetaAdSet(`ABO${aboCounter}`);
+          logger.success('meta', `ABO: Created ad set ABO${aboCounter} with ${chunk.length} video ad(s): ${videoAdSet.id}`);
+
+          // Create ads for each video in this chunk within the SAME ad set
+          for (let vidIdx = 0; vidIdx < chunk.length; vidIdx++) {
+            const video = chunk[vidIdx];
+            const globalVidIdx = chunkIdx * adsPerAdSet + vidIdx;
+
+            // Upload video
+            logger.info('meta', `Uploading video ${globalVidIdx + 1}/${totalVideos}: ${video.fileName}`);
+            const videoResponse = await axios.get(video.url, { responseType: 'arraybuffer' });
+            const videoBuffer = Buffer.from(videoResponse.data);
+            const uploadedVideoId = await metaService.uploadVideo(videoBuffer, video.fileName, adAccountId, accessToken);
+
+            await prisma.media.update({
+              where: { id: video.id },
+              data: { usedInMeta: true },
+            });
+
+            // Get linked thumbnail or fallback to image at same index
+            let thumbnailImage: any;
+            if (video.thumbnailMediaId) {
+              thumbnailImage = await prisma.media.findUnique({
+                where: { id: video.thumbnailMediaId },
+              });
+              logger.info('meta', `Using linked thumbnail for video ${globalVidIdx + 1}: ${thumbnailImage?.fileName}`);
+            }
+            if (!thumbnailImage && images.length > 0) {
+              thumbnailImage = images[globalVidIdx] || images[0];
+              logger.info('meta', `Using fallback thumbnail for video ${globalVidIdx + 1}: ${thumbnailImage?.fileName}`);
+            }
+
+            if (!thumbnailImage) {
+              throw new Error(`No thumbnail available for video ${video.fileName}. Please upload a thumbnail image.`);
+            }
+
+            // Upload thumbnail
+            const thumbResponse = await axios.get(thumbnailImage.url, { responseType: 'arraybuffer' });
+            const thumbBuffer = Buffer.from(thumbResponse.data);
+            const thumbHash = await metaService.uploadImage(thumbBuffer, thumbnailImage.fileName, adAccountId, accessToken);
+
+            await prisma.media.update({
+              where: { id: thumbnailImage.id },
+              data: { usedInMeta: true, metaHash: thumbHash },
+            });
+
+            // Create video creative
+            const videoCreative = await metaService.createAdCreative({
+              name: `${campaign.name} - Video Creative ${globalVidIdx + 1}`,
+              object_story_spec: {
+                page_id: effectivePageId,
+                ...(instagramActorId && { instagram_user_id: instagramActorId }),
+                video_data: {
+                  video_id: uploadedVideoId,
+                  image_hash: thumbHash,
+                  title: adCopy.headline,
+                  message: adCopy.primaryText,
+                  call_to_action: {
+                    type: 'LEARN_MORE',
+                    value: { link: finalLink },
+                  },
+                },
+              },
+            }, adAccountId, accessToken);
+
+            // Create ad in THIS ad set (shared with other videos in the same chunk)
+            const videoAd = await metaService.createAd({
+              name: `${getTomorrowDate()}_${globalVidIdx + 1}`,
+              adset_id: videoAdSet.id,
+              creative: { creative_id: videoCreative.id },
+              status: 'PAUSED',
+            }, adAccountId, accessToken);
+
+            createdAds.push({ adId: videoAd.id, creativeId: videoCreative.id, adSetId: videoAdSet.id });
+            logger.success('meta', `Video Ad ${globalVidIdx + 1}/${totalVideos} created in ad set ABO${aboCounter}`, {
+              adSetId: videoAdSet.id,
+              adId: videoAd.id,
+              videoId: uploadedVideoId,
+              thumbnailHash: thumbHash,
+              adsInThisAdSet: vidIdx + 1,
+            });
+          }
+
+          // Keep track of the last ad set for backwards compatibility
           adSet = videoAdSet;
         }
       }
@@ -2037,54 +2133,75 @@ class CampaignOrchestratorService {
       creative = { id: createdAds[createdAds.length - 1].creativeId };
       ad = { id: createdAds[createdAds.length - 1].adId };
 
-      logger.success('meta', `All ${createdAds.length} video ads created successfully (${isCBO ? 'CBO' : 'ABO'} mode)`);
+      logger.success('meta', `All ${createdAds.length} video ads created successfully (${isCBO ? 'CBO' : `ABO with ${adsPerAdSet} ads per adset`} mode)`);
 
     } else if (useABOMultipleAds) {
-      // ABO MULTIPLE IMAGE ADS - One ad set + one ad per image
-      // Each image gets its OWN ad set with FULL budget (ABO mode)
-      logger.info('meta', `Creating ${uploadedImageHashes.length} individual Image Ad Sets + Ads (ABO mode - each ad set gets full budget)`);
+      // ABO MULTIPLE IMAGE ADS - Group ads into ad sets based on adsPerAdSet configuration
+      // adsPerAdSet determines how many ads go into each ad set
+      const adsPerAdSet = platformConfig.adsPerAdSet || 1;
+      const totalImages = uploadedImageHashes.length;
+      const totalAdSets = Math.ceil(totalImages / adsPerAdSet);
 
-      for (let idx = 0; idx < uploadedImageHashes.length; idx++) {
-        const imgData = uploadedImageHashes[idx];
+      logger.info('meta', `Creating ${totalAdSets} Ad Sets with up to ${adsPerAdSet} ads each (ABO mode)`, {
+        totalImages,
+        adsPerAdSet,
+        totalAdSets,
+      });
 
-        // ABO: Create a separate ad set for THIS image with FULL budget
+      // Group images into chunks based on adsPerAdSet
+      const imageChunks: typeof uploadedImageHashes[] = [];
+      for (let i = 0; i < totalImages; i += adsPerAdSet) {
+        imageChunks.push(uploadedImageHashes.slice(i, i + adsPerAdSet));
+      }
+
+      for (let chunkIdx = 0; chunkIdx < imageChunks.length; chunkIdx++) {
+        const chunk = imageChunks[chunkIdx];
+
+        // ABO: Create an ad set for this group of images
         aboCounter++;
         const imageAdSet = await createMetaAdSet(`ABO${aboCounter}`);
-        logger.success('meta', `ABO: Created ad set ABO${aboCounter} for image: ${imageAdSet.id}`);
+        logger.success('meta', `ABO: Created ad set ABO${aboCounter} with ${chunk.length} ad(s): ${imageAdSet.id}`);
 
-        const imgCreative = await metaService.createAdCreative({
-          name: `${campaign.name} - Creative ${idx + 1}`,
-          object_story_spec: {
-            page_id: effectivePageId,
-            ...(instagramActorId && { instagram_user_id: instagramActorId }),
-            link_data: {
-              link: finalLink,
-              message: adCopy.primaryText,
-              name: adCopy.headline,
-              description: adCopy.description,
-              image_hash: imgData.imageHash,
-              call_to_action: {
-                type: 'LEARN_MORE',
-                value: { link: finalLink },
+        // Create ads for each image in this chunk within the SAME ad set
+        for (let imgIdx = 0; imgIdx < chunk.length; imgIdx++) {
+          const imgData = chunk[imgIdx];
+          const globalImgIdx = chunkIdx * adsPerAdSet + imgIdx;
+
+          const imgCreative = await metaService.createAdCreative({
+            name: `${campaign.name} - Creative ${globalImgIdx + 1}`,
+            object_story_spec: {
+              page_id: effectivePageId,
+              ...(instagramActorId && { instagram_user_id: instagramActorId }),
+              link_data: {
+                link: finalLink,
+                message: adCopy.primaryText,
+                name: adCopy.headline,
+                description: adCopy.description,
+                image_hash: imgData.imageHash,
+                call_to_action: {
+                  type: 'LEARN_MORE',
+                  value: { link: finalLink },
+                },
               },
             },
-          },
-        }, adAccountId, accessToken);
+          }, adAccountId, accessToken);
 
-        // Create ad in THIS image's ad set
-        const imgAd = await metaService.createAd({
-          name: `${getTomorrowDate()}_${idx + 1}`,
-          adset_id: imageAdSet.id, // Use the ad set created for THIS image
-          creative: { creative_id: imgCreative.id },
-          status: 'PAUSED',
-        }, adAccountId, accessToken);
+          // Create ad in THIS ad set (shared with other ads in the same chunk)
+          const imgAd = await metaService.createAd({
+            name: `${getTomorrowDate()}_${globalImgIdx + 1}`,
+            adset_id: imageAdSet.id, // All ads in chunk share the same ad set
+            creative: { creative_id: imgCreative.id },
+            status: 'PAUSED',
+          }, adAccountId, accessToken);
 
-        createdAds.push({ adId: imgAd.id, creativeId: imgCreative.id, adSetId: imageAdSet.id });
-        logger.success('meta', `Image Ad ${idx + 1}/${uploadedImageHashes.length} created in its own ad set`, {
-          adSetId: imageAdSet.id,
-          adId: imgAd.id,
-          creativeId: imgCreative.id,
-        });
+          createdAds.push({ adId: imgAd.id, creativeId: imgCreative.id, adSetId: imageAdSet.id });
+          logger.success('meta', `Image Ad ${globalImgIdx + 1}/${totalImages} created in ad set ABO${aboCounter}`, {
+            adSetId: imageAdSet.id,
+            adId: imgAd.id,
+            creativeId: imgCreative.id,
+            adsInThisAdSet: imgIdx + 1,
+          });
+        }
 
         // Keep track of the last ad set for backwards compatibility
         adSet = imageAdSet;
@@ -2094,7 +2211,7 @@ class CampaignOrchestratorService {
       creative = { id: createdAds[createdAds.length - 1].creativeId };
       ad = { id: createdAds[createdAds.length - 1].adId };
 
-      logger.success('meta', `All ${createdAds.length} image ad sets + ads created successfully (ABO mode)`);
+      logger.success('meta', `All ${createdAds.length} image ads created in ${totalAdSets} ad sets (ABO mode, ${adsPerAdSet} ads per adset)`);
 
     } else {
       // SINGLE IMAGE AD - Standard single image ad
@@ -3075,6 +3192,9 @@ class CampaignOrchestratorService {
             budget: p.budget,
             startDate: p.startDate,
             generateWithAI: p.generateWithAI,
+            aiMediaType: p.aiMediaType || (p.platform === 'TIKTOK' ? 'VIDEO' : 'IMAGE'),
+            aiMediaCount: Number(p.aiMediaCount) || 1,
+            adsPerAdSet: Number(p.adsPerAdSet) || 1,
             specialAdCategories: p.specialAdCategories || [],
             metaPageId: p.metaPageId,
             tiktokIdentityId: p.tiktokIdentityId,

@@ -197,6 +197,7 @@ model CampaignPlatform {
   generateWithAI     Boolean  @default(true)
   aiMediaType        String?  // 'IMAGE' | 'VIDEO' | 'BOTH' - what type of media to generate with AI
   aiMediaCount       Int      @default(1) // How many images/videos to generate (1-5)
+  adsPerAdSet        Int      @default(1) // For ABO: How many ads to put in each ad set (1-5)
   specialAdCategories String[] @default([])
 
   // Manual Ad Copy (for Meta)
