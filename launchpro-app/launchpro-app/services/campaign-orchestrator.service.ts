@@ -2138,6 +2138,14 @@ class CampaignOrchestratorService {
     } else if (useABOMultipleAds) {
       // ABO MULTIPLE IMAGE ADS - Group ads into ad sets based on adsPerAdSet configuration
       // adsPerAdSet determines how many ads go into each ad set
+
+      // DEBUG: Log the raw value from platformConfig
+      logger.info('meta', `🔍 DEBUG adsPerAdSet - Raw value from platformConfig:`, {
+        rawAdsPerAdSet: platformConfig.adsPerAdSet,
+        typeOf: typeof platformConfig.adsPerAdSet,
+        platformConfigKeys: Object.keys(platformConfig),
+      });
+
       const adsPerAdSet = platformConfig.adsPerAdSet || 1;
       const totalImages = uploadedImageHashes.length;
       const totalAdSets = Math.ceil(totalImages / adsPerAdSet);
@@ -2969,6 +2977,9 @@ class CampaignOrchestratorService {
       for (const platformConfig of campaign.platforms) {
         try {
           logger.info('system', `Launching to ${platformConfig.platform}...`);
+
+          // DEBUG: Log adsPerAdSet from database
+          logger.info('system', `🔍 DEBUG: platformConfig from DB - adsPerAdSet = ${platformConfig.adsPerAdSet} (type: ${typeof platformConfig.adsPerAdSet})`);
 
           // Convert database platform config to the format expected by launch methods
           const platformParams = {

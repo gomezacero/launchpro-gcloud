@@ -34,7 +34,16 @@
       "Bash(grep:*)",
       "Bash(npx cross-env:*)",
       "Bash(git checkout:*)",
-      "Bash(git merge:*)"
+      "Bash(git merge:*)",
+      "Bash(tree:*)",
+      "Bash(xargs cat:*)",
+      "Bash(wc:*)",
+      "Bash(./node_modules/.bin/prisma generate:*)",
+      "Bash(npx prisma@6.2.1 generate:*)",
+      "Bash(npx prisma@6.2.1 db push:*)",
+      "Bash(ls:*)",
+      "Bash(DATABASE_URL=\"postgresql://postgres.ojhflsfnlwnpysvwtvnw:Legolas9OD7A9SX!@aws-0-us-west-2.pooler.supabase.com:6543/postgres?pgbouncer=true\" npx prisma@6.2.1 db push:*)",
+      "Bash(DATABASE_URL=\"postgresql://postgres.ojhflsfnlwnpysvwtvnw:Legolas9OD7A9SX!@aws-0-us-west-2.pooler.supabase.com:5432/postgres\" npx prisma@6.2.1 db push:*)"
     ],
     "deny": [],
     "ask": []

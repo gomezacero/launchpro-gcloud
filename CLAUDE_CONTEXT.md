@@ -60,7 +60,7 @@ TONIC_CONSUMER_SECRET=...
 
 ## URLs Importantes
 - Producción: https://launchproquick.vercel.app
-- Deploy Hook: https://api.vercel.com/v1/integrations/deploy/prj_dXZFrfPE7cDNbrOAtaOrjwkChZIu/T4iytLt3OH
+- Deploy Hook: desactualizada
 
 ## Comandos Útiles
 ```bash
