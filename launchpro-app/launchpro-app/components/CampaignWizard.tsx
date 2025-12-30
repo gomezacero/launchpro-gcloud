@@ -419,6 +419,9 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
           budget: p.budget?.toString() || '50',
           startDateTime: defaultStartDateTime, // Tomorrow 1:00 AM UTC
           generateWithAI: true,
+          aiMediaType: p.aiMediaType || (p.platform === 'TIKTOK' ? 'VIDEO' : 'IMAGE'),
+          aiMediaCount: p.aiMediaCount || 1,
+          adsPerAdSet: p.adsPerAdSet || 1, // Include adsPerAdSet when cloning
           specialAdCategories: p.specialAdCategories || [],
           manualAdTitle: p.manualAdTitle || '',
           manualDescription: p.manualDescription || '',
