@@ -2162,11 +2162,21 @@ class CampaignOrchestratorService {
         imageChunks.push(uploadedImageHashes.slice(i, i + adsPerAdSet));
       }
 
+      // CRITICAL DEBUG: Log the chunks that will be created
+      console.log(`🔍 CRITICAL DEBUG: imageChunks created:`, JSON.stringify({
+        adsPerAdSet,
+        totalImages,
+        totalAdSets,
+        chunksCount: imageChunks.length,
+        chunkSizes: imageChunks.map(c => c.length),
+      }));
+
       for (let chunkIdx = 0; chunkIdx < imageChunks.length; chunkIdx++) {
         const chunk = imageChunks[chunkIdx];
 
         // ABO: Create an ad set for this group of images
         aboCounter++;
+        console.log(`🔍 CREATING ADSET: ABO${aboCounter} with ${chunk.length} ads (chunk ${chunkIdx + 1}/${imageChunks.length})`);
         const imageAdSet = await createMetaAdSet(`ABO${aboCounter}`);
         logger.success('meta', `ABO: Created ad set ABO${aboCounter} with ${chunk.length} ad(s): ${imageAdSet.id}`);
 
