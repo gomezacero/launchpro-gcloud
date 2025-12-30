@@ -4,12 +4,18 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 import { useSession, signOut } from 'next-auth/react';
+import { useAuth } from '@/hooks/useAuth';
 
-const navigation = [
+// Base navigation items (visible to all users)
+const baseNavigation = [
   { name: 'Campaigns', href: '/campaigns', icon: '📋' },
   { name: 'New Campaign', href: '/campaigns/new', icon: '🚀' },
   { name: 'Reglas', href: '/rules', icon: '⚡' },
   { name: 'Logs', href: '/logs', icon: '📝' },
+];
+
+// Admin-only navigation items (only visible to SUPERADMIN)
+const adminNavigation = [
   { name: 'Media Debug', href: '/media-debug', icon: '🎨' },
   { name: 'Tonic Debug', href: '/tonic-debug', icon: '🔍' },
   { name: 'Settings', href: '/settings', icon: '⚙️' },
@@ -18,12 +24,18 @@ const navigation = [
 export default function Header() {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const { data: session, status } = useSession();
+  const { data: session } = useSession();
+  const { isSuperAdmin } = useAuth();
 
   // Don't render header on login/register pages
   if (pathname?.startsWith('/login') || pathname?.startsWith('/register')) {
     return null;
   }
+
+  // Build navigation based on role
+  const navigation = isSuperAdmin
+    ? [...baseNavigation, ...adminNavigation]
+    : baseNavigation;
 
   const isActive = (href: string) => {
     if (href === '/campaigns') {
@@ -68,14 +80,24 @@ export default function Header() {
                       {session.user.name?.charAt(0).toUpperCase() || 'U'}
                     </span>
                   </div>
-                  <span className="text-sm font-medium text-gray-700">
-                    {session.user.name || session.user.email}
-                  </span>
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium text-gray-700">
+                      {session.user.name || session.user.email}
+                    </span>
+                    {/* Role Badge */}
+                    <span className={`text-xs px-2 py-0.5 rounded-full text-center ${
+                      isSuperAdmin
+                        ? 'bg-purple-100 text-purple-700'
+                        : 'bg-gray-100 text-gray-600'
+                    }`}>
+                      {isSuperAdmin ? 'SUPERADMIN' : 'MANAGER'}
+                    </span>
+                  </div>
                 </div>
                 <button
                   onClick={() => signOut({ callbackUrl: '/login' })}
                   className="px-3 py-1.5 text-sm text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                  title="Cerrar sesión"
+                  title="Cerrar sesion"
                 >
                   Salir
                 </button>
@@ -125,7 +147,14 @@ export default function Header() {
               {session?.user && (
                 <div className="mt-3 pt-3 border-t border-gray-200">
                   <div className="px-4 py-2 text-sm text-gray-600">
-                    Conectado como: <strong>{session.user.name || session.user.email}</strong>
+                    <div>Conectado como: <strong>{session.user.name || session.user.email}</strong></div>
+                    <span className={`inline-block mt-1 text-xs px-2 py-0.5 rounded-full ${
+                      isSuperAdmin
+                        ? 'bg-purple-100 text-purple-700'
+                        : 'bg-gray-100 text-gray-600'
+                    }`}>
+                      {isSuperAdmin ? 'SUPERADMIN' : 'MANAGER'}
+                    </span>
                   </div>
                   <button
                     onClick={() => {
@@ -134,7 +163,7 @@ export default function Header() {
                     }}
                     className="w-full px-4 py-3 text-left text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                   >
-                    Cerrar Sesión
+                    Cerrar Sesion
                   </button>
                 </div>
               )}

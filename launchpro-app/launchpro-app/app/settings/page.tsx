@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/hooks/useAuth';
 
 interface Settings {
   notificationEmails: string;
@@ -13,6 +15,8 @@ interface Settings {
 }
 
 export default function SettingsPage() {
+  const router = useRouter();
+  const { isSuperAdmin, isLoading: authLoading, isAuthenticated } = useAuth();
   const [settings, setSettings] = useState<Settings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -23,9 +27,18 @@ export default function SettingsPage() {
   // Form state
   const [notificationEmails, setNotificationEmails] = useState('');
 
+  // Access control - redirect non-SUPERADMIN users
   useEffect(() => {
-    fetchSettings();
-  }, []);
+    if (!authLoading && isAuthenticated && !isSuperAdmin) {
+      router.replace('/campaigns');
+    }
+  }, [authLoading, isAuthenticated, isSuperAdmin, router]);
+
+  useEffect(() => {
+    if (isSuperAdmin) {
+      fetchSettings();
+    }
+  }, [isSuperAdmin]);
 
   const fetchSettings = async () => {
     try {
@@ -98,6 +111,20 @@ export default function SettingsPage() {
       setTestingEmail(false);
     }
   };
+
+  // Show loading while checking auth or if not SUPERADMIN
+  if (authLoading || !isSuperAdmin) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-8">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center py-12">
+            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900"></div>
+            <p className="mt-4 text-gray-600">Checking permissions...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (

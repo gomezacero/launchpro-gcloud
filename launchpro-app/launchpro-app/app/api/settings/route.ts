@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { requireAuth, requireSuperAdmin } from '@/lib/auth-utils';
 
 const GLOBAL_SETTINGS_ID = 'global-settings';
 
@@ -45,10 +46,14 @@ export async function GET() {
 
 /**
  * PUT /api/settings
- * Update global settings
+ * Update global settings - SUPERADMIN only
  */
 export async function PUT(request: NextRequest) {
   try {
+    // Only SUPERADMIN can update settings
+    const { user, error } = await requireSuperAdmin();
+    if (error) return error;
+
     const body = await request.json();
     const { notificationEmails } = body;
 

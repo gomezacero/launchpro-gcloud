@@ -47,6 +47,11 @@ enum AccountType {
   TIKTOK
 }
 
+enum ManagerRole {
+  SUPERADMIN
+  MANAGER
+}
+
 // ============================================
 // ACCOUNT MANAGEMENT
 // ============================================
@@ -117,6 +122,10 @@ model Campaign {
   status            CampaignStatus     @default(DRAFT)
   campaignType      CampaignType
 
+  // Owner - Manager who created this campaign
+  createdById       String?
+  createdBy         Manager?           @relation("CampaignCreator", fields: [createdById], references: [id])
+
   // Tonic Configuration
   offerId           String
   offer             Offer              @relation(fields: [offerId], references: [id])
@@ -153,6 +162,7 @@ model Campaign {
 
   @@index([status])
   @@index([offerId])
+  @@index([createdById])
 }
 
 model Offer {
@@ -328,16 +338,21 @@ model GlobalSettings {
 // ============================================
 
 model Manager {
-  id           String    @id @default(cuid())
-  email        String    @unique
+  id           String       @id @default(cuid())
+  email        String       @unique
   passwordHash String
   name         String
+  role         ManagerRole  @default(MANAGER)
 
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  // Campaigns created by this manager
+  campaigns    Campaign[]   @relation("CampaignCreator")
+
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
   lastLoginAt  DateTime?
 
   @@index([email])
+  @@index([role])
 }
 
 model InvitationCode {

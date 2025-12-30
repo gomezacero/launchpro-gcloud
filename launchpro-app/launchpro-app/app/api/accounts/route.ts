@@ -1,13 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { AccountType } from '@prisma/client';
+import { requireAuth, requireSuperAdmin } from '@/lib/auth-utils';
 
 /**
  * GET /api/accounts
  * Get all accounts grouped by type
+ * All authenticated users can view accounts (needed for campaign creation)
  */
 export async function GET(request: NextRequest) {
   try {
+    // Require authentication (all users can view accounts for campaign creation)
+    const { user, error } = await requireAuth();
+    if (error) return error;
+
     const { searchParams } = new URL(request.url);
     const type = searchParams.get('type') as AccountType | null;
     const platform = searchParams.get('platform'); // 'meta', 'tiktok', 'tonic'
@@ -170,10 +176,14 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/accounts
- * Create a new account
+ * Create a new account - SUPERADMIN only
  */
 export async function POST(request: NextRequest) {
   try {
+    // Only SUPERADMIN can create accounts
+    const { user, error } = await requireSuperAdmin();
+    if (error) return error;
+
     const body = await request.json();
 
     const account = await prisma.account.create({

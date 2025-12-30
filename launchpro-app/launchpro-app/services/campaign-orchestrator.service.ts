@@ -96,6 +96,9 @@ export interface CreateCampaignParams {
 
   // Skip platform launch (for manual media upload workflow)
   skipPlatformLaunch?: boolean;
+
+  // Owner - Manager ID who created this campaign
+  createdById?: string;
 }
 
 export interface LaunchResult {
@@ -270,6 +273,7 @@ class CampaignOrchestratorService {
           name: params.name,
           status: CampaignStatus.DRAFT,
           campaignType: params.campaignType,
+          createdById: params.createdById, // Owner - Manager who created this campaign
           offerId: dbOffer.id,
           country: params.country,
           language: params.language,
@@ -3180,6 +3184,7 @@ class CampaignOrchestratorService {
         name: params.name,
         status: CampaignStatus.DRAFT,
         campaignType: params.campaignType,
+        createdById: params.createdById, // Owner - Manager who created this campaign
         offerId: offer.id,
         country: params.country,
         language: params.language,

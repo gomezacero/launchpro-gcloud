@@ -3,6 +3,13 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useAuth } from '@/hooks/useAuth';
+
+interface Manager {
+  id: string;
+  name: string;
+  email: string;
+}
 
 interface Campaign {
   id: string;
@@ -25,6 +32,11 @@ interface Campaign {
     type: string;
     url: string;
   }>;
+  createdBy?: {
+    id: string;
+    name: string;
+    email: string;
+  };
 }
 
 const statusColors: Record<string, string> = {
@@ -55,9 +67,12 @@ const statusIcons: Record<string, string> = {
 
 export default function CampaignsPage() {
   const router = useRouter();
+  const { isSuperAdmin } = useAuth();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [managers, setManagers] = useState<Manager[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('all');
+  const [managerFilter, setManagerFilter] = useState<string>('all');
 
   const handleDuplicate = (e: React.MouseEvent, campaignId: string) => {
     e.preventDefault();
@@ -65,15 +80,39 @@ export default function CampaignsPage() {
     router.push(`/campaigns/new?clone=${campaignId}`);
   };
 
+  // Fetch managers list for SUPERADMIN filter
+  useEffect(() => {
+    if (isSuperAdmin) {
+      fetch('/api/managers')
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.success) {
+            setManagers(data.data);
+          }
+        })
+        .catch(console.error);
+    }
+  }, [isSuperAdmin]);
+
   useEffect(() => {
     loadCampaigns();
-  }, [filter]);
+  }, [filter, managerFilter]);
 
   const loadCampaigns = async () => {
     setLoading(true);
     try {
-      const url =
-        filter === 'all' ? '/api/campaigns' : `/api/campaigns?status=${filter}`;
+      const params = new URLSearchParams();
+      if (filter !== 'all') {
+        params.set('status', filter);
+      }
+      if (managerFilter !== 'all' && isSuperAdmin) {
+        params.set('managerId', managerFilter);
+      }
+
+      const url = params.toString()
+        ? `/api/campaigns?${params.toString()}`
+        : '/api/campaigns';
+
       const res = await fetch(url);
       const data = await res.json();
       if (data.success) {
@@ -91,7 +130,9 @@ export default function CampaignsPage() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Page Title */}
         <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">All Campaigns</h1>
+          <h1 className="text-2xl font-bold text-gray-900">
+            {isSuperAdmin ? 'All Campaigns' : 'My Campaigns'}
+          </h1>
           <Link
             href="/campaigns/new"
             className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
@@ -99,30 +140,53 @@ export default function CampaignsPage() {
             + New Campaign
           </Link>
         </div>
+
         {/* Filters */}
         <div className="bg-white rounded-lg shadow p-4 mb-6">
-          <div className="flex flex-wrap gap-2">
-            {[
-              'all',
-              'PENDING_ARTICLE',
-              'ARTICLE_APPROVED',
-              'GENERATING_AI',
-              'LAUNCHING',
-              'ACTIVE',
-              'FAILED',
-            ].map((status) => (
-              <button
-                key={status}
-                onClick={() => setFilter(status)}
-                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                  filter === status
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                {status === 'all' ? 'All' : status.replace(/_/g, ' ')}
-              </button>
-            ))}
+          <div className="flex flex-wrap gap-4 items-center justify-between">
+            {/* Status Filter */}
+            <div className="flex flex-wrap gap-2">
+              {[
+                'all',
+                'PENDING_ARTICLE',
+                'ARTICLE_APPROVED',
+                'GENERATING_AI',
+                'LAUNCHING',
+                'ACTIVE',
+                'FAILED',
+              ].map((status) => (
+                <button
+                  key={status}
+                  onClick={() => setFilter(status)}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                    filter === status
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  {status === 'all' ? 'All' : status.replace(/_/g, ' ')}
+                </button>
+              ))}
+            </div>
+
+            {/* Manager Filter - SUPERADMIN only */}
+            {isSuperAdmin && managers.length > 0 && (
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium text-gray-700">Manager:</label>
+                <select
+                  value={managerFilter}
+                  onChange={(e) => setManagerFilter(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="all">Todos los Managers</option>
+                  {managers.map((manager) => (
+                    <option key={manager.id} value={manager.id}>
+                      {manager.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
         </div>
 
@@ -179,7 +243,7 @@ export default function CampaignsPage() {
                       <button
                         onClick={(e) => handleDuplicate(e, campaign.id)}
                         className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                        title="Duplicar campaña"
+                        title="Duplicar campana"
                       >
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -253,6 +317,14 @@ export default function CampaignsPage() {
                           +{campaign.media.length - 3}
                         </div>
                       )}
+                    </div>
+                  )}
+
+                  {/* Creator info - SUPERADMIN only */}
+                  {isSuperAdmin && campaign.createdBy && (
+                    <div className="flex items-center gap-2 text-sm text-gray-500 mt-4 pt-3 border-t border-gray-100">
+                      <span>👤</span>
+                      <span>Creado por: {campaign.createdBy.name}</span>
                     </div>
                   )}
                 </div>

@@ -2,26 +2,55 @@ import { NextRequest, NextResponse } from 'next/server';
 import { campaignOrchestrator } from '@/services/campaign-orchestrator.service';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger';
+import { requireAuth, isSuperAdmin } from '@/lib/auth-utils';
 
 /**
  * GET /api/campaigns
- * Get all campaigns
+ * Get campaigns - filtered by ownership for MANAGER role
+ * SUPERADMIN sees all campaigns, MANAGER sees only their own
  */
 export async function GET(request: NextRequest) {
   const startTime = Date.now();
 
   try {
+    // Require authentication
+    const { user, error } = await requireAuth();
+    if (error) return error;
+
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status');
+    const managerId = searchParams.get('managerId'); // For SUPERADMIN filtering
 
-    logger.info('api', `GET /api/campaigns${status ? ` - status: ${status}` : ''}`);
+    logger.info('api', `GET /api/campaigns - User: ${user!.email}, Role: ${user!.role}${status ? `, status: ${status}` : ''}`);
+
+    // Build where clause
+    const where: any = {};
+
+    if (status) {
+      where.status = status;
+    }
+
+    // MANAGER can only see their own campaigns
+    // SUPERADMIN can see all, or filter by managerId
+    if (!isSuperAdmin(user)) {
+      where.createdById = user!.id;
+    } else if (managerId) {
+      where.createdById = managerId;
+    }
 
     const campaigns = await prisma.campaign.findMany({
-      where: status ? { status: status as any } : undefined,
+      where,
       include: {
         offer: true,
         platforms: true,
         media: true,
+        createdBy: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
       },
       orderBy: {
         createdAt: 'desc',
@@ -31,7 +60,8 @@ export async function GET(request: NextRequest) {
     const duration = Date.now() - startTime;
     logger.success('api', `Fetched ${campaigns.length} campaigns`, {
       count: campaigns.length,
-      status: status || 'all'
+      status: status || 'all',
+      role: user!.role,
     }, duration);
 
     return NextResponse.json({
@@ -67,13 +97,18 @@ export async function POST(request: NextRequest) {
   const startTime = Date.now();
 
   try {
+    // Require authentication
+    const { user, error } = await requireAuth();
+    if (error) return error;
+
     const body = await request.json();
 
-    logger.info('api', 'POST /api/campaigns - Creating new campaign (async mode)', {
+    logger.info('api', `POST /api/campaigns - Creating new campaign by ${user!.email}`, {
       name: body.name,
       campaignType: body.campaignType,
       country: body.country,
       platformCount: body.platforms?.length || 0,
+      createdBy: user!.name,
     });
 
     // Validate required fields
@@ -103,6 +138,7 @@ export async function POST(request: NextRequest) {
       communicationAngle: body.communicationAngle,
       keywords: body.keywords,
       contentGenerationPhrases: body.contentGenerationPhrases,
+      createdById: user!.id, // Set owner to current user
       platforms: body.platforms.map((p: any) => {
         // Keep startDateTime as string - we'll convert it later with proper timezone handling
         // The user configures in their local timezone, we need to preserve this
