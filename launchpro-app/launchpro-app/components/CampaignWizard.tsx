@@ -1342,6 +1342,13 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
       // STEP 1: Create campaign (async mode - returns immediately)
       const logId1 = addLog('Creando campaña...');
 
+      // DEBUG: Log adsPerAdSet values before sending
+      console.log('[Wizard] DEBUG: adsPerAdSet values being sent:', formData.platforms.map(p => ({
+        platform: p.platform,
+        adsPerAdSet: p.adsPerAdSet,
+        typeOf: typeof p.adsPerAdSet,
+      })));
+
       const res = await fetch('/api/campaigns', {
         method: 'POST',
         headers: {
