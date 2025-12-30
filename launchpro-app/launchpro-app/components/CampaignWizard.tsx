@@ -1345,13 +1345,6 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
       // STEP 1: Create campaign (async mode - returns immediately)
       const logId1 = addLog('Creando campaña...');
 
-      // DEBUG: Log adsPerAdSet values before sending
-      console.log('[Wizard] DEBUG: adsPerAdSet values being sent:', formData.platforms.map(p => ({
-        platform: p.platform,
-        adsPerAdSet: p.adsPerAdSet,
-        typeOf: typeof p.adsPerAdSet,
-      })));
-
       const res = await fetch('/api/campaigns', {
         method: 'POST',
         headers: {
@@ -2493,11 +2486,7 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
                         </label>
                         <select
                           value={String(platform.adsPerAdSet || 1)}
-                          onChange={(e) => {
-                            const newValue = parseInt(e.target.value, 10);
-                            console.log('[Wizard] adsPerAdSet changed to:', newValue, 'for platform', platform.platform);
-                            updatePlatform(index, 'adsPerAdSet', newValue);
-                          }}
+                          onChange={(e) => updatePlatform(index, 'adsPerAdSet', parseInt(e.target.value, 10))}
                           className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                         >
                           <option value="1">1 ad per adset (default)</option>

@@ -91,20 +91,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // DEBUG: Log adsPerAdSet from request
-    console.log('🔍 DEBUG API: adsPerAdSet values from request:', JSON.stringify(body.platforms.map((p: any) => ({
-      platform: p.platform,
-      adsPerAdSet: p.adsPerAdSet,
-      typeOf: typeof p.adsPerAdSet,
-    }))));
-    logger.info('api', `🔍 DEBUG: adsPerAdSet values from request:`, {
-      platforms: body.platforms.map((p: any) => ({
-        platform: p.platform,
-        adsPerAdSet: p.adsPerAdSet,
-        typeOf: typeof p.adsPerAdSet,
-      })),
-    });
-
     // Create campaign quickly (async mode - returns immediately)
     const result = await campaignOrchestrator.createCampaignQuick({
       name: body.name,

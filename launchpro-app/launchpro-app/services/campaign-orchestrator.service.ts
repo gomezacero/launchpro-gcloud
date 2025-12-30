@@ -2138,14 +2138,6 @@ class CampaignOrchestratorService {
     } else if (useABOMultipleAds) {
       // ABO MULTIPLE IMAGE ADS - Group ads into ad sets based on adsPerAdSet configuration
       // adsPerAdSet determines how many ads go into each ad set
-
-      // DEBUG: Log the raw value from platformConfig
-      logger.info('meta', `🔍 DEBUG adsPerAdSet - Raw value from platformConfig:`, {
-        rawAdsPerAdSet: platformConfig.adsPerAdSet,
-        typeOf: typeof platformConfig.adsPerAdSet,
-        platformConfigKeys: Object.keys(platformConfig),
-      });
-
       const adsPerAdSet = platformConfig.adsPerAdSet || 1;
       const totalImages = uploadedImageHashes.length;
       const totalAdSets = Math.ceil(totalImages / adsPerAdSet);
@@ -2162,21 +2154,11 @@ class CampaignOrchestratorService {
         imageChunks.push(uploadedImageHashes.slice(i, i + adsPerAdSet));
       }
 
-      // CRITICAL DEBUG: Log the chunks that will be created
-      console.log(`🔍 CRITICAL DEBUG: imageChunks created:`, JSON.stringify({
-        adsPerAdSet,
-        totalImages,
-        totalAdSets,
-        chunksCount: imageChunks.length,
-        chunkSizes: imageChunks.map(c => c.length),
-      }));
-
       for (let chunkIdx = 0; chunkIdx < imageChunks.length; chunkIdx++) {
         const chunk = imageChunks[chunkIdx];
 
         // ABO: Create an ad set for this group of images
         aboCounter++;
-        console.log(`🔍 CREATING ADSET: ABO${aboCounter} with ${chunk.length} ads (chunk ${chunkIdx + 1}/${imageChunks.length})`);
         const imageAdSet = await createMetaAdSet(`ABO${aboCounter}`);
         logger.success('meta', `ABO: Created ad set ABO${aboCounter} with ${chunk.length} ad(s): ${imageAdSet.id}`);
 
@@ -2988,10 +2970,6 @@ class CampaignOrchestratorService {
         try {
           logger.info('system', `Launching to ${platformConfig.platform}...`);
 
-          // DEBUG: Log adsPerAdSet from database
-          console.log(`🔍 DEBUG LAUNCH: platformConfig.adsPerAdSet from DB = ${platformConfig.adsPerAdSet} (type: ${typeof platformConfig.adsPerAdSet})`);
-          logger.info('system', `🔍 DEBUG: platformConfig from DB - adsPerAdSet = ${platformConfig.adsPerAdSet} (type: ${typeof platformConfig.adsPerAdSet})`);
-
           // Convert database platform config to the format expected by launch methods
           const platformParams = {
             platform: platformConfig.platform,
@@ -3248,14 +3226,6 @@ class CampaignOrchestratorService {
     }
 
     logger.success('system', `Campaign created in DB: ${campaign.id}`);
-
-    // DEBUG: Log adsPerAdSet values that were saved
-    logger.info('system', `🔍 DEBUG: adsPerAdSet saved to DB:`, {
-      platforms: campaign.platforms.map(p => ({
-        platform: p.platform,
-        adsPerAdSet: p.adsPerAdSet,
-      })),
-    });
 
     // For RSOC campaigns, create article request (without waiting)
     let articleRequestId: number | undefined;
