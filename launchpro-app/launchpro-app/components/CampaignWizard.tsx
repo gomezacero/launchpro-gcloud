@@ -2489,15 +2489,19 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
                           </span>
                         </label>
                         <select
-                          value={platform.adsPerAdSet || 1}
-                          onChange={(e) => updatePlatform(index, 'adsPerAdSet', parseInt(e.target.value))}
+                          value={String(platform.adsPerAdSet || 1)}
+                          onChange={(e) => {
+                            const newValue = parseInt(e.target.value, 10);
+                            console.log('[Wizard] adsPerAdSet changed to:', newValue, 'for platform', platform.platform);
+                            updatePlatform(index, 'adsPerAdSet', newValue);
+                          }}
                           className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                         >
-                          <option value={1}>1 ad per adset (default)</option>
-                          <option value={2}>2 ads per adset</option>
-                          <option value={3}>3 ads per adset</option>
-                          <option value={4}>4 ads per adset</option>
-                          <option value={5}>5 ads per adset</option>
+                          <option value="1">1 ad per adset (default)</option>
+                          <option value="2">2 ads per adset</option>
+                          <option value="3">3 ads per adset</option>
+                          <option value="4">4 ads per adset</option>
+                          <option value="5">5 ads per adset</option>
                         </select>
                         <p className="text-xs text-gray-500 mt-1">
                           Groups your creatives into adsets. Example: 10 images with "3 ads per adset" = 4 adsets (3+3+3+1)
