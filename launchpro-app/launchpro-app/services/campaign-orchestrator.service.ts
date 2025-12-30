@@ -2978,6 +2978,10 @@ class CampaignOrchestratorService {
             budget: platformConfig.budget,
             startDate: platformConfig.startDate,
             generateWithAI: platformConfig.generateWithAI,
+            // AI media settings (loaded from DB)
+            aiMediaType: platformConfig.aiMediaType,
+            aiMediaCount: platformConfig.aiMediaCount,
+            adsPerAdSet: platformConfig.adsPerAdSet || 1, // For ABO: ads per ad set
             // Manual Ad Copy (loaded from DB)
             manualAdCopy: {
               adTitle: platformConfig.manualAdTitle,
