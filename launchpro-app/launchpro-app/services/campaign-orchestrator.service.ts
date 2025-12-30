@@ -2979,6 +2979,7 @@ class CampaignOrchestratorService {
           logger.info('system', `Launching to ${platformConfig.platform}...`);
 
           // DEBUG: Log adsPerAdSet from database
+          console.log(`🔍 DEBUG LAUNCH: platformConfig.adsPerAdSet from DB = ${platformConfig.adsPerAdSet} (type: ${typeof platformConfig.adsPerAdSet})`);
           logger.info('system', `🔍 DEBUG: platformConfig from DB - adsPerAdSet = ${platformConfig.adsPerAdSet} (type: ${typeof platformConfig.adsPerAdSet})`);
 
           // Convert database platform config to the format expected by launch methods
@@ -3237,6 +3238,14 @@ class CampaignOrchestratorService {
     }
 
     logger.success('system', `Campaign created in DB: ${campaign.id}`);
+
+    // DEBUG: Log adsPerAdSet values that were saved
+    logger.info('system', `🔍 DEBUG: adsPerAdSet saved to DB:`, {
+      platforms: campaign.platforms.map(p => ({
+        platform: p.platform,
+        adsPerAdSet: p.adsPerAdSet,
+      })),
+    });
 
     // For RSOC campaigns, create article request (without waiting)
     let articleRequestId: number | undefined;
