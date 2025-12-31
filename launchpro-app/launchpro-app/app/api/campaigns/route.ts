@@ -138,6 +138,9 @@ export async function POST(request: NextRequest) {
       communicationAngle: body.communicationAngle,
       keywords: body.keywords,
       contentGenerationPhrases: body.contentGenerationPhrases,
+      // RSOC article mode: 'new' for new article, 'existing' for reusing headline
+      rsocMode: body.rsocMode || 'new',
+      selectedHeadlineId: body.selectedHeadlineId || null,
       createdById: user!.id, // Set owner to current user
       platforms: body.platforms.map((p: any) => {
         // Keep startDateTime as string - we'll convert it later with proper timezone handling

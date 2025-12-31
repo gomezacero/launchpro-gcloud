@@ -94,6 +94,12 @@ export interface CreateCampaignParams {
   // Must be 3-5 phrases if provided
   contentGenerationPhrases?: string[];
 
+  // RSOC article mode: 'new' creates a new article, 'existing' reuses an existing headline
+  rsocMode?: 'new' | 'existing';
+
+  // If rsocMode is 'existing', this is the headline_id to reuse
+  selectedHeadlineId?: number | null;
+
   // Skip platform launch (for manual media upload workflow)
   skipPlatformLaunch?: boolean;
 
@@ -3232,10 +3238,34 @@ class CampaignOrchestratorService {
 
     logger.success('system', `Campaign created in DB: ${campaign.id}`);
 
-    // For RSOC campaigns, create article request (without waiting)
+    // For RSOC campaigns, handle article (new or existing)
     let articleRequestId: number | undefined;
 
     if (campaignType === 'rsoc' && rsocDomain) {
+      // Check if we're reusing an existing headline
+      if (params.rsocMode === 'existing' && params.selectedHeadlineId) {
+        // REUSE EXISTING HEADLINE - Skip article creation, go directly to ARTICLE_APPROVED
+        logger.info('tonic', `Reusing existing RSOC headline: ${params.selectedHeadlineId}`);
+
+        // Store the headline ID as the article ID (it's the same thing in Tonic's system)
+        await prisma.campaign.update({
+          where: { id: campaign.id },
+          data: {
+            status: CampaignStatus.ARTICLE_APPROVED,
+            tonicArticleId: params.selectedHeadlineId.toString(),
+          },
+        });
+
+        logger.success('tonic', `Using existing headline ID: ${params.selectedHeadlineId} - Campaign ready for processing`);
+
+        return {
+          campaignId: campaign.id,
+          status: CampaignStatus.ARTICLE_APPROVED,
+          articleRequestId: params.selectedHeadlineId,
+        };
+      }
+
+      // NEW ARTICLE - Create article request in Tonic
       logger.info('tonic', 'Creating RSOC article request (async mode)...');
 
       // Generate content phrases and headline using AI

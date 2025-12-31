@@ -125,6 +125,20 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
   const [tiktokIdentities, setTiktokIdentities] = useState<{ id: string; name: string; type: string }[]>([]);
   const [loadingTiktokIdentities, setLoadingTiktokIdentities] = useState(false);
 
+  // RSOC Headlines state (for reusing existing articles)
+  interface RSOCHeadline {
+    headline_id: number;
+    offer_id: number;
+    offer_name: string;
+    country: string;
+    language: string;
+    headline: string;
+    teaser?: string;
+  }
+  const [rsocHeadlines, setRsocHeadlines] = useState<RSOCHeadline[]>([]);
+  const [loadingHeadlines, setLoadingHeadlines] = useState(false);
+  const [headlinesError, setHeadlinesError] = useState<string | null>(null);
+
   // Form data
   const [formData, setFormData] = useState({
     name: '',
@@ -138,6 +152,9 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
     keywords: [] as string[],
     contentGenerationPhrases: [] as string[],
     platforms: [] as PlatformConfig[],
+    // RSOC article mode: 'new' = create new article, 'existing' = reuse existing headline
+    rsocMode: 'new' as 'new' | 'existing',
+    selectedHeadlineId: null as number | null,
   });
 
   // Local state for text inputs that need onBlur conversion
@@ -448,6 +465,8 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
           keywords: campaign.keywords || [],
           contentGenerationPhrases: campaign.contentGenerationPhrases || [],
           platforms: platformsConfig,
+          rsocMode: 'new', // Default to new article when cloning
+          selectedHeadlineId: null,
         });
 
         // Update text inputs for keywords
@@ -526,6 +545,34 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
       }
     } catch (err: any) {
       console.error('Error loading ad accounts from APIs:', err);
+    }
+  };
+
+  // Load RSOC Headlines (existing articles) from Tonic
+  const loadRSOCHeadlines = async (tonicAccountId?: string, offerId?: string, country?: string) => {
+    setLoadingHeadlines(true);
+    setHeadlinesError(null);
+    try {
+      const params = new URLSearchParams();
+      if (tonicAccountId) params.append('tonicAccountId', tonicAccountId);
+      if (offerId) params.append('offerId', offerId);
+      if (country) params.append('country', country);
+
+      const res = await fetch(`/api/rsoc/headlines?${params.toString()}`);
+      const data = await res.json();
+
+      if (data.success) {
+        setRsocHeadlines(data.data || []);
+      } else {
+        setHeadlinesError(data.error || 'Error loading headlines');
+        setRsocHeadlines([]);
+      }
+    } catch (err: any) {
+      console.error('Error loading RSOC headlines:', err);
+      setHeadlinesError(err.message || 'Error loading headlines');
+      setRsocHeadlines([]);
+    } finally {
+      setLoadingHeadlines(false);
     }
   };
 
@@ -2142,65 +2189,205 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
                 )}
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Content Generation Phrases (Optional)
-                  <span className="text-xs text-gray-500 ml-2">
-                    Leave empty to generate with AI (3-5 phrases required if filled)
-                  </span>
+              {/* RSOC Article Mode Selection */}
+              <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                <label className="block text-sm font-semibold text-gray-800 mb-3">
+                  RSOC Article *
                 </label>
-                <textarea
-                  value={contentPhrasesText}
-                  onChange={(e) => {
-                    setContentPhrasesText(e.target.value);
-                    // Reset validation when text changes
-                    if (phrasesValidation.status !== 'idle') {
-                      setPhrasesValidation({ status: 'idle' });
-                    }
-                  }}
-                  onBlur={() => {
-                    const phrasesArray = contentPhrasesText
-                      ? contentPhrasesText.split(',').map(p => p.trim()).filter(p => p)
-                      : [];
-                    handleInputChange('contentGenerationPhrases', phrasesArray);
-                  }}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  rows={3}
-                  placeholder="e.g., best car loan rates, quick approval process, flexible payment options..."
-                />
-                <div className="flex items-center justify-between mt-2">
-                  <p className="text-xs text-gray-500">
-                    Separate phrases with commas. AI will generate 3-5 phrases if left empty. These are used by Tonic for RSOC article generation.
-                  </p>
+
+                {/* Mode Toggle */}
+                <div className="flex gap-3 mb-4">
                   <button
                     type="button"
-                    onClick={validateContentPhrases}
-                    disabled={phrasesValidation.status === 'validating'}
-                    className="ml-2 px-3 py-1 text-xs font-medium bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 border border-gray-300 whitespace-nowrap"
+                    onClick={() => {
+                      handleInputChange('rsocMode', 'new');
+                      handleInputChange('selectedHeadlineId', null);
+                    }}
+                    className={`flex-1 px-4 py-3 rounded-lg border-2 transition-all ${
+                      formData.rsocMode === 'new'
+                        ? 'border-blue-500 bg-blue-50 text-blue-700'
+                        : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                    }`}
                   >
-                    {phrasesValidation.status === 'validating' ? 'Validando...' : 'Validar Frases'}
+                    <div className="flex items-center justify-center gap-2">
+                      <span className="text-lg">+</span>
+                      <span className="font-medium">Crear Nuevo Articulo</span>
+                    </div>
+                    <p className="text-xs mt-1 opacity-75">
+                      Genera un articulo RSOC nuevo con AI
+                    </p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleInputChange('rsocMode', 'existing');
+                      handleInputChange('contentGenerationPhrases', []);
+                      setContentPhrasesText('');
+                      // Load headlines when switching to existing mode
+                      loadRSOCHeadlines(formData.tonicAccountId, formData.offerId, formData.country);
+                    }}
+                    className={`flex-1 px-4 py-3 rounded-lg border-2 transition-all ${
+                      formData.rsocMode === 'existing'
+                        ? 'border-green-500 bg-green-50 text-green-700'
+                        : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                    }`}
+                  >
+                    <div className="flex items-center justify-center gap-2">
+                      <span className="text-lg">&#x21bb;</span>
+                      <span className="font-medium">Reutilizar Articulo Existente</span>
+                    </div>
+                    <p className="text-xs mt-1 opacity-75">
+                      Selecciona un articulo top ya creado
+                    </p>
                   </button>
                 </div>
-                {formData.contentGenerationPhrases.length > 0 &&
-                 (formData.contentGenerationPhrases.length < 3 || formData.contentGenerationPhrases.length > 5) && (
-                  <p className="text-xs text-red-600 mt-1 font-medium">
-                    Must have between 3 and 5 phrases. Currently: {formData.contentGenerationPhrases.length}
-                  </p>
-                )}
-                {/* Validation result */}
-                {phrasesValidation.status === 'valid' && (
-                  <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded-lg">
-                    <p className="text-xs text-green-700 font-medium flex items-center gap-1">
-                      <span>✓</span> {phrasesValidation.message}
-                    </p>
+
+                {/* Existing Headlines Selection */}
+                {formData.rsocMode === 'existing' && (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium text-gray-700">
+                        Seleccionar Headline Existente *
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => loadRSOCHeadlines(formData.tonicAccountId, formData.offerId, formData.country)}
+                        disabled={loadingHeadlines}
+                        className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                      >
+                        {loadingHeadlines ? 'Cargando...' : 'Refrescar'}
+                      </button>
+                    </div>
+
+                    {loadingHeadlines && (
+                      <div className="flex items-center justify-center py-8">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                        <span className="ml-2 text-gray-500">Cargando articulos...</span>
+                      </div>
+                    )}
+
+                    {headlinesError && (
+                      <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                        <p className="text-sm text-red-700">{headlinesError}</p>
+                      </div>
+                    )}
+
+                    {!loadingHeadlines && !headlinesError && rsocHeadlines.length === 0 && (
+                      <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-center">
+                        <p className="text-sm text-yellow-800">
+                          No se encontraron articulos existentes para esta combinacion de cuenta/offer/pais.
+                        </p>
+                        <p className="text-xs text-yellow-600 mt-1">
+                          Prueba creando un nuevo articulo o selecciona diferentes opciones.
+                        </p>
+                      </div>
+                    )}
+
+                    {!loadingHeadlines && rsocHeadlines.length > 0 && (
+                      <div className="max-h-64 overflow-y-auto border border-gray-200 rounded-lg bg-white">
+                        {rsocHeadlines.map((headline) => (
+                          <div
+                            key={headline.headline_id}
+                            onClick={() => handleInputChange('selectedHeadlineId', headline.headline_id)}
+                            className={`p-3 border-b border-gray-100 cursor-pointer transition-colors hover:bg-gray-50 ${
+                              formData.selectedHeadlineId === headline.headline_id
+                                ? 'bg-green-50 border-l-4 border-l-green-500'
+                                : ''
+                            }`}
+                          >
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <p className="text-sm font-medium text-gray-900 line-clamp-2">
+                                  {headline.headline}
+                                </p>
+                                <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
+                                  <span className="bg-gray-100 px-2 py-0.5 rounded">{headline.offer_name}</span>
+                                  <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded">{headline.country}</span>
+                                  <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded">{headline.language}</span>
+                                  <span className="text-gray-400">ID: {headline.headline_id}</span>
+                                </div>
+                              </div>
+                              {formData.selectedHeadlineId === headline.headline_id && (
+                                <span className="text-green-600 text-lg ml-2">&#10003;</span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {formData.selectedHeadlineId && (
+                      <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                        <p className="text-sm text-green-800 flex items-center gap-2">
+                          <span>&#10003;</span>
+                          <span>Headline ID <strong>{formData.selectedHeadlineId}</strong> seleccionado</span>
+                        </p>
+                      </div>
+                    )}
                   </div>
                 )}
-                {phrasesValidation.status === 'invalid' && (
-                  <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-lg">
-                    <p className="text-xs text-red-700 font-medium mb-1">✗ {phrasesValidation.message}</p>
-                    {phrasesValidation.errors && phrasesValidation.errors.map((error, i) => (
-                      <p key={i} className="text-xs text-red-600 pl-4">• {error}</p>
-                    ))}
+
+                {/* New Article - Content Generation Phrases */}
+                {formData.rsocMode === 'new' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Content Generation Phrases (Optional)
+                      <span className="text-xs text-gray-500 ml-2">
+                        Leave empty to generate with AI (3-5 phrases required if filled)
+                      </span>
+                    </label>
+                    <textarea
+                      value={contentPhrasesText}
+                      onChange={(e) => {
+                        setContentPhrasesText(e.target.value);
+                        if (phrasesValidation.status !== 'idle') {
+                          setPhrasesValidation({ status: 'idle' });
+                        }
+                      }}
+                      onBlur={() => {
+                        const phrasesArray = contentPhrasesText
+                          ? contentPhrasesText.split(',').map(p => p.trim()).filter(p => p)
+                          : [];
+                        handleInputChange('contentGenerationPhrases', phrasesArray);
+                      }}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      rows={3}
+                      placeholder="e.g., best car loan rates, quick approval process, flexible payment options..."
+                    />
+                    <div className="flex items-center justify-between mt-2">
+                      <p className="text-xs text-gray-500">
+                        Separate phrases with commas. AI will generate 3-5 phrases if left empty.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={validateContentPhrases}
+                        disabled={phrasesValidation.status === 'validating'}
+                        className="ml-2 px-3 py-1 text-xs font-medium bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 border border-gray-300 whitespace-nowrap"
+                      >
+                        {phrasesValidation.status === 'validating' ? 'Validando...' : 'Validar Frases'}
+                      </button>
+                    </div>
+                    {formData.contentGenerationPhrases.length > 0 &&
+                     (formData.contentGenerationPhrases.length < 3 || formData.contentGenerationPhrases.length > 5) && (
+                      <p className="text-xs text-red-600 mt-1 font-medium">
+                        Must have between 3 and 5 phrases. Currently: {formData.contentGenerationPhrases.length}
+                      </p>
+                    )}
+                    {phrasesValidation.status === 'valid' && (
+                      <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded-lg">
+                        <p className="text-xs text-green-700 font-medium flex items-center gap-1">
+                          <span>&#10003;</span> {phrasesValidation.message}
+                        </p>
+                      </div>
+                    )}
+                    {phrasesValidation.status === 'invalid' && (
+                      <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-lg">
+                        <p className="text-xs text-red-700 font-medium mb-1">&#10007; {phrasesValidation.message}</p>
+                        {phrasesValidation.errors && phrasesValidation.errors.map((error, i) => (
+                          <p key={i} className="text-xs text-red-600 pl-4">&#8226; {error}</p>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -3335,8 +3522,11 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
                       !formData.tonicAccountId ||
                       !formData.offerId ||
                       !formData.country ||
-                      // Validate content generation phrases: if filled, must be 3-5
-                      (formData.contentGenerationPhrases.length > 0 &&
+                      // RSOC validation: existing mode requires selectedHeadlineId
+                      (formData.rsocMode === 'existing' && !formData.selectedHeadlineId) ||
+                      // Validate content generation phrases: if new mode and filled, must be 3-5
+                      (formData.rsocMode === 'new' &&
+                        formData.contentGenerationPhrases.length > 0 &&
                         (formData.contentGenerationPhrases.length < 3 ||
                          formData.contentGenerationPhrases.length > 5)))) ||
                   (step === 2 &&
@@ -3539,6 +3729,8 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
                       keywords: [],
                       contentGenerationPhrases: [],
                       platforms: [],
+                      rsocMode: 'new',
+                      selectedHeadlineId: null,
                     });
                     setKeywordsText('');
                     setContentPhrasesText('');
