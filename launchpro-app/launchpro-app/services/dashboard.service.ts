@@ -75,7 +75,8 @@ export interface DashboardMetrics {
     activeViolations: number;
     campaigns: Array<{
       id: string;
-      name: string;
+      campaignId: string;
+      campaignName: string;
       netRevenue: number;
       hoursActive: number | null;
       violationType: string;
@@ -87,13 +88,16 @@ export interface DashboardMetrics {
       campaignId: string;
       campaignName: string;
       currentStreak: number;
-      everGreenDate: Date | null;
+      maxStreak: number;
+      isEverGreen: boolean;
+      everGreenDate: string | null;
     }>;
     inProgress: Array<{
       campaignId: string;
       campaignName: string;
       currentStreak: number;
-      daysRemaining: number;
+      maxStreak: number;
+      isEverGreen: boolean;
     }>;
   };
 }
@@ -271,7 +275,8 @@ class DashboardService {
     activeViolations: number;
     campaigns: Array<{
       id: string;
-      name: string;
+      campaignId: string;
+      campaignName: string;
       netRevenue: number;
       hoursActive: number | null;
       violationType: string;
@@ -314,13 +319,16 @@ class DashboardService {
       campaignId: string;
       campaignName: string;
       currentStreak: number;
-      everGreenDate: Date | null;
+      maxStreak: number;
+      isEverGreen: boolean;
+      everGreenDate: string | null;
     }>;
     inProgress: Array<{
       campaignId: string;
       campaignName: string;
       currentStreak: number;
-      daysRemaining: number;
+      maxStreak: number;
+      isEverGreen: boolean;
     }>;
   }> {
     const streaks = await prisma.campaignStreak.findMany({
