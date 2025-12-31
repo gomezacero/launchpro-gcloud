@@ -140,7 +140,7 @@ export default function ManagerComparison({ managers, rankings }: ManagerCompari
                 <td className="text-right py-3 px-2">
                   <div className="flex items-center justify-end gap-1">
                     {getRankBadge(manager.id, safeRankings.byNetRevenue)}
-                    <span className="font-medium">
+                    <span className="font-medium text-gray-900">
                       ${(manager.monthlyNetRevenue ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                     </span>
                   </div>
@@ -148,7 +148,7 @@ export default function ManagerComparison({ managers, rankings }: ManagerCompari
                 <td className="text-center py-3 px-2">
                   <div className="flex items-center justify-center gap-1">
                     {getRankBadge(manager.id, safeRankings.byVelocity)}
-                    <span>
+                    <span className="text-gray-900">
                       {manager.weeklyVelocity ?? 0}/15 (sem) | {manager.monthlyVelocity ?? 0}/60 (mes)
                     </span>
                   </div>
@@ -156,7 +156,7 @@ export default function ManagerComparison({ managers, rankings }: ManagerCompari
                 <td className="text-right py-3 px-2">
                   <div className="flex items-center justify-end gap-1">
                     {getRankBadge(manager.id, safeRankings.byROI)}
-                    <span className={(manager.roi ?? 0) >= 30 ? 'text-green-600 font-medium' : 'text-gray-900'}>
+                    <span className={(manager.roi ?? 0) >= 30 ? 'text-green-600 font-medium' : 'text-gray-900 font-medium'}>
                       {(manager.roi ?? 0).toFixed(1)}%
                     </span>
                   </div>
