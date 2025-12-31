@@ -32,7 +32,15 @@ export default function ManagerComparison({ managers, rankings }: ManagerCompari
   const [sortKey, setSortKey] = useState<SortKey>('monthlyNetRevenue');
   const [sortAsc, setSortAsc] = useState(false);
 
-  const sortedManagers = [...managers].sort((a, b) => {
+  // Safe defaults
+  const safeManagers = managers || [];
+  const safeRankings = {
+    byNetRevenue: rankings?.byNetRevenue || [],
+    byVelocity: rankings?.byVelocity || [],
+    byROI: rankings?.byROI || [],
+  };
+
+  const sortedManagers = [...safeManagers].sort((a, b) => {
     let comparison = 0;
     if (sortKey === 'level') {
       comparison = levelOrder.indexOf(a.level) - levelOrder.indexOf(b.level);
@@ -52,7 +60,8 @@ export default function ManagerComparison({ managers, rankings }: ManagerCompari
   };
 
   const getRankBadge = (managerId: string, rankingList: string[]) => {
-    const rank = rankingList.indexOf(managerId) + 1;
+    const safeList = rankingList || [];
+    const rank = safeList.indexOf(managerId) + 1;
     if (rank === 1) return <span className="text-yellow-500">🥇</span>;
     if (rank === 2) return <span className="text-gray-400">🥈</span>;
     if (rank === 3) return <span className="text-orange-400">🥉</span>;
@@ -130,25 +139,25 @@ export default function ManagerComparison({ managers, rankings }: ManagerCompari
                 </td>
                 <td className="text-right py-3 px-2">
                   <div className="flex items-center justify-end gap-1">
-                    {getRankBadge(manager.id, rankings.byNetRevenue)}
+                    {getRankBadge(manager.id, safeRankings.byNetRevenue)}
                     <span className="font-medium">
-                      ${manager.monthlyNetRevenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      ${(manager.monthlyNetRevenue ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                     </span>
                   </div>
                 </td>
                 <td className="text-center py-3 px-2">
                   <div className="flex items-center justify-center gap-1">
-                    {getRankBadge(manager.id, rankings.byVelocity)}
+                    {getRankBadge(manager.id, safeRankings.byVelocity)}
                     <span>
-                      {manager.weeklyVelocity}/15 (sem) | {manager.monthlyVelocity}/60 (mes)
+                      {manager.weeklyVelocity ?? 0}/15 (sem) | {manager.monthlyVelocity ?? 0}/60 (mes)
                     </span>
                   </div>
                 </td>
                 <td className="text-right py-3 px-2">
                   <div className="flex items-center justify-end gap-1">
-                    {getRankBadge(manager.id, rankings.byROI)}
-                    <span className={manager.roi >= 30 ? 'text-green-600 font-medium' : 'text-gray-900'}>
-                      {manager.roi.toFixed(1)}%
+                    {getRankBadge(manager.id, safeRankings.byROI)}
+                    <span className={(manager.roi ?? 0) >= 30 ? 'text-green-600 font-medium' : 'text-gray-900'}>
+                      {(manager.roi ?? 0).toFixed(1)}%
                     </span>
                   </div>
                 </td>
@@ -176,7 +185,7 @@ export default function ManagerComparison({ managers, rankings }: ManagerCompari
         </table>
       </div>
 
-      {managers.length === 0 && (
+      {safeManagers.length === 0 && (
         <div className="text-center py-8">
           <p className="text-gray-500">No hay managers para mostrar</p>
         </div>

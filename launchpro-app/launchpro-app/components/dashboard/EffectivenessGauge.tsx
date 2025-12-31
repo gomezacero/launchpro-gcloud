@@ -9,7 +9,10 @@ interface EffectivenessGaugeProps {
 }
 
 export default function EffectivenessGauge({ effectiveness }: EffectivenessGaugeProps) {
-  const { roi, goal, isAchieving } = effectiveness;
+  // Safe defaults
+  const roi = effectiveness?.roi ?? 0;
+  const goal = effectiveness?.goal ?? 30;
+  const isAchieving = effectiveness?.isAchieving ?? false;
 
   // Calculate percentage for the gauge (cap at 200% for visual)
   const gaugePercentage = Math.min(200, Math.max(0, roi)) / 2;

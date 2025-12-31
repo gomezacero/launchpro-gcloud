@@ -10,24 +10,30 @@ interface VelocityProgressProps {
 }
 
 export default function VelocityProgress({ velocity }: VelocityProgressProps) {
-  const weeklyPercentage = Math.min(100, (velocity.weekly.current / velocity.weekly.goal) * 100);
-  const monthlyPercentage = Math.min(100, (velocity.monthly.current / velocity.monthly.goal) * 100);
+  // Safe defaults
+  const weeklyCurrent = velocity?.weekly?.current ?? 0;
+  const weeklyGoal = velocity?.weekly?.goal ?? 15;
+  const monthlyCurrent = velocity?.monthly?.current ?? 0;
+  const monthlyGoal = velocity?.monthly?.goal ?? 60;
 
-  const weeklyColor = velocity.weekly.current >= velocity.weekly.goal
+  const weeklyPercentage = Math.min(100, (weeklyCurrent / weeklyGoal) * 100);
+  const monthlyPercentage = Math.min(100, (monthlyCurrent / monthlyGoal) * 100);
+
+  const weeklyColor = weeklyCurrent >= weeklyGoal
     ? 'bg-green-500'
-    : velocity.weekly.current >= velocity.weekly.goal * 0.6
+    : weeklyCurrent >= weeklyGoal * 0.6
     ? 'bg-yellow-500'
     : 'bg-red-500';
 
-  const monthlyColor = velocity.monthly.current >= velocity.monthly.goal
+  const monthlyColor = monthlyCurrent >= monthlyGoal
     ? 'bg-green-500'
-    : velocity.monthly.current >= velocity.monthly.goal * 0.5
+    : monthlyCurrent >= monthlyGoal * 0.5
     ? 'bg-blue-500'
     : 'bg-gray-400';
 
-  // Parse dates for display
-  const weekStart = new Date(velocity.weekStart);
-  const weekEnd = new Date(velocity.weekEnd);
+  // Parse dates for display with safe defaults
+  const weekStart = velocity?.weekStart ? new Date(velocity.weekStart) : new Date();
+  const weekEnd = velocity?.weekEnd ? new Date(velocity.weekEnd) : new Date();
   const formatDate = (date: Date) => date.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
 
   return (
@@ -44,8 +50,8 @@ export default function VelocityProgress({ velocity }: VelocityProgressProps) {
             <span className="text-sm font-medium text-gray-700">
               Esta Semana ({formatDate(weekStart)} - {formatDate(weekEnd)})
             </span>
-            <span className={`text-sm font-bold ${velocity.weekly.current >= velocity.weekly.goal ? 'text-green-600' : 'text-gray-900'}`}>
-              {velocity.weekly.current}/{velocity.weekly.goal}
+            <span className={`text-sm font-bold ${weeklyCurrent >= weeklyGoal ? 'text-green-600' : 'text-gray-900'}`}>
+              {weeklyCurrent}/{weeklyGoal}
             </span>
           </div>
           <div className="w-full bg-gray-200 rounded-full h-4">
@@ -55,9 +61,9 @@ export default function VelocityProgress({ velocity }: VelocityProgressProps) {
             />
           </div>
           <p className="text-xs text-gray-500 mt-1">
-            {velocity.weekly.current >= velocity.weekly.goal
+            {weeklyCurrent >= weeklyGoal
               ? '✅ Meta semanal cumplida'
-              : `Faltan ${velocity.weekly.goal - velocity.weekly.current} campañas (obligatorio)`}
+              : `Faltan ${weeklyGoal - weeklyCurrent} campañas (obligatorio)`}
           </p>
         </div>
 
@@ -65,8 +71,8 @@ export default function VelocityProgress({ velocity }: VelocityProgressProps) {
         <div>
           <div className="flex justify-between items-center mb-2">
             <span className="text-sm font-medium text-gray-700">Este Mes</span>
-            <span className={`text-sm font-bold ${velocity.monthly.current >= velocity.monthly.goal ? 'text-green-600' : 'text-gray-900'}`}>
-              {velocity.monthly.current}/{velocity.monthly.goal}
+            <span className={`text-sm font-bold ${monthlyCurrent >= monthlyGoal ? 'text-green-600' : 'text-gray-900'}`}>
+              {monthlyCurrent}/{monthlyGoal}
             </span>
           </div>
           <div className="w-full bg-gray-200 rounded-full h-4">
@@ -76,7 +82,7 @@ export default function VelocityProgress({ velocity }: VelocityProgressProps) {
             />
           </div>
           <p className="text-xs text-gray-500 mt-1">
-            {velocity.monthly.current >= velocity.monthly.goal
+            {monthlyCurrent >= monthlyGoal
               ? '✅ Meta mensual cumplida'
               : `${Math.round(monthlyPercentage)}% completado`}
           </p>

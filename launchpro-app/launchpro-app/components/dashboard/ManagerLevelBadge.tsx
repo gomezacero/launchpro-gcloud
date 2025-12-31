@@ -20,9 +20,15 @@ const levelConfig: Record<string, { color: string; bgColor: string; icon: string
 };
 
 export default function ManagerLevelBadge({ level, managerName }: ManagerLevelBadgeProps) {
-  const config = levelConfig[level.current] || levelConfig.Prospect;
-  const progressPercentage = level.nextLevel
-    ? Math.min(100, ((level.monthlyNetRevenue - config.min) / (config.max - config.min + 1)) * 100)
+  // Safe defaults
+  const currentLevel = level?.current || 'Prospect';
+  const monthlyRevenue = level?.monthlyNetRevenue ?? 0;
+  const nextLevel = level?.nextLevel ?? null;
+  const amountToNext = level?.amountToNextLevel ?? 0;
+
+  const config = levelConfig[currentLevel] || levelConfig.Prospect;
+  const progressPercentage = nextLevel
+    ? Math.min(100, ((monthlyRevenue - config.min) / (config.max - config.min + 1)) * 100)
     : 100;
 
   return (
@@ -34,7 +40,7 @@ export default function ManagerLevelBadge({ level, managerName }: ManagerLevelBa
         </div>
         <div className={`flex items-center gap-2 px-4 py-2 rounded-full ${config.bgColor}`}>
           <span className="text-2xl">{config.icon}</span>
-          <span className={`font-bold text-lg ${config.color}`}>{level.current}</span>
+          <span className={`font-bold text-lg ${config.color}`}>{currentLevel}</span>
         </div>
       </div>
 
@@ -42,11 +48,11 @@ export default function ManagerLevelBadge({ level, managerName }: ManagerLevelBa
         <div className="flex justify-between items-center">
           <span className="text-sm font-medium text-gray-600">Net Revenue (Mes Actual)</span>
           <span className="text-xl font-bold text-gray-900">
-            ${level.monthlyNetRevenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            ${monthlyRevenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </span>
         </div>
 
-        {level.nextLevel && (
+        {nextLevel && (
           <>
             <div className="w-full bg-gray-200 rounded-full h-3">
               <div
@@ -57,14 +63,14 @@ export default function ManagerLevelBadge({ level, managerName }: ManagerLevelBa
             <div className="flex justify-between text-xs text-gray-500">
               <span>${config.min.toLocaleString()}</span>
               <span className="font-medium">
-                ${level.amountToNextLevel.toLocaleString()} para {level.nextLevel}
+                ${amountToNext.toLocaleString()} para {nextLevel}
               </span>
               <span>${(config.max + 1).toLocaleString()}</span>
             </div>
           </>
         )}
 
-        {!level.nextLevel && (
+        {!nextLevel && (
           <p className="text-center text-sm text-yellow-600 font-medium">
             ¡Has alcanzado el nivel máximo! 🎉
           </p>
