@@ -295,8 +295,9 @@ class DashboardService {
     return {
       activeViolations: violations.length,
       campaigns: violations.map((v) => ({
-        id: v.campaign.id,
-        name: v.campaign.name,
+        id: v.id,
+        campaignId: v.campaign.id,
+        campaignName: v.campaign.name,
         netRevenue: v.netRevenue,
         hoursActive: v.hoursActive,
         violationType: v.violationType,
@@ -338,7 +339,9 @@ class DashboardService {
         campaignId: s.campaign.id,
         campaignName: s.campaign.name,
         currentStreak: s.currentStreak,
-        everGreenDate: s.everGreenDate,
+        maxStreak: s.maxStreak,
+        isEverGreen: s.isEverGreen,
+        everGreenDate: s.everGreenDate?.toISOString() || null,
       }));
 
     const inProgress = streaks
@@ -347,7 +350,8 @@ class DashboardService {
         campaignId: s.campaign.id,
         campaignName: s.campaign.name,
         currentStreak: s.currentStreak,
-        daysRemaining: 30 - s.currentStreak,
+        maxStreak: s.maxStreak,
+        isEverGreen: s.isEverGreen,
       }));
 
     return { qualified, inProgress };
@@ -361,10 +365,12 @@ class DashboardService {
       id: string;
       name: string;
       email: string;
-      level: ManagerLevel;
-      velocity: VelocityMetrics;
-      effectiveness: EffectivenessMetrics;
-      stopLossCount: number;
+      level: string;
+      monthlyNetRevenue: number;
+      weeklyVelocity: number;
+      monthlyVelocity: number;
+      roi: number;
+      stopLossViolations: number;
       everGreenCount: number;
     }>;
     rankings: {
@@ -391,11 +397,15 @@ class DashboardService {
         ]);
 
         return {
-          ...m,
-          level,
-          velocity,
-          effectiveness,
-          stopLossCount: stopLoss.activeViolations,
+          id: m.id,
+          name: m.name,
+          email: m.email,
+          level: level.current,
+          monthlyNetRevenue: level.monthlyNetRevenue,
+          weeklyVelocity: velocity.weekly.current,
+          monthlyVelocity: velocity.monthly.current,
+          roi: effectiveness.roi,
+          stopLossViolations: stopLoss.activeViolations,
           everGreenCount: everGreen.qualified.length,
         };
       })
@@ -403,15 +413,15 @@ class DashboardService {
 
     // Create rankings
     const byNetRevenue = [...managersWithMetrics]
-      .sort((a, b) => b.level.monthlyNetRevenue - a.level.monthlyNetRevenue)
+      .sort((a, b) => b.monthlyNetRevenue - a.monthlyNetRevenue)
       .map((m) => m.id);
 
     const byVelocity = [...managersWithMetrics]
-      .sort((a, b) => b.velocity.weekly.current - a.velocity.weekly.current)
+      .sort((a, b) => b.weeklyVelocity - a.weeklyVelocity)
       .map((m) => m.id);
 
     const byROI = [...managersWithMetrics]
-      .sort((a, b) => b.effectiveness.roi - a.effectiveness.roi)
+      .sort((a, b) => b.roi - a.roi)
       .map((m) => m.id);
 
     return {
