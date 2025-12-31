@@ -206,50 +206,62 @@ class DashboardService {
 
     // ============================================
     // STEP 1: Group campaigns by account for batch processing
+    // All Maps now use tonicCampaignId as the key for proper matching
     // ============================================
-    const campaignsByTonicAccount = new Map<string, { account: any; campaigns: typeof campaigns }>();
-    const campaignsByMetaAccount = new Map<string, { account: any; campaignIds: string[] }>();
-    const campaignsByTikTokAccount = new Map<string, { account: any; campaignIds: string[] }>();
+    const campaignsByTonicAccount = new Map<string, { account: any; tonicIds: string[] }>();
+    const campaignsByMetaAccount = new Map<string, { account: any; tonicIds: string[] }>();
+    const campaignsByTikTokAccount = new Map<string, { account: any; tonicIds: string[] }>();
+
+    // Collect all unique tonicCampaignIds for this manager
+    const allTonicIds = new Set<string>();
 
     for (const campaign of campaigns) {
+      if (!campaign.tonicCampaignId) continue;
+      allTonicIds.add(campaign.tonicCampaignId);
+
       // Group by Tonic account
       const tonicPlatform = campaign.platforms.find((p) => p.tonicAccount);
       if (tonicPlatform?.tonicAccount) {
         const key = tonicPlatform.tonicAccount.id;
         if (!campaignsByTonicAccount.has(key)) {
-          campaignsByTonicAccount.set(key, { account: tonicPlatform.tonicAccount, campaigns: [] });
+          campaignsByTonicAccount.set(key, { account: tonicPlatform.tonicAccount, tonicIds: [] });
         }
-        campaignsByTonicAccount.get(key)!.campaigns.push(campaign);
+        campaignsByTonicAccount.get(key)!.tonicIds.push(campaign.tonicCampaignId);
       }
 
-      // Group by Meta account
-      const metaPlatform = campaign.platforms.find((p) => p.metaAccount && p.metaCampaignId);
-      if (metaPlatform?.metaAccount && metaPlatform.metaCampaignId) {
+      // Group by Meta account (only if campaign has Meta platform configured)
+      const metaPlatform = campaign.platforms.find((p) => p.metaAccount);
+      if (metaPlatform?.metaAccount) {
         const key = metaPlatform.metaAccount.id;
         if (!campaignsByMetaAccount.has(key)) {
-          campaignsByMetaAccount.set(key, { account: metaPlatform.metaAccount, campaignIds: [] });
+          campaignsByMetaAccount.set(key, { account: metaPlatform.metaAccount, tonicIds: [] });
         }
-        campaignsByMetaAccount.get(key)!.campaignIds.push(metaPlatform.metaCampaignId);
+        // Store tonicCampaignId instead of metaCampaignId for proper matching
+        campaignsByMetaAccount.get(key)!.tonicIds.push(campaign.tonicCampaignId);
       }
 
-      // Group by TikTok account
-      const tiktokPlatform = campaign.platforms.find((p) => p.tiktokAccount && p.tiktokCampaignId);
-      if (tiktokPlatform?.tiktokAccount && tiktokPlatform.tiktokCampaignId) {
+      // Group by TikTok account (only if campaign has TikTok platform configured)
+      const tiktokPlatform = campaign.platforms.find((p) => p.tiktokAccount);
+      if (tiktokPlatform?.tiktokAccount) {
         const key = tiktokPlatform.tiktokAccount.id;
         if (!campaignsByTikTokAccount.has(key)) {
-          campaignsByTikTokAccount.set(key, { account: tiktokPlatform.tiktokAccount, campaignIds: [] });
+          campaignsByTikTokAccount.set(key, { account: tiktokPlatform.tiktokAccount, tonicIds: [] });
         }
-        campaignsByTikTokAccount.get(key)!.campaignIds.push(tiktokPlatform.tiktokCampaignId);
+        // Store tonicCampaignId instead of tiktokCampaignId for proper matching
+        campaignsByTikTokAccount.get(key)!.tonicIds.push(campaign.tonicCampaignId);
       }
     }
 
+    logger.info('dashboard', `Processing ${allTonicIds.size} unique Tonic campaigns for manager ${managerId}`);
+
     // ============================================
     // STEP 2: Fetch all data in parallel by account
+    // Both revenue and spend maps are now keyed by tonicCampaignId
     // ============================================
     const fetchPromises: Promise<void>[] = [];
 
-    // Fetch Tonic Gross Revenue (batched by account - already efficient)
-    for (const [accountId, { account, campaigns: accountCampaigns }] of campaignsByTonicAccount) {
+    // Fetch Tonic Gross Revenue (batched by account)
+    for (const [accountId, { account, tonicIds }] of campaignsByTonicAccount) {
       fetchPromises.push(
         (async () => {
           try {
@@ -258,12 +270,10 @@ class DashboardService {
               consumer_secret: account.tonicConsumerSecret || '',
             };
             const revenueMap = await tonicService.getCampaignGrossRevenueRange(credentials, from, to);
-            for (const campaign of accountCampaigns) {
-              if (campaign.tonicCampaignId) {
-                totalGrossRevenue += revenueMap.get(campaign.tonicCampaignId) || 0;
-              }
+            for (const tonicId of tonicIds) {
+              totalGrossRevenue += revenueMap.get(tonicId) || 0;
             }
-            logger.info('dashboard', `Tonic account ${accountId}: fetched revenue for ${accountCampaigns.length} campaigns`);
+            logger.info('dashboard', `Tonic account ${accountId}: fetched revenue for ${tonicIds.length} campaigns`);
           } catch (error: any) {
             logger.error('dashboard', `Failed to get Tonic revenue for account ${accountId}`, { error: error.message });
           }
@@ -271,26 +281,26 @@ class DashboardService {
       );
     }
 
-    // Fetch Meta Spend (use bulk API endpoint)
+    // Fetch Meta Spend (now returns Map keyed by tonicCampaignId extracted from campaign name)
     const metaDatePreset = dateRange === 'today' ? 'YESTERDAY' :
                           dateRange === 'last_30d' ? 'LAST_30D' : 'THIS_MONTH';
 
-    for (const [accountId, { account, campaignIds }] of campaignsByMetaAccount) {
+    for (const [accountId, { account, tonicIds }] of campaignsByMetaAccount) {
       fetchPromises.push(
         (async () => {
           try {
-            // Use batch request for Meta - get all campaign insights at once
             const adAccountId = account.metaAdAccountId;
             if (adAccountId) {
+              // getAllCampaignsSpend now returns Map<tonicId, spend>
               const spendMap = await metaService.getAllCampaignsSpend(
                 adAccountId,
                 metaDatePreset,
                 account.metaAccessToken || undefined
               );
-              for (const campaignId of campaignIds) {
-                totalSpend += spendMap.get(campaignId) || 0;
+              for (const tonicId of tonicIds) {
+                totalSpend += spendMap.get(tonicId) || 0;
               }
-              logger.info('dashboard', `Meta account ${accountId}: fetched spend for ${campaignIds.length} campaigns`);
+              logger.info('dashboard', `Meta account ${accountId}: fetched spend for ${tonicIds.length} campaigns (by tonicId)`);
             }
           } catch (error: any) {
             logger.error('dashboard', `Failed to get Meta spend for account ${accountId}`, { error: error.message });
@@ -299,23 +309,24 @@ class DashboardService {
       );
     }
 
-    // Fetch TikTok Spend (already uses batch endpoint)
+    // Fetch TikTok Spend (now returns Map keyed by tonicCampaignId extracted from campaign name)
     const tiktokDatePreset = dateRange === 'today' ? 'yesterday' :
                             dateRange === 'last_30d' ? 'last_30_days' : 'this_month';
 
-    for (const [accountId, { account, campaignIds }] of campaignsByTikTokAccount) {
+    for (const [accountId, { account, tonicIds }] of campaignsByTikTokAccount) {
       fetchPromises.push(
         (async () => {
           try {
+            // getAllCampaignsSpend now returns Map<tonicId, spend>
             const spendMap = await tiktokService.getAllCampaignsSpend(
               account.tiktokAdvertiserId || '',
               account.tiktokAccessToken || '',
               tiktokDatePreset
             );
-            for (const campaignId of campaignIds) {
-              totalSpend += spendMap.get(campaignId) || 0;
+            for (const tonicId of tonicIds) {
+              totalSpend += spendMap.get(tonicId) || 0;
             }
-            logger.info('dashboard', `TikTok account ${accountId}: fetched spend for ${campaignIds.length} campaigns`);
+            logger.info('dashboard', `TikTok account ${accountId}: fetched spend for ${tonicIds.length} campaigns (by tonicId)`);
           } catch (error: any) {
             logger.error('dashboard', `Failed to get TikTok spend for account ${accountId}`, { error: error.message });
           }

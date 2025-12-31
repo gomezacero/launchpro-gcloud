@@ -1178,8 +1178,8 @@ class MetaService {
 
   /**
    * Get spend for all campaigns in an ad account in a single API call
-   * Returns a Map of campaign_id -> spend
-   * This is much more efficient than calling getEntityInsights for each campaign
+   * Returns a Map of tonicCampaignId -> spend (extracted from campaign name pattern: {tonicId}_{name})
+   * This matches how Tonic revenue is keyed, allowing proper Net Revenue calculation
    */
   async getAllCampaignsSpend(
     adAccountId: string,
@@ -1217,13 +1217,22 @@ class MetaService {
       const insights = response.data?.data || [];
 
       for (const insight of insights) {
-        if (insight.campaign_id) {
+        if (insight.campaign_name) {
           const spend = parseFloat(insight.spend || '0');
-          spendMap.set(insight.campaign_id, spend);
+
+          // Extract tonicCampaignId from campaign name pattern: {tonicId}_{name}
+          const tonicId = this.extractTonicIdFromCampaignName(insight.campaign_name);
+
+          if (tonicId) {
+            // Aggregate spend by tonicId (multiple Meta campaigns can map to same Tonic campaign)
+            const currentSpend = spendMap.get(tonicId) || 0;
+            spendMap.set(tonicId, currentSpend + spend);
+          }
+          // Skip campaigns without Tonic ID prefix - they're not from LaunchPro
         }
       }
 
-      console.log(`[META] Fetched spend for ${spendMap.size} campaigns from account ${adAccountId}`);
+      console.log(`[META] Fetched spend for ${spendMap.size} campaigns (by tonicId) from account ${adAccountId}`);
       return spendMap;
     } catch (error: any) {
       console.error(`[META] ❌ Failed to get all campaigns spend for ${adAccountId}:`, error.message);
@@ -1232,6 +1241,16 @@ class MetaService {
       }
       return spendMap;
     }
+  }
+
+  /**
+   * Extract Tonic campaign ID from campaign name
+   * Campaign names follow pattern: {tonicCampaignId}_{campaignName}
+   * Example: "4193514_TestCampaign" -> "4193514"
+   */
+  private extractTonicIdFromCampaignName(name: string): string | null {
+    const match = name.match(/^(\d+)_/);
+    return match ? match[1] : null;
   }
 
 }

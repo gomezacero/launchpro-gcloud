@@ -1035,9 +1035,8 @@ class TikTokService {
 
   /**
    * Get metrics for ALL campaigns in a single API call
-   * Much more efficient than calling getEntityInsights for each campaign
-   *
-   * @returns Map of campaign_id -> spend
+   * Returns a Map of tonicCampaignId -> spend (extracted from campaign name pattern: {tonicId}_{name})
+   * This matches how Tonic revenue is keyed, allowing proper Net Revenue calculation
    */
   async getAllCampaignsSpend(
     advertiserId: string,
@@ -1052,6 +1051,28 @@ class TikTokService {
 
       console.log(`[TikTok] Fetching ALL campaign spend for ${advertiserId}, dates: ${startDate} to ${endDate}`);
 
+      // Step 1: Get all campaign names to extract tonicIds
+      const campaignNamesMap = new Map<string, string>(); // campaign_id -> campaign_name
+      try {
+        const campaignsResponse = await client.get('/campaign/get/', {
+          params: {
+            advertiser_id: advertiserId,
+            page: 1,
+            page_size: 1000,
+          },
+        });
+        const campaignsData = this.handleResponse(campaignsResponse);
+        for (const campaign of campaignsData?.list || []) {
+          if (campaign.campaign_id && campaign.campaign_name) {
+            campaignNamesMap.set(campaign.campaign_id, campaign.campaign_name);
+          }
+        }
+        console.log(`[TikTok] Fetched ${campaignNamesMap.size} campaign names`);
+      } catch (nameError: any) {
+        console.error(`[TikTok] Failed to fetch campaign names:`, nameError.message);
+      }
+
+      // Step 2: Get spend data from report API
       const response = await client.get('/report/integrated/get/', {
         params: {
           advertiser_id: advertiserId,
@@ -1070,21 +1091,42 @@ class TikTokService {
 
       console.log(`[TikTok] Got ${rows.length} campaign rows from report API`);
 
+      // Step 3: Map spend by tonicId extracted from campaign name
       for (const row of rows) {
         const campaignId = row.dimensions?.campaign_id;
         const spend = parseFloat(row.metrics?.spend) || 0;
 
         if (campaignId) {
-          spendMap.set(campaignId, spend);
-          console.log(`[TikTok] Campaign ${campaignId}: spend=$${spend.toFixed(2)}`);
+          const campaignName = campaignNamesMap.get(campaignId);
+          if (campaignName) {
+            const tonicId = this.extractTonicIdFromCampaignName(campaignName);
+            if (tonicId) {
+              // Aggregate spend by tonicId
+              const currentSpend = spendMap.get(tonicId) || 0;
+              spendMap.set(tonicId, currentSpend + spend);
+              console.log(`[TikTok] Campaign "${campaignName}" (tonicId: ${tonicId}): spend=$${spend.toFixed(2)}`);
+            }
+            // Skip campaigns without Tonic ID prefix - they're not from LaunchPro
+          }
         }
       }
 
+      console.log(`[TikTok] Aggregated spend for ${spendMap.size} campaigns (by tonicId)`);
       return spendMap;
     } catch (error: any) {
       console.error(`[TikTok] Failed to get all campaigns spend:`, error.message);
       return spendMap;
     }
+  }
+
+  /**
+   * Extract Tonic campaign ID from campaign name
+   * Campaign names follow pattern: {tonicCampaignId}_{campaignName}
+   * Example: "4193514_TestCampaign" -> "4193514"
+   */
+  private extractTonicIdFromCampaignName(name: string): string | null {
+    const match = name.match(/^(\d+)_/);
+    return match ? match[1] : null;
   }
 
   /**
