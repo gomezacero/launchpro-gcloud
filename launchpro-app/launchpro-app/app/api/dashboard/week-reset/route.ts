@@ -164,7 +164,7 @@ export async function POST(request: NextRequest) {
           // Get active campaigns count
           const activeCampaigns = await prisma.campaign.count({
             where: {
-              creatorId: manager.id,
+              createdById: manager.id,
               status: 'ACTIVE',
             },
           });
