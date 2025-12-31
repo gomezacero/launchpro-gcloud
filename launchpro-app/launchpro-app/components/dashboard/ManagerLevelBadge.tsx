@@ -10,13 +10,13 @@ interface ManagerLevelBadgeProps {
   managerName: string;
 }
 
-const levelConfig: Record<string, { color: string; bgColor: string; icon: string; min: number; max: number }> = {
-  Prospect: { color: 'text-gray-700', bgColor: 'bg-gray-100', icon: '🌱', min: 0, max: 6999 },
-  Rookie: { color: 'text-blue-700', bgColor: 'bg-blue-100', icon: '🚀', min: 7000, max: 15000 },
-  Growth: { color: 'text-green-700', bgColor: 'bg-green-100', icon: '📈', min: 15001, max: 30000 },
-  Performer: { color: 'text-purple-700', bgColor: 'bg-purple-100', icon: '⭐', min: 30001, max: 40000 },
-  Scaler: { color: 'text-orange-700', bgColor: 'bg-orange-100', icon: '🔥', min: 40001, max: 50000 },
-  Rainmaker: { color: 'text-yellow-700', bgColor: 'bg-yellow-100', icon: '💰', min: 50001, max: Infinity },
+const levelConfig: Record<string, { color: string; bgColor: string; progressColor: string; icon: string; min: number; max: number }> = {
+  Prospect: { color: 'text-gray-700', bgColor: 'bg-gray-100', progressColor: 'bg-gray-500', icon: '🌱', min: 0, max: 6999 },
+  Rookie: { color: 'text-blue-700', bgColor: 'bg-blue-100', progressColor: 'bg-blue-500', icon: '🚀', min: 7000, max: 15000 },
+  Growth: { color: 'text-green-700', bgColor: 'bg-green-100', progressColor: 'bg-green-500', icon: '📈', min: 15001, max: 30000 },
+  Performer: { color: 'text-purple-700', bgColor: 'bg-purple-100', progressColor: 'bg-purple-500', icon: '⭐', min: 30001, max: 40000 },
+  Scaler: { color: 'text-orange-700', bgColor: 'bg-orange-100', progressColor: 'bg-orange-500', icon: '🔥', min: 40001, max: 50000 },
+  Rainmaker: { color: 'text-yellow-700', bgColor: 'bg-yellow-100', progressColor: 'bg-yellow-500', icon: '💰', min: 50001, max: Infinity },
 };
 
 export default function ManagerLevelBadge({ level, managerName }: ManagerLevelBadgeProps) {
@@ -27,8 +27,13 @@ export default function ManagerLevelBadge({ level, managerName }: ManagerLevelBa
   const amountToNext = level?.amountToNextLevel ?? 0;
 
   const config = levelConfig[currentLevel] || levelConfig.Prospect;
+
+  // Calculate progress percentage within current level range
+  // For Prospect (0-6999): $643 = (643 - 0) / (6999 - 0) * 100 = 9.2%
+  const levelRange = config.max - config.min;
+  const progressInLevel = Math.max(0, monthlyRevenue - config.min);
   const progressPercentage = nextLevel
-    ? Math.min(100, ((monthlyRevenue - config.min) / (config.max - config.min + 1)) * 100)
+    ? Math.min(100, Math.max(0, (progressInLevel / levelRange) * 100))
     : 100;
 
   return (
@@ -56,8 +61,8 @@ export default function ManagerLevelBadge({ level, managerName }: ManagerLevelBa
           <>
             <div className="w-full bg-gray-200 rounded-full h-3">
               <div
-                className={`h-3 rounded-full transition-all duration-500 ${config.bgColor.replace('100', '500')}`}
-                style={{ width: `${progressPercentage}%` }}
+                className={`h-3 rounded-full transition-all duration-500 ${config.progressColor}`}
+                style={{ width: `${Math.max(2, progressPercentage)}%` }}
               />
             </div>
             <div className="flex justify-between text-xs text-gray-500">
