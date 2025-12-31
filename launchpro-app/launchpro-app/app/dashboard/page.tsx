@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import Header from '@/components/Header';
 import {
   ManagerLevelBadge,
   VelocityProgress,
@@ -12,6 +11,7 @@ import {
   EverGreenTracker,
   ManagerComparison,
   DashboardSkeleton,
+  WeekControl,
 } from '@/components/dashboard';
 
 interface DashboardMetrics {
@@ -157,6 +157,25 @@ export default function DashboardPage() {
     fetchData();
   }, [status, router, selectedManagerId, isSuperAdmin]);
 
+  // Refresh data function
+  const refreshData = async () => {
+    setLoading(true);
+    try {
+      const url = selectedManagerId
+        ? `/api/dashboard/metrics?managerId=${selectedManagerId}`
+        : '/api/dashboard/metrics';
+      const response = await fetch(url);
+      const data = await response.json();
+      if (response.ok) {
+        setMetrics(data.data);
+      }
+    } catch (err) {
+      console.error('Error refreshing data:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Handle acknowledging a stop-loss violation
   const handleAcknowledge = async (violationId: string) => {
     try {
@@ -185,7 +204,6 @@ export default function DashboardPage() {
   if (status === 'loading') {
     return (
       <div className="min-h-screen bg-gray-50">
-        <Header />
         <main className="max-w-7xl mx-auto px-4 py-8">
           <DashboardSkeleton />
         </main>
@@ -195,7 +213,6 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <Header />
       <main className="max-w-7xl mx-auto px-4 py-8">
         {/* SUPERADMIN Manager Selector */}
         {isSuperAdmin && (
@@ -247,6 +264,11 @@ export default function DashboardPage() {
               qualified={metrics.everGreen.qualified}
               inProgress={metrics.everGreen.inProgress}
             />
+
+            {/* Week Control (SUPERADMIN only) */}
+            {isSuperAdmin && !selectedManagerId && (
+              <WeekControl onWeekReset={refreshData} />
+            )}
 
             {/* Manager Comparison (SUPERADMIN only) */}
             {isSuperAdmin && comparison && !selectedManagerId && (

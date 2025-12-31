@@ -360,6 +360,7 @@ model Manager {
   dailyMetrics        DailyMetrics[]
   campaignStreaks     CampaignStreak[]
   stopLossViolations  StopLossViolation[]
+  weeklySnapshots     WeeklySnapshot[]
 
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
@@ -609,4 +610,43 @@ model StopLossViolation {
   @@index([campaignId])
   @@index([createdAt])
   @@index([acknowledgedAt])
+}
+
+// Weekly performance snapshot for historical tracking
+model WeeklySnapshot {
+  id              String    @id @default(cuid())
+  managerId       String
+  manager         Manager   @relation(fields: [managerId], references: [id])
+
+  // Week identification
+  weekNumber      Int       // ISO week number (1-53)
+  year            Int
+  weekStart       DateTime  // Monday of that week
+  weekEnd         DateTime  // Friday of that week
+
+  // Performance metrics
+  campaignsLaunched Int     @default(0)  // Campaigns launched during the week
+  weeklyGoal        Int     @default(15) // Target campaigns per week
+  goalAchieved      Boolean @default(false)
+
+  // Financial metrics
+  grossRevenue    Float     @default(0)
+  totalSpend      Float     @default(0)
+  netRevenue      Float     @default(0)
+  roi             Float     @default(0)
+
+  // Additional stats
+  activeCampaigns Int       @default(0)  // Active campaigns at week end
+  stopLossCount   Int       @default(0)  // Stop-loss violations during week
+
+  // Reset tracking
+  resetBy         String?   // Manager ID who reset the week (SUPERADMIN)
+  resetAt         DateTime?
+
+  createdAt       DateTime  @default(now())
+
+  @@unique([managerId, weekNumber, year])
+  @@index([managerId])
+  @@index([year, weekNumber])
+  @@index([weekStart])
 }

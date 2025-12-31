@@ -387,55 +387,86 @@ class DashboardService {
       byROI: string[];
     };
   }> {
-    // Get all managers
-    const managers = await prisma.manager.findMany({
-      where: { role: 'MANAGER' }, // Exclude SUPERADMIN from rankings
-      select: { id: true, name: true, email: true },
-    });
+    try {
+      // Get all managers (excluding SUPERADMIN from rankings)
+      const managers = await prisma.manager.findMany({
+        where: { role: 'MANAGER' },
+        select: { id: true, name: true, email: true },
+      });
 
-    // Fetch metrics for each manager
-    const managersWithMetrics = await Promise.all(
-      managers.map(async (m) => {
-        const [level, velocity, effectiveness, stopLoss, everGreen] = await Promise.all([
-          this.calculateManagerLevel(m.id),
-          this.calculateVelocity(m.id),
-          this.calculateEffectiveness(m.id),
-          this.getStopLossViolations(m.id),
-          this.getEverGreenCampaigns(m.id),
-        ]);
+      logger.info('dashboard', `Found ${managers.length} managers for comparison`);
 
+      if (managers.length === 0) {
         return {
-          id: m.id,
-          name: m.name,
-          email: m.email,
-          level: level.current,
-          monthlyNetRevenue: level.monthlyNetRevenue,
-          weeklyVelocity: velocity.weekly.current,
-          monthlyVelocity: velocity.monthly.current,
-          roi: effectiveness.roi,
-          stopLossViolations: stopLoss.activeViolations,
-          everGreenCount: everGreen.qualified.length,
+          managers: [],
+          rankings: { byNetRevenue: [], byVelocity: [], byROI: [] },
         };
-      })
-    );
+      }
 
-    // Create rankings
-    const byNetRevenue = [...managersWithMetrics]
-      .sort((a, b) => b.monthlyNetRevenue - a.monthlyNetRevenue)
-      .map((m) => m.id);
+      // Fetch metrics for each manager with error handling
+      const managersWithMetrics = await Promise.all(
+        managers.map(async (m) => {
+          try {
+            const [level, velocity, effectiveness, stopLoss, everGreen] = await Promise.all([
+              this.calculateManagerLevel(m.id),
+              this.calculateVelocity(m.id),
+              this.calculateEffectiveness(m.id),
+              this.getStopLossViolations(m.id),
+              this.getEverGreenCampaigns(m.id),
+            ]);
 
-    const byVelocity = [...managersWithMetrics]
-      .sort((a, b) => b.weeklyVelocity - a.weeklyVelocity)
-      .map((m) => m.id);
+            return {
+              id: m.id,
+              name: m.name,
+              email: m.email,
+              level: level.current,
+              monthlyNetRevenue: level.monthlyNetRevenue,
+              weeklyVelocity: velocity.weekly.current,
+              monthlyVelocity: velocity.monthly.current,
+              roi: effectiveness.roi,
+              stopLossViolations: stopLoss.activeViolations,
+              everGreenCount: everGreen.qualified.length,
+            };
+          } catch (err: any) {
+            logger.error('dashboard', `Error fetching metrics for manager ${m.id}: ${err.message}`);
+            // Return default values on error
+            return {
+              id: m.id,
+              name: m.name,
+              email: m.email,
+              level: 'Prospect',
+              monthlyNetRevenue: 0,
+              weeklyVelocity: 0,
+              monthlyVelocity: 0,
+              roi: 0,
+              stopLossViolations: 0,
+              everGreenCount: 0,
+            };
+          }
+        })
+      );
 
-    const byROI = [...managersWithMetrics]
-      .sort((a, b) => b.roi - a.roi)
-      .map((m) => m.id);
+      // Create rankings
+      const byNetRevenue = [...managersWithMetrics]
+        .sort((a, b) => b.monthlyNetRevenue - a.monthlyNetRevenue)
+        .map((m) => m.id);
 
-    return {
-      managers: managersWithMetrics,
-      rankings: { byNetRevenue, byVelocity, byROI },
-    };
+      const byVelocity = [...managersWithMetrics]
+        .sort((a, b) => b.weeklyVelocity - a.weeklyVelocity)
+        .map((m) => m.id);
+
+      const byROI = [...managersWithMetrics]
+        .sort((a, b) => b.roi - a.roi)
+        .map((m) => m.id);
+
+      return {
+        managers: managersWithMetrics,
+        rankings: { byNetRevenue, byVelocity, byROI },
+      };
+    } catch (err: any) {
+      logger.error('dashboard', `Error in getManagerComparison: ${err.message}`, { error: err });
+      throw err;
+    }
   }
 
   // ============================================
