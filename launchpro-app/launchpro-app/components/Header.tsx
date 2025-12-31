@@ -8,6 +8,7 @@ import { useAuth } from '@/hooks/useAuth';
 
 // Base navigation items (visible to all users)
 const baseNavigation = [
+  { name: 'Dashboard', href: '/dashboard', icon: '📊' },
   { name: 'Campaigns', href: '/campaigns', icon: '📋' },
   { name: 'New Campaign', href: '/campaigns/new', icon: '🚀' },
   { name: 'Reglas', href: '/rules', icon: '⚡' },

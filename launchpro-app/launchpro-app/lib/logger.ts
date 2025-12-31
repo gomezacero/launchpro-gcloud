@@ -7,7 +7,7 @@ export interface LogEntry {
   id: string;
   timestamp: string;
   level: 'info' | 'warn' | 'error' | 'success' | 'debug';
-  category: 'api' | 'tonic' | 'meta' | 'tiktok' | 'ai' | 'system' | 'email' | 'ad-rules' | 'cron';
+  category: 'api' | 'tonic' | 'meta' | 'tiktok' | 'ai' | 'system' | 'email' | 'ad-rules' | 'cron' | 'dashboard' | 'stop-loss' | 'evergreen';
   message: string;
   details?: any;
   duration?: number;
@@ -136,6 +136,9 @@ class Logger {
         email: 0,
         'ad-rules': 0,
         cron: 0,
+        dashboard: 0,
+        'stop-loss': 0,
+        evergreen: 0,
       },
     };
 

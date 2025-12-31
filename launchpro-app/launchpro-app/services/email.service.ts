@@ -641,6 +641,164 @@ class EmailService {
   }
 
   /**
+   * Send stop-loss alert email to manager
+   */
+  async sendStopLossAlert(
+    campaign: any,
+    manager: any,
+    violation: { type: 'IMMEDIATE_LOSS' | 'TIME_BASED_LOSS'; netRevenue: number; hoursActive?: number }
+  ): Promise<void> {
+    const client = this.getClient();
+    if (!client) return;
+
+    // Send to manager email + notification emails
+    const notificationEmails = await this.getNotificationEmails();
+    const emails = [manager.email, ...notificationEmails].filter((e, i, arr) => arr.indexOf(e) === i);
+
+    if (emails.length === 0) {
+      logger.info('email', 'No emails to send stop-loss alert to.');
+      return;
+    }
+
+    const appUrl = this.getAppUrl();
+
+    const violationLabels = {
+      IMMEDIATE_LOSS: {
+        title: 'Pérdida Inmediata',
+        description: 'El Net Revenue ha superado el límite de -$35 USD',
+        color: '#dc2626',
+        bgColor: '#fef2f2',
+        borderColor: '#fecaca',
+      },
+      TIME_BASED_LOSS: {
+        title: 'Pérdida por Tiempo',
+        description: `La campaña lleva ${violation.hoursActive?.toFixed(1) || '48+'} horas activa con Net Revenue negativo`,
+        color: '#ea580c',
+        bgColor: '#fff7ed',
+        borderColor: '#fed7aa',
+      },
+    };
+
+    const violationInfo = violationLabels[violation.type];
+
+    try {
+      await client.emails.send({
+        from: this.getFromEmail(),
+        to: emails,
+        subject: `🚨 STOP-LOSS: "${campaign.name}" - ${violationInfo.title}`,
+        html: `
+          <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 650px; margin: 0 auto; background: #ffffff;">
+            <!-- Header -->
+            <div style="background: linear-gradient(135deg, ${violationInfo.color} 0%, #991b1b 100%); padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
+              <h1 style="color: white; margin: 0; font-size: 24px;">🚨 Alerta Stop-Loss</h1>
+              <p style="color: rgba(255,255,255,0.9); margin: 10px 0 0 0; font-size: 18px;">${campaign.name}</p>
+            </div>
+
+            <!-- Content -->
+            <div style="padding: 25px; background: #f8fafc;">
+
+              <!-- Violation Alert Box -->
+              <div style="background: ${violationInfo.bgColor}; border-radius: 8px; padding: 20px; margin-bottom: 20px; border: 2px solid ${violationInfo.borderColor};">
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
+                  <span style="font-size: 28px;">⚠️</span>
+                  <h2 style="margin: 0; color: ${violationInfo.color}; font-size: 18px;">${violationInfo.title}</h2>
+                </div>
+                <p style="color: #78350f; margin: 0 0 15px 0; font-size: 14px; line-height: 1.6;">
+                  ${violationInfo.description}
+                </p>
+                <div style="background: white; border-radius: 8px; padding: 15px;">
+                  <table style="width: 100%; font-size: 14px;">
+                    <tr>
+                      <td style="padding: 8px 0; color: #64748b; width: 140px;">Net Revenue:</td>
+                      <td style="padding: 8px 0; color: #dc2626; font-weight: 700; font-size: 18px;">
+                        ${this.formatCurrency(violation.netRevenue)}
+                      </td>
+                    </tr>
+                    ${violation.hoursActive ? `
+                    <tr>
+                      <td style="padding: 8px 0; color: #64748b;">Tiempo Activo:</td>
+                      <td style="padding: 8px 0; color: #1e293b; font-weight: 600;">
+                        ${violation.hoursActive.toFixed(1)} horas
+                      </td>
+                    </tr>
+                    ` : ''}
+                  </table>
+                </div>
+              </div>
+
+              <!-- Campaign Info -->
+              <div style="background: white; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                <h2 style="margin: 0 0 15px 0; color: #1e293b; font-size: 16px; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px;">
+                  📋 Información de la Campaña
+                </h2>
+                <table style="width: 100%; font-size: 14px;">
+                  <tr>
+                    <td style="padding: 8px 0; color: #64748b; width: 130px;">Nombre:</td>
+                    <td style="padding: 8px 0; color: #1e293b; font-weight: 500;">${campaign.name}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 8px 0; color: #64748b;">Oferta:</td>
+                    <td style="padding: 8px 0; color: #1e293b;">${campaign.offer?.name || 'N/A'}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 8px 0; color: #64748b;">Manager:</td>
+                    <td style="padding: 8px 0; color: #1e293b;">${manager.name} (${manager.email})</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 8px 0; color: #64748b;">Lanzada:</td>
+                    <td style="padding: 8px 0; color: #1e293b;">${this.formatDate(campaign.launchedAt)}</td>
+                  </tr>
+                </table>
+              </div>
+
+              <!-- Recommendations -->
+              <div style="background: #fef3c7; border-radius: 8px; padding: 20px; margin-bottom: 20px; border: 1px solid #fcd34d;">
+                <h2 style="margin: 0 0 10px 0; color: #92400e; font-size: 14px;">
+                  ⚡ Acción Recomendada
+                </h2>
+                <ul style="color: #78350f; font-size: 13px; margin: 0; padding-left: 20px; line-height: 1.8;">
+                  <li><strong>Revisa</strong> el rendimiento de la campaña inmediatamente</li>
+                  <li><strong>Optimiza</strong> los anuncios si es posible mejorar el ROI</li>
+                  <li><strong>Pausa</strong> la campaña si las pérdidas continúan</li>
+                  <li>Considera ajustar el targeting o el presupuesto</li>
+                </ul>
+              </div>
+
+              <!-- CTA Buttons -->
+              <div style="text-align: center; margin-top: 25px;">
+                <a href="${appUrl}/campaigns?id=${campaign.id}"
+                   style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; display: inline-block; font-weight: 600; font-size: 15px; box-shadow: 0 4px 6px rgba(59, 130, 246, 0.3); margin-right: 10px;">
+                  Ver Campaña
+                </a>
+                <a href="${appUrl}/dashboard"
+                   style="background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%); color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; display: inline-block; font-weight: 600; font-size: 15px; box-shadow: 0 4px 6px rgba(107, 114, 128, 0.3);">
+                  Ver Dashboard
+                </a>
+              </div>
+            </div>
+
+            <!-- Footer -->
+            <div style="padding: 20px; text-align: center; color: #94a3b8; font-size: 12px; background: #f1f5f9; border-radius: 0 0 8px 8px;">
+              <p style="margin: 0;">LaunchPro - Stop-Loss Monitoring System</p>
+              <p style="margin: 5px 0 0 0;">Este es un email automático. Revisa el dashboard para más detalles.</p>
+            </div>
+          </div>
+        `,
+      });
+      logger.success('email', `Stop-loss alert sent to ${emails.length} recipient(s)`, {
+        campaignId: campaign.id,
+        violationType: violation.type,
+      });
+    } catch (error: any) {
+      logger.error('email', `Failed to send stop-loss alert: ${error.message}`, {
+        campaignId: campaign.id,
+        error,
+      });
+      throw error;
+    }
+  }
+
+  /**
    * Send test email to verify configuration
    */
   async sendTestEmail(): Promise<{ success: boolean; message: string; recipients?: string[] }> {

@@ -52,6 +52,11 @@ enum ManagerRole {
   MANAGER
 }
 
+enum StopLossType {
+  IMMEDIATE_LOSS      // Net Revenue <= -$35
+  TIME_BASED_LOSS     // 48+ hours ACTIVE AND Net Revenue <= -$10
+}
+
 // ============================================
 // ACCOUNT MANAGEMENT
 // ============================================
@@ -154,6 +159,10 @@ model Campaign {
 
   // Error details (when status is FAILED)
   errorDetails      Json?              // { step, message, timestamp, platform?, technicalDetails? }
+
+  // Dashboard relations
+  streak              CampaignStreak?
+  stopLossViolations  StopLossViolation[]
 
   // Metadata
   createdAt         DateTime           @default(now())
@@ -347,6 +356,11 @@ model Manager {
   // Campaigns created by this manager
   campaigns    Campaign[]   @relation("CampaignCreator")
 
+  // Dashboard metrics relations
+  dailyMetrics        DailyMetrics[]
+  campaignStreaks     CampaignStreak[]
+  stopLossViolations  StopLossViolation[]
+
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
   lastLoginAt  DateTime?
@@ -517,4 +531,82 @@ model AdRuleExecution {
   @@index([ruleId])
   @@index([executedAt])
   @@index([targetId])
+}
+
+// ============================================
+// DASHBOARD METRICS
+// ============================================
+
+// Daily cached metrics per manager (for performance dashboard)
+model DailyMetrics {
+  id                String    @id @default(cuid())
+  date              DateTime  @db.Date
+  managerId         String
+  manager           Manager   @relation(fields: [managerId], references: [id])
+
+  // Revenue & Spend aggregates
+  grossRevenue      Float     @default(0)  // From Tonic (all campaigns)
+  totalSpend        Float     @default(0)  // From Meta + TikTok
+  netRevenue        Float     @default(0)  // grossRevenue - totalSpend
+  roi               Float     @default(0)  // ((grossRevenue - totalSpend) / totalSpend) * 100
+
+  // Campaign counts
+  activeCampaigns   Int       @default(0)
+  campaignsLaunched Int       @default(0)  // New campaigns that became ACTIVE that day
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@unique([date, managerId])
+  @@index([managerId])
+  @@index([date])
+}
+
+// EverGreen streak tracking per campaign
+model CampaignStreak {
+  id              String    @id @default(cuid())
+  campaignId      String    @unique
+  campaign        Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  managerId       String
+  manager         Manager   @relation(fields: [managerId], references: [id])
+
+  // Current streak
+  currentStreak   Int       @default(0)   // Days meeting criteria (ROI >40%, spend >$200)
+  streakStartDate DateTime?               // When current streak started
+  lastQualifyDate DateTime?               // Last date that met criteria
+
+  // Historical data
+  maxStreak       Int       @default(0)   // Highest streak achieved
+  everGreenDate   DateTime?               // Date when 30-day streak was achieved
+  isEverGreen     Boolean   @default(false)
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([managerId])
+  @@index([isEverGreen])
+  @@index([currentStreak])
+}
+
+// Stop-Loss violations log
+model StopLossViolation {
+  id              String        @id @default(cuid())
+  campaignId      String
+  campaign        Campaign      @relation(fields: [campaignId], references: [id])
+  managerId       String
+  manager         Manager       @relation(fields: [managerId], references: [id])
+
+  violationType   StopLossType  // IMMEDIATE_LOSS or TIME_BASED_LOSS
+  netRevenue      Float         // Net revenue at violation time
+  hoursActive     Float?        // Hours since campaign became ACTIVE
+
+  notifiedAt      DateTime      @default(now())  // When alert was sent
+  acknowledgedAt  DateTime?                      // When manager acknowledged
+
+  createdAt       DateTime      @default(now())
+
+  @@index([managerId])
+  @@index([campaignId])
+  @@index([createdAt])
+  @@index([acknowledgedAt])
 }

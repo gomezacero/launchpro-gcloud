@@ -15,6 +15,14 @@
     {
       "path": "/api/cron/evaluate-tiktok-rules",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/daily-metrics",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/stop-loss",
+      "schedule": "*/15 * * * *"
     }
   ],
   "functions": {
@@ -32,6 +40,15 @@
     },
     "app/api/cron/evaluate-tiktok-rules/route.ts": {
       "maxDuration": 300
+    },
+    "app/api/cron/daily-metrics/route.ts": {
+      "maxDuration": 300
+    },
+    "app/api/cron/stop-loss/route.ts": {
+      "maxDuration": 120
+    },
+    "app/api/dashboard/metrics/route.ts": {
+      "maxDuration": 60
     }
   }
 }
