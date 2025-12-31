@@ -1176,6 +1176,64 @@ class MetaService {
     }
   }
 
+  /**
+   * Get spend for all campaigns in an ad account in a single API call
+   * Returns a Map of campaign_id -> spend
+   * This is much more efficient than calling getEntityInsights for each campaign
+   */
+  async getAllCampaignsSpend(
+    adAccountId: string,
+    datePreset: string = 'THIS_MONTH',
+    accessToken?: string
+  ): Promise<Map<string, number>> {
+    const spendMap = new Map<string, number>();
+
+    try {
+      const client = this.getClient(accessToken);
+
+      // Map date preset to Meta API format
+      const datePresetMap: Record<string, string> = {
+        'TODAY': 'today',
+        'YESTERDAY': 'yesterday',
+        'LAST_7D': 'last_7d',
+        'LAST_14D': 'last_14d',
+        'LAST_30D': 'last_30d',
+        'THIS_MONTH': 'this_month',
+        'LAST_MONTH': 'last_month',
+      };
+      const metaDatePreset = datePresetMap[datePreset] || datePreset.toLowerCase();
+
+      // Fetch insights for all campaigns at account level
+      // Meta API allows filtering by level=campaign to get aggregated data per campaign
+      const response = await client.get(`/${adAccountId}/insights`, {
+        params: {
+          date_preset: metaDatePreset,
+          level: 'campaign',
+          fields: 'campaign_id,campaign_name,spend',
+          limit: 500,
+        },
+      });
+
+      const insights = response.data?.data || [];
+
+      for (const insight of insights) {
+        if (insight.campaign_id) {
+          const spend = parseFloat(insight.spend || '0');
+          spendMap.set(insight.campaign_id, spend);
+        }
+      }
+
+      console.log(`[META] Fetched spend for ${spendMap.size} campaigns from account ${adAccountId}`);
+      return spendMap;
+    } catch (error: any) {
+      console.error(`[META] ❌ Failed to get all campaigns spend for ${adAccountId}:`, error.message);
+      if (error.response?.data?.error) {
+        console.error(`[META] Error details:`, JSON.stringify(error.response.data.error, null, 2));
+      }
+      return spendMap;
+    }
+  }
+
 }
 
 // Export singleton instance

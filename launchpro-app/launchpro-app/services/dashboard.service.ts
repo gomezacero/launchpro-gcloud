@@ -139,11 +139,13 @@ class DashboardService {
   /**
    * Get aggregated metrics for all ACTIVE campaigns of a manager
    * Fetches real data from Tonic (Gross Revenue) and Meta/TikTok (Spend)
+   * OPTIMIZED: Batches API calls by account to minimize requests
    */
   async getManagerAggregatedMetrics(
     managerId: string,
     dateRange: 'today' | 'last_30d' | 'this_month' = 'this_month'
   ): Promise<{ grossRevenue: number; totalSpend: number; netRevenue: number }> {
+    const startTime = Date.now();
     logger.info('dashboard', `Fetching aggregated metrics for manager ${managerId}, range: ${dateRange}`);
 
     // Get all ACTIVE campaigns for this manager
@@ -178,7 +180,6 @@ class DashboardService {
 
     switch (dateRange) {
       case 'today':
-        // Tonic only has data up to yesterday
         const yesterday = new Date(now);
         yesterday.setDate(yesterday.getDate() - 1);
         from = to = this.formatDate(yesterday);
@@ -187,13 +188,14 @@ class DashboardService {
         const thirtyDaysAgo = new Date(now);
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
         from = this.formatDate(thirtyDaysAgo);
-        to = this.formatDate(new Date(now.setDate(now.getDate() - 1)));
+        const yesterdayFor30d = new Date();
+        yesterdayFor30d.setDate(yesterdayFor30d.getDate() - 1);
+        to = this.formatDate(yesterdayFor30d);
         break;
       case 'this_month':
       default:
-        const { start, end } = this.getMonthBounds();
+        const { start } = this.getMonthBounds();
         from = this.formatDate(start);
-        // Use yesterday as end date since Tonic doesn't have today's data
         const yesterdayDate = new Date();
         yesterdayDate.setDate(yesterdayDate.getDate() - 1);
         to = this.formatDate(yesterdayDate);
@@ -202,92 +204,132 @@ class DashboardService {
     let totalGrossRevenue = 0;
     let totalSpend = 0;
 
-    // Group campaigns by Tonic account to batch API calls
-    const campaignsByTonicAccount = new Map<string, typeof campaigns>();
+    // ============================================
+    // STEP 1: Group campaigns by account for batch processing
+    // ============================================
+    const campaignsByTonicAccount = new Map<string, { account: any; campaigns: typeof campaigns }>();
+    const campaignsByMetaAccount = new Map<string, { account: any; campaignIds: string[] }>();
+    const campaignsByTikTokAccount = new Map<string, { account: any; campaignIds: string[] }>();
+
     for (const campaign of campaigns) {
+      // Group by Tonic account
       const tonicPlatform = campaign.platforms.find((p) => p.tonicAccount);
       if (tonicPlatform?.tonicAccount) {
         const key = tonicPlatform.tonicAccount.id;
         if (!campaignsByTonicAccount.has(key)) {
-          campaignsByTonicAccount.set(key, []);
+          campaignsByTonicAccount.set(key, { account: tonicPlatform.tonicAccount, campaigns: [] });
         }
-        campaignsByTonicAccount.get(key)!.push(campaign);
+        campaignsByTonicAccount.get(key)!.campaigns.push(campaign);
       }
-    }
 
-    // Fetch Gross Revenue from Tonic (batched by account)
-    for (const [accountId, accountCampaigns] of campaignsByTonicAccount) {
-      const tonicAccount = accountCampaigns[0].platforms.find((p) => p.tonicAccount)?.tonicAccount;
-      if (!tonicAccount) continue;
-
-      try {
-        const credentials: TonicCredentials = {
-          consumer_key: tonicAccount.tonicConsumerKey || '',
-          consumer_secret: tonicAccount.tonicConsumerSecret || '',
-        };
-
-        const revenueMap = await tonicService.getCampaignGrossRevenueRange(credentials, from, to);
-
-        for (const campaign of accountCampaigns) {
-          if (campaign.tonicCampaignId) {
-            const revenue = revenueMap.get(campaign.tonicCampaignId) || 0;
-            totalGrossRevenue += revenue;
-            logger.debug('dashboard', `Campaign ${campaign.name} gross revenue: $${revenue.toFixed(2)}`);
-          }
-        }
-      } catch (error: any) {
-        logger.error('dashboard', `Failed to get Tonic revenue for account ${accountId}`, { error: error.message });
-      }
-    }
-
-    // Fetch Spend from Meta
-    for (const campaign of campaigns) {
+      // Group by Meta account
       const metaPlatform = campaign.platforms.find((p) => p.metaAccount && p.metaCampaignId);
       if (metaPlatform?.metaAccount && metaPlatform.metaCampaignId) {
-        try {
-          // Convert date range to Meta format
-          const metaDatePreset = dateRange === 'today' ? 'YESTERDAY' :
-                                  dateRange === 'last_30d' ? 'LAST_30D' : 'THIS_MONTH';
-
-          const insights = await metaService.getEntityInsights(
-            metaPlatform.metaCampaignId,
-            'campaign',
-            metaDatePreset,
-            metaPlatform.metaAccount.metaAccessToken || undefined
-          );
-          if (insights) {
-            totalSpend += insights.spend;
-            logger.debug('dashboard', `Campaign ${campaign.name} Meta spend: $${insights.spend.toFixed(2)}`);
-          }
-        } catch (error: any) {
-          logger.error('dashboard', `Failed to get Meta spend for campaign ${campaign.name}`, { error: error.message });
+        const key = metaPlatform.metaAccount.id;
+        if (!campaignsByMetaAccount.has(key)) {
+          campaignsByMetaAccount.set(key, { account: metaPlatform.metaAccount, campaignIds: [] });
         }
+        campaignsByMetaAccount.get(key)!.campaignIds.push(metaPlatform.metaCampaignId);
       }
 
-      // Fetch Spend from TikTok
+      // Group by TikTok account
       const tiktokPlatform = campaign.platforms.find((p) => p.tiktokAccount && p.tiktokCampaignId);
       if (tiktokPlatform?.tiktokAccount && tiktokPlatform.tiktokCampaignId) {
-        try {
-          const tiktokDatePreset = dateRange === 'today' ? 'yesterday' :
-                                    dateRange === 'last_30d' ? 'last_30_days' : 'this_month';
-
-          const spendMap = await tiktokService.getAllCampaignsSpend(
-            tiktokPlatform.tiktokAccount.tiktokAdvertiserId || '',
-            tiktokPlatform.tiktokAccount.tiktokAccessToken || '',
-            tiktokDatePreset
-          );
-          const spend = spendMap.get(tiktokPlatform.tiktokCampaignId) || 0;
-          totalSpend += spend;
-          logger.debug('dashboard', `Campaign ${campaign.name} TikTok spend: $${spend.toFixed(2)}`);
-        } catch (error: any) {
-          logger.error('dashboard', `Failed to get TikTok spend for campaign ${campaign.name}`, { error: error.message });
+        const key = tiktokPlatform.tiktokAccount.id;
+        if (!campaignsByTikTokAccount.has(key)) {
+          campaignsByTikTokAccount.set(key, { account: tiktokPlatform.tiktokAccount, campaignIds: [] });
         }
+        campaignsByTikTokAccount.get(key)!.campaignIds.push(tiktokPlatform.tiktokCampaignId);
       }
     }
 
-    const netRevenue = totalGrossRevenue - totalSpend;
+    // ============================================
+    // STEP 2: Fetch all data in parallel by account
+    // ============================================
+    const fetchPromises: Promise<void>[] = [];
 
-    logger.info('dashboard', `Manager ${managerId} aggregated metrics - Gross: $${totalGrossRevenue.toFixed(2)}, Spend: $${totalSpend.toFixed(2)}, Net: $${netRevenue.toFixed(2)}`);
+    // Fetch Tonic Gross Revenue (batched by account - already efficient)
+    for (const [accountId, { account, campaigns: accountCampaigns }] of campaignsByTonicAccount) {
+      fetchPromises.push(
+        (async () => {
+          try {
+            const credentials: TonicCredentials = {
+              consumer_key: account.tonicConsumerKey || '',
+              consumer_secret: account.tonicConsumerSecret || '',
+            };
+            const revenueMap = await tonicService.getCampaignGrossRevenueRange(credentials, from, to);
+            for (const campaign of accountCampaigns) {
+              if (campaign.tonicCampaignId) {
+                totalGrossRevenue += revenueMap.get(campaign.tonicCampaignId) || 0;
+              }
+            }
+            logger.info('dashboard', `Tonic account ${accountId}: fetched revenue for ${accountCampaigns.length} campaigns`);
+          } catch (error: any) {
+            logger.error('dashboard', `Failed to get Tonic revenue for account ${accountId}`, { error: error.message });
+          }
+        })()
+      );
+    }
+
+    // Fetch Meta Spend (use bulk API endpoint)
+    const metaDatePreset = dateRange === 'today' ? 'YESTERDAY' :
+                          dateRange === 'last_30d' ? 'LAST_30D' : 'THIS_MONTH';
+
+    for (const [accountId, { account, campaignIds }] of campaignsByMetaAccount) {
+      fetchPromises.push(
+        (async () => {
+          try {
+            // Use batch request for Meta - get all campaign insights at once
+            const adAccountId = account.metaAdAccountId;
+            if (adAccountId) {
+              const spendMap = await metaService.getAllCampaignsSpend(
+                adAccountId,
+                metaDatePreset,
+                account.metaAccessToken || undefined
+              );
+              for (const campaignId of campaignIds) {
+                totalSpend += spendMap.get(campaignId) || 0;
+              }
+              logger.info('dashboard', `Meta account ${accountId}: fetched spend for ${campaignIds.length} campaigns`);
+            }
+          } catch (error: any) {
+            logger.error('dashboard', `Failed to get Meta spend for account ${accountId}`, { error: error.message });
+          }
+        })()
+      );
+    }
+
+    // Fetch TikTok Spend (already uses batch endpoint)
+    const tiktokDatePreset = dateRange === 'today' ? 'yesterday' :
+                            dateRange === 'last_30d' ? 'last_30_days' : 'this_month';
+
+    for (const [accountId, { account, campaignIds }] of campaignsByTikTokAccount) {
+      fetchPromises.push(
+        (async () => {
+          try {
+            const spendMap = await tiktokService.getAllCampaignsSpend(
+              account.tiktokAdvertiserId || '',
+              account.tiktokAccessToken || '',
+              tiktokDatePreset
+            );
+            for (const campaignId of campaignIds) {
+              totalSpend += spendMap.get(campaignId) || 0;
+            }
+            logger.info('dashboard', `TikTok account ${accountId}: fetched spend for ${campaignIds.length} campaigns`);
+          } catch (error: any) {
+            logger.error('dashboard', `Failed to get TikTok spend for account ${accountId}`, { error: error.message });
+          }
+        })()
+      );
+    }
+
+    // Wait for all fetch operations to complete
+    await Promise.all(fetchPromises);
+
+    const netRevenue = totalGrossRevenue - totalSpend;
+    const duration = Date.now() - startTime;
+
+    logger.info('dashboard', `Manager ${managerId} aggregated metrics completed in ${duration}ms - Gross: $${totalGrossRevenue.toFixed(2)}, Spend: $${totalSpend.toFixed(2)}, Net: $${netRevenue.toFixed(2)}`);
 
     return {
       grossRevenue: Math.round(totalGrossRevenue * 100) / 100,
