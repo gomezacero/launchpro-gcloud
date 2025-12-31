@@ -81,8 +81,8 @@ export async function GET(request: NextRequest) {
     let filteredHeadlines = headlines || [];
 
     if (filterOfferId) {
-      const offerIdNum = parseInt(filterOfferId);
-      filteredHeadlines = filteredHeadlines.filter(h => h.offer_id === offerIdNum);
+      // Compare as strings since Tonic API returns offer_id as string
+      filteredHeadlines = filteredHeadlines.filter(h => String(h.offer_id) === String(filterOfferId));
     }
 
     if (filterCountry) {
