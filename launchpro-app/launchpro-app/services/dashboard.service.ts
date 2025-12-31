@@ -137,24 +137,172 @@ class DashboardService {
   }
 
   /**
-   * Calculate manager level based on monthly net revenue
+   * Get aggregated metrics for all ACTIVE campaigns of a manager
+   * Fetches real data from Tonic (Gross Revenue) and Meta/TikTok (Spend)
    */
-  async calculateManagerLevel(managerId: string): Promise<ManagerLevel> {
-    const { start, end } = this.getMonthBounds();
+  async getManagerAggregatedMetrics(
+    managerId: string,
+    dateRange: 'today' | 'last_30d' | 'this_month' = 'this_month'
+  ): Promise<{ grossRevenue: number; totalSpend: number; netRevenue: number }> {
+    logger.info('dashboard', `Fetching aggregated metrics for manager ${managerId}, range: ${dateRange}`);
 
-    // Get cached daily metrics for the month
-    const dailyMetrics = await prisma.dailyMetrics.findMany({
+    // Get all ACTIVE campaigns for this manager
+    const campaigns = await prisma.campaign.findMany({
       where: {
-        managerId,
-        date: {
-          gte: start,
-          lte: end,
+        createdById: managerId,
+        status: 'ACTIVE',
+        tonicCampaignId: { not: null },
+      },
+      include: {
+        platforms: {
+          include: {
+            tonicAccount: true,
+            metaAccount: true,
+            tiktokAccount: true,
+          },
         },
       },
     });
 
-    // Sum up net revenue for the month
-    const monthlyNetRevenue = dailyMetrics.reduce((sum, dm) => sum + dm.netRevenue, 0);
+    if (campaigns.length === 0) {
+      logger.info('dashboard', `No active campaigns for manager ${managerId}`);
+      return { grossRevenue: 0, totalSpend: 0, netRevenue: 0 };
+    }
+
+    logger.info('dashboard', `Found ${campaigns.length} active campaigns for manager ${managerId}`);
+
+    // Calculate date range
+    const now = new Date();
+    let from: string;
+    let to: string;
+
+    switch (dateRange) {
+      case 'today':
+        // Tonic only has data up to yesterday
+        const yesterday = new Date(now);
+        yesterday.setDate(yesterday.getDate() - 1);
+        from = to = this.formatDate(yesterday);
+        break;
+      case 'last_30d':
+        const thirtyDaysAgo = new Date(now);
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        from = this.formatDate(thirtyDaysAgo);
+        to = this.formatDate(new Date(now.setDate(now.getDate() - 1)));
+        break;
+      case 'this_month':
+      default:
+        const { start, end } = this.getMonthBounds();
+        from = this.formatDate(start);
+        // Use yesterday as end date since Tonic doesn't have today's data
+        const yesterdayDate = new Date();
+        yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+        to = this.formatDate(yesterdayDate);
+    }
+
+    let totalGrossRevenue = 0;
+    let totalSpend = 0;
+
+    // Group campaigns by Tonic account to batch API calls
+    const campaignsByTonicAccount = new Map<string, typeof campaigns>();
+    for (const campaign of campaigns) {
+      const tonicPlatform = campaign.platforms.find((p) => p.tonicAccount);
+      if (tonicPlatform?.tonicAccount) {
+        const key = tonicPlatform.tonicAccount.id;
+        if (!campaignsByTonicAccount.has(key)) {
+          campaignsByTonicAccount.set(key, []);
+        }
+        campaignsByTonicAccount.get(key)!.push(campaign);
+      }
+    }
+
+    // Fetch Gross Revenue from Tonic (batched by account)
+    for (const [accountId, accountCampaigns] of campaignsByTonicAccount) {
+      const tonicAccount = accountCampaigns[0].platforms.find((p) => p.tonicAccount)?.tonicAccount;
+      if (!tonicAccount) continue;
+
+      try {
+        const credentials: TonicCredentials = {
+          consumer_key: tonicAccount.tonicConsumerKey || '',
+          consumer_secret: tonicAccount.tonicConsumerSecret || '',
+        };
+
+        const revenueMap = await tonicService.getCampaignGrossRevenueRange(credentials, from, to);
+
+        for (const campaign of accountCampaigns) {
+          if (campaign.tonicCampaignId) {
+            const revenue = revenueMap.get(campaign.tonicCampaignId) || 0;
+            totalGrossRevenue += revenue;
+            logger.debug('dashboard', `Campaign ${campaign.name} gross revenue: $${revenue.toFixed(2)}`);
+          }
+        }
+      } catch (error: any) {
+        logger.error('dashboard', `Failed to get Tonic revenue for account ${accountId}`, { error: error.message });
+      }
+    }
+
+    // Fetch Spend from Meta
+    for (const campaign of campaigns) {
+      const metaPlatform = campaign.platforms.find((p) => p.metaAccount && p.metaCampaignId);
+      if (metaPlatform?.metaAccount && metaPlatform.metaCampaignId) {
+        try {
+          // Convert date range to Meta format
+          const metaDatePreset = dateRange === 'today' ? 'YESTERDAY' :
+                                  dateRange === 'last_30d' ? 'LAST_30D' : 'THIS_MONTH';
+
+          const insights = await metaService.getEntityInsights(
+            metaPlatform.metaCampaignId,
+            'campaign',
+            metaDatePreset,
+            metaPlatform.metaAccount.metaAccessToken || undefined
+          );
+          if (insights) {
+            totalSpend += insights.spend;
+            logger.debug('dashboard', `Campaign ${campaign.name} Meta spend: $${insights.spend.toFixed(2)}`);
+          }
+        } catch (error: any) {
+          logger.error('dashboard', `Failed to get Meta spend for campaign ${campaign.name}`, { error: error.message });
+        }
+      }
+
+      // Fetch Spend from TikTok
+      const tiktokPlatform = campaign.platforms.find((p) => p.tiktokAccount && p.tiktokCampaignId);
+      if (tiktokPlatform?.tiktokAccount && tiktokPlatform.tiktokCampaignId) {
+        try {
+          const tiktokDatePreset = dateRange === 'today' ? 'yesterday' :
+                                    dateRange === 'last_30d' ? 'last_30_days' : 'this_month';
+
+          const spendMap = await tiktokService.getAllCampaignsSpend(
+            tiktokPlatform.tiktokAccount.tiktokAdvertiserId || '',
+            tiktokPlatform.tiktokAccount.tiktokAccessToken || '',
+            tiktokDatePreset
+          );
+          const spend = spendMap.get(tiktokPlatform.tiktokCampaignId) || 0;
+          totalSpend += spend;
+          logger.debug('dashboard', `Campaign ${campaign.name} TikTok spend: $${spend.toFixed(2)}`);
+        } catch (error: any) {
+          logger.error('dashboard', `Failed to get TikTok spend for campaign ${campaign.name}`, { error: error.message });
+        }
+      }
+    }
+
+    const netRevenue = totalGrossRevenue - totalSpend;
+
+    logger.info('dashboard', `Manager ${managerId} aggregated metrics - Gross: $${totalGrossRevenue.toFixed(2)}, Spend: $${totalSpend.toFixed(2)}, Net: $${netRevenue.toFixed(2)}`);
+
+    return {
+      grossRevenue: Math.round(totalGrossRevenue * 100) / 100,
+      totalSpend: Math.round(totalSpend * 100) / 100,
+      netRevenue: Math.round(netRevenue * 100) / 100,
+    };
+  }
+
+  /**
+   * Calculate manager level based on monthly net revenue
+   * Now fetches real data from APIs instead of cached DailyMetrics
+   */
+  async calculateManagerLevel(managerId: string): Promise<ManagerLevel> {
+    // Get real metrics from APIs for this month
+    const { netRevenue: monthlyNetRevenue } = await this.getManagerAggregatedMetrics(managerId, 'this_month');
 
     // Find current level
     const currentLevel = MANAGER_LEVELS.find(
@@ -234,36 +382,22 @@ class DashboardService {
 
   /**
    * Calculate effectiveness (average ROI over last 30 days)
+   * Now fetches real data from APIs instead of cached DailyMetrics
    */
   async calculateEffectiveness(managerId: string): Promise<EffectivenessMetrics> {
-    const now = new Date();
-    const thirtyDaysAgo = new Date(now);
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    // Get real metrics from APIs for last 30 days
+    const { grossRevenue, totalSpend, netRevenue } = await this.getManagerAggregatedMetrics(managerId, 'last_30d');
 
-    // Get cached daily metrics for last 30 days
-    const dailyMetrics = await prisma.dailyMetrics.findMany({
-      where: {
-        managerId,
-        date: {
-          gte: thirtyDaysAgo,
-          lte: now,
-        },
-      },
-    });
-
-    // Calculate totals
-    const totalNetRevenue = dailyMetrics.reduce((sum, dm) => sum + dm.netRevenue, 0);
-    const totalSpend = dailyMetrics.reduce((sum, dm) => sum + dm.totalSpend, 0);
-
-    // Calculate ROI
-    const roi = totalSpend > 0 ? ((totalNetRevenue / totalSpend) * 100) : 0;
+    // Calculate ROI: ((Gross Revenue - Spend) / Spend) * 100
+    // This is equivalent to (Net Revenue / Spend) * 100
+    const roi = totalSpend > 0 ? ((netRevenue / totalSpend) * 100) : 0;
 
     return {
       roi: Math.round(roi * 100) / 100,
       goal: ROI_GOAL,
       isAchieving: roi >= ROI_GOAL,
-      totalNetRevenue: Math.round(totalNetRevenue * 100) / 100,
-      totalSpend: Math.round(totalSpend * 100) / 100,
+      totalNetRevenue: netRevenue,
+      totalSpend: totalSpend,
       period: 'last_30_days',
     };
   }
