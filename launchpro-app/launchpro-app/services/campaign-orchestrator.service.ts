@@ -286,6 +286,7 @@ class CampaignOrchestratorService {
           copyMaster: params.copyMaster,
           communicationAngle: params.communicationAngle,
           keywords: params.keywords || [],
+          contentGenerationPhrases: params.contentGenerationPhrases || [],
           platforms: {
             create: params.platforms.map((p) => ({
               platform: p.platform,
@@ -3197,6 +3198,7 @@ class CampaignOrchestratorService {
         copyMaster: params.copyMaster,
         communicationAngle: params.communicationAngle,
         keywords: params.keywords || [],
+        contentGenerationPhrases: params.contentGenerationPhrases || [],
         platforms: {
           create: params.platforms.map((p) => ({
             platform: p.platform,

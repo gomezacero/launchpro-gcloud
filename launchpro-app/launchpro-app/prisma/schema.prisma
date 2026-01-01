@@ -141,6 +141,7 @@ model Campaign {
   copyMaster        String?
   communicationAngle String?
   keywords          String[]           @default([])
+  contentGenerationPhrases String[]    @default([])  // RSOC content generation phrases
 
   // Platform associations
   platforms         CampaignPlatform[]
