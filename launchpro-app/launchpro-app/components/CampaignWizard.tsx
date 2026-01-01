@@ -113,6 +113,7 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
   const [metaAccounts, setMetaAccounts] = useState<Account[]>([]);
   const [tiktokAccounts, setTiktokAccounts] = useState<Account[]>([]);
   const [accountsLoaded, setAccountsLoaded] = useState(false); // Track when accounts finish loading
+  const [adAccountsLoaded, setAdAccountsLoaded] = useState(false); // Track when ad accounts (advertisers) finish loading
 
   // Ad accounts from Meta/TikTok APIs (not from local DB)
   const [metaAdAccounts, setMetaAdAccounts] = useState<any[]>([]);
@@ -487,12 +488,13 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
       }
     };
 
-    // Wait for accounts to finish loading (not necessarily have items)
-    // This ensures we don't try to clone before account data is available
-    if (accountsLoaded) {
+    // Wait for BOTH accounts AND ad accounts to finish loading
+    // This ensures we don't try to clone before all account data is available
+    // (including TikTok advertisers which come from loadAdAccounts)
+    if (accountsLoaded && adAccountsLoaded) {
       loadCampaignToClone();
     }
-  }, [cloneFromId, accountsLoaded]);
+  }, [cloneFromId, accountsLoaded, adAccountsLoaded]);
 
   const loadOffers = async () => {
     try {
@@ -544,6 +546,8 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
       }
     } catch (err: any) {
       console.error('Error loading ad accounts from APIs:', err);
+    } finally {
+      setAdAccountsLoaded(true); // Mark ad accounts as loaded even if empty
     }
   };
 
