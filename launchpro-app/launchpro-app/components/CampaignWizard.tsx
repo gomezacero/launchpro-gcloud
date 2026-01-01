@@ -112,6 +112,7 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
   const [tonicAccounts, setTonicAccounts] = useState<Account[]>([]);
   const [metaAccounts, setMetaAccounts] = useState<Account[]>([]);
   const [tiktokAccounts, setTiktokAccounts] = useState<Account[]>([]);
+  const [accountsLoaded, setAccountsLoaded] = useState(false); // Track when accounts finish loading
 
   // Ad accounts from Meta/TikTok APIs (not from local DB)
   const [metaAdAccounts, setMetaAdAccounts] = useState<any[]>([]);
@@ -412,7 +413,7 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
             id: `clone-${m.id}`,
             url: m.url,
             fileName: m.filename || 'image.jpg',
-            fileSize: 0, // Unknown from clone
+            fileSize: m.fileSize || 0, // Use actual file size from DB
             type: 'IMAGE' as const,
           })) || [];
 
@@ -422,7 +423,7 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
             id: `clone-${m.id}`,
             url: m.url,
             fileName: m.filename || 'video.mp4',
-            fileSize: 0, // Unknown from clone
+            fileSize: m.fileSize || 0, // Use actual file size from DB
             type: 'VIDEO' as const,
             thumbnailId: m.thumbnailUrl ? `clone-thumb-${m.id}` : undefined,
             thumbnailUrl: m.thumbnailUrl,
@@ -474,9 +475,9 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
           setKeywordsText(campaign.keywords.join(', '));
         }
 
-        // Update content phrases
+        // Update content phrases (use comma separator to match textarea format)
         if (campaign.contentGenerationPhrases && campaign.contentGenerationPhrases.length > 0) {
-          setContentPhrasesText(campaign.contentGenerationPhrases.join('\n'));
+          setContentPhrasesText(campaign.contentGenerationPhrases.join(', '));
         }
 
         setLoadingClone(false);
@@ -486,16 +487,12 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
       }
     };
 
-    // Wait for all accounts to load first (tonic, meta, and tiktok)
-    // This ensures the cloned platform accounts can be properly matched
-    const hasTonicAccounts = tonicAccounts.length > 0;
-    const hasMetaAccounts = metaAccounts.length > 0;
-    const hasTiktokAccounts = tiktokAccounts.length > 0;
-
-    if (hasTonicAccounts && hasMetaAccounts && hasTiktokAccounts) {
+    // Wait for accounts to finish loading (not necessarily have items)
+    // This ensures we don't try to clone before account data is available
+    if (accountsLoaded) {
       loadCampaignToClone();
     }
-  }, [cloneFromId, tonicAccounts, metaAccounts, tiktokAccounts]);
+  }, [cloneFromId, accountsLoaded]);
 
   const loadOffers = async () => {
     try {
@@ -532,6 +529,8 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
       }
     } catch (err: any) {
       console.error('Error loading accounts:', err);
+    } finally {
+      setAccountsLoaded(true); // Mark accounts as loaded even if empty
     }
   };
 
