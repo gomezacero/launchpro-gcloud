@@ -799,6 +799,117 @@ class EmailService {
   }
 
   /**
+   * Send email notification when DesignFlow task is completed
+   */
+  async sendDesignComplete(campaign: any, deliveryLink?: string): Promise<void> {
+    const client = this.getClient();
+    if (!client) return;
+
+    const emails = await this.getNotificationEmails();
+    if (emails.length === 0) {
+      logger.info('email', 'No notification emails configured. Skipping design complete email.');
+      return;
+    }
+
+    const appUrl = this.getAppUrl();
+
+    try {
+      await client.emails.send({
+        from: this.getFromEmail(),
+        to: emails,
+        subject: `🎨 Diseño completado para "${campaign.name}"`,
+        html: `
+          <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 650px; margin: 0 auto; background: #ffffff;">
+            <!-- Header -->
+            <div style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
+              <h1 style="color: white; margin: 0; font-size: 24px;">🎨 Diseño Completado</h1>
+              <p style="color: rgba(255,255,255,0.9); margin: 10px 0 0 0; font-size: 18px;">${campaign.name}</p>
+            </div>
+
+            <!-- Content -->
+            <div style="padding: 25px; background: #f8fafc;">
+
+              <!-- Success Message -->
+              <div style="background: #f5f3ff; border-radius: 8px; padding: 20px; margin-bottom: 20px; border: 1px solid #c4b5fd; text-align: center;">
+                <span style="font-size: 48px;">✅</span>
+                <h2 style="color: #5b21b6; margin: 15px 0 10px 0;">¡El equipo de diseño ha completado la tarea!</h2>
+                <p style="color: #6d28d9; margin: 0; font-size: 14px;">
+                  La campaña está lista para continuar con la configuración de plataformas y lanzamiento.
+                </p>
+              </div>
+
+              <!-- Campaign Info -->
+              <div style="background: white; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                <h2 style="margin: 0 0 15px 0; color: #1e293b; font-size: 16px; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px;">
+                  📋 Información de la Campaña
+                </h2>
+                <table style="width: 100%; font-size: 14px;">
+                  <tr>
+                    <td style="padding: 8px 0; color: #64748b; width: 130px;">Nombre:</td>
+                    <td style="padding: 8px 0; color: #1e293b; font-weight: 500;">${campaign.name}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 8px 0; color: #64748b;">Oferta:</td>
+                    <td style="padding: 8px 0; color: #1e293b;">${campaign.offer?.name || 'N/A'}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 8px 0; color: #64748b;">País:</td>
+                    <td style="padding: 8px 0; color: #1e293b;">${campaign.country || 'N/A'}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 8px 0; color: #64748b;">Idioma:</td>
+                    <td style="padding: 8px 0; color: #1e293b;">${this.getLanguageName(campaign.language)}</td>
+                  </tr>
+                </table>
+              </div>
+
+              ${deliveryLink ? `
+              <!-- Delivery Link -->
+              <div style="background: #ecfdf5; border-radius: 8px; padding: 20px; margin-bottom: 20px; border: 1px solid #a7f3d0;">
+                <h2 style="margin: 0 0 10px 0; color: #065f46; font-size: 14px;">
+                  📦 Link de Entrega
+                </h2>
+                <a href="${deliveryLink}" style="color: #059669; word-break: break-all; font-size: 14px;">${deliveryLink}</a>
+              </div>
+              ` : ''}
+
+              <!-- Next Steps -->
+              <div style="background: #fef3c7; border-radius: 8px; padding: 20px; margin-bottom: 20px; border: 1px solid #fcd34d;">
+                <h2 style="margin: 0 0 10px 0; color: #92400e; font-size: 14px;">
+                  ⚡ Próximos Pasos
+                </h2>
+                <ul style="color: #78350f; font-size: 13px; margin: 0; padding-left: 20px; line-height: 1.8;">
+                  <li>Revisa los activos de diseño entregados</li>
+                  <li>Configura las plataformas (Meta/TikTok) en el editor de campaña</li>
+                  <li>Sube los creativos y configura los anuncios</li>
+                  <li>Lanza la campaña cuando esté lista</li>
+                </ul>
+              </div>
+
+              <!-- CTA Button -->
+              <div style="text-align: center; margin-top: 25px;">
+                <a href="${appUrl}/campaigns/${campaign.id}/edit"
+                   style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; display: inline-block; font-weight: 600; font-size: 15px; box-shadow: 0 4px 6px rgba(139, 92, 246, 0.3);">
+                  Continuar Edición de Campaña
+                </a>
+              </div>
+            </div>
+
+            <!-- Footer -->
+            <div style="padding: 20px; text-align: center; color: #94a3b8; font-size: 12px; background: #f1f5f9; border-radius: 0 0 8px 8px;">
+              <p style="margin: 0;">LaunchPro - Campaign Management System</p>
+              <p style="margin: 5px 0 0 0;">Este es un email automático, no responder.</p>
+            </div>
+          </div>
+        `,
+      });
+      logger.success('email', `Design complete email sent to ${emails.length} recipient(s)`, { campaignId: campaign.id });
+    } catch (error: any) {
+      logger.error('email', `Failed to send design complete email: ${error.message}`, { campaignId: campaign.id, error });
+    }
+  }
+
+  /**
    * Send test email to verify configuration
    */
   async sendTestEmail(): Promise<{ success: boolean; message: string; recipients?: string[] }> {

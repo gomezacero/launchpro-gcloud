@@ -111,6 +111,7 @@ export interface CreateCampaignParams {
   createdById?: string;
 
   // DesignFlow configuration (used when article is approved by Tonic cron job)
+  needsDesignFlow?: boolean;     // True = wait for DesignFlow, False = launch directly
   designFlowRequester?: string;  // Requester for DesignFlow task (Harry/Jesus/Milher)
   designFlowNotes?: string;      // Additional notes for design team
 }
@@ -3420,6 +3421,7 @@ class CampaignOrchestratorService {
         keywords: params.keywords || [],
         contentGenerationPhrases: params.contentGenerationPhrases || [],
         // DesignFlow configuration (used when article is approved by Tonic cron job)
+        needsDesignFlow: params.needsDesignFlow ?? false,
         designFlowRequester: params.designFlowRequester || 'Harry',
         designFlowNotes: params.designFlowNotes,
         platforms: {

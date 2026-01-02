@@ -143,6 +143,7 @@ export async function POST(request: NextRequest) {
       selectedHeadlineId: body.selectedHeadlineId || null,
       createdById: user!.id, // Set owner to current user
       // DesignFlow configuration (used when article is approved by Tonic cron job)
+      needsDesignFlow: body.needsDesignFlow ?? false, // Persist to database for cron job decision
       designFlowRequester: body.designFlowRequester || 'Harry',
       designFlowNotes: body.designFlowNotes,
       platforms: body.platforms.map((p: any) => {

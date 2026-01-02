@@ -170,6 +170,7 @@ model Campaign {
   tonicDirectLink       String?            // Preview URL for RSOC article
 
   // DesignFlow configuration (set in wizard, used when article is approved)
+  needsDesignFlow       Boolean  @default(false) // True = wait for DesignFlow, False = launch directly
   designFlowRequester   String?            // Requester for DesignFlow task (Harry/Jesus/Milher)
   designFlowNotes       String?            // Additional notes for design team
 

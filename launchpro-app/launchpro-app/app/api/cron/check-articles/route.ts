@@ -130,70 +130,99 @@ export async function GET(request: NextRequest) {
               logger.info('tonic', `🔗 [CRON] Got links - tracking: ${trackingLink}, direct: ${directLink}`);
             }
 
-            // 3. Prepare reference links for DesignFlow
-            const referenceLinks: string[] = [];
-            if (trackingLink) {
-              // Add https:// if not present
-              const fullTrackingLink = trackingLink.startsWith('http')
-                ? trackingLink
-                : `https://${trackingLink}`;
-              referenceLinks.push(fullTrackingLink);
-            }
-            if (directLink) {
-              referenceLinks.push(directLink);
-            }
+            // 3. Check if campaign needs DesignFlow or should launch directly
+            if (campaign.needsDesignFlow) {
+              // DESIGNFLOW PATH: Create task and wait for design
+              logger.info('system', `🎨 [CRON] Campaign "${campaign.name}" needs DesignFlow, creating task...`);
 
-            // 4. Create DesignFlow task automatically
-            logger.info('system', `🎨 [CRON] Creating DesignFlow task for "${campaign.name}"...`);
+              // Prepare reference links for DesignFlow
+              const referenceLinks: string[] = [];
+              if (trackingLink) {
+                const fullTrackingLink = trackingLink.startsWith('http')
+                  ? trackingLink
+                  : `https://${trackingLink}`;
+                referenceLinks.push(fullTrackingLink);
+              }
+              if (directLink) {
+                referenceLinks.push(directLink);
+              }
 
-            const designFlowTask = await designflowService.createTask({
-              campaignName: campaign.name,
-              campaignId: campaign.id,
-              offerId: campaign.offerId,
-              offerName: campaign.offer?.name,
-              country: campaign.country,
-              language: campaign.language,
-              platforms: campaign.platforms.map(p => p.platform),
-              copyMaster: campaign.copyMaster || undefined,
-              requester: campaign.designFlowRequester || 'Harry',
-              priority: 'Normal',
-              referenceLinks,
-              additionalNotes: campaign.designFlowNotes || undefined,
-            });
-
-            logger.success('system', `✅ [CRON] DesignFlow task created: ${designFlowTask.id}`);
-
-            // 5. Save DesignFlowTask record in database
-            await prisma.designFlowTask.create({
-              data: {
+              // Create DesignFlow task
+              const designFlowTask = await designflowService.createTask({
+                campaignName: campaign.name,
                 campaignId: campaign.id,
-                designflowTaskId: designFlowTask.id,
-                status: designFlowTask.status,
-                title: designFlowTask.title,
+                offerId: campaign.offerId,
+                offerName: campaign.offer?.name,
+                country: campaign.country,
+                language: campaign.language,
+                platforms: campaign.platforms.map(p => p.platform),
+                copyMaster: campaign.copyMaster || undefined,
                 requester: campaign.designFlowRequester || 'Harry',
-              },
-            });
+                priority: 'Normal',
+                referenceLinks,
+                additionalNotes: campaign.designFlowNotes || undefined,
+              });
 
-            // 6. Update campaign with all data and change status to AWAITING_DESIGN
-            await prisma.campaign.update({
-              where: { id: campaign.id },
-              data: {
-                status: CampaignStatus.AWAITING_DESIGN,
-                tonicCampaignId: String(tonicCampaignId),
-                tonicArticleId: articleStatus.headline_id,
-                tonicTrackingLink: trackingLink,
-                tonicDirectLink: directLink,
-              },
-            });
+              logger.success('system', `✅ [CRON] DesignFlow task created: ${designFlowTask.id}`);
 
-            logger.success('system', `🚀 [CRON] Campaign "${campaign.name}" fully processed: Article approved → Tonic campaign created → DesignFlow task created → Status: AWAITING_DESIGN`);
+              // Save DesignFlowTask record in database
+              await prisma.designFlowTask.create({
+                data: {
+                  campaignId: campaign.id,
+                  designflowTaskId: designFlowTask.id,
+                  status: designFlowTask.status,
+                  title: designFlowTask.title,
+                  requester: campaign.designFlowRequester || 'Harry',
+                },
+              });
 
-            results.push({
-              campaignId: campaign.id,
-              campaignName: campaign.name,
-              status: 'approved',
-              action: `Article approved, Tonic campaign created (${tonicCampaignId}), DesignFlow task created (${designFlowTask.id}), status: AWAITING_DESIGN`,
-            });
+              // Update campaign with Tonic data and set status to AWAITING_DESIGN
+              await prisma.campaign.update({
+                where: { id: campaign.id },
+                data: {
+                  status: CampaignStatus.AWAITING_DESIGN,
+                  tonicCampaignId: String(tonicCampaignId),
+                  tonicArticleId: articleStatus.headline_id,
+                  tonicTrackingLink: trackingLink,
+                  tonicDirectLink: directLink,
+                },
+              });
+
+              logger.success('system', `🚀 [CRON] Campaign "${campaign.name}" → DesignFlow path: Article approved → Tonic campaign → DesignFlow task → AWAITING_DESIGN`);
+
+              results.push({
+                campaignId: campaign.id,
+                campaignName: campaign.name,
+                status: 'approved',
+                action: `Article approved, Tonic campaign created (${tonicCampaignId}), DesignFlow task created (${designFlowTask.id}), status: AWAITING_DESIGN`,
+              });
+
+            } else {
+              // DIRECT LAUNCH PATH: Skip DesignFlow, proceed to platform launch
+              logger.info('system', `🚀 [CRON] Campaign "${campaign.name}" does NOT need DesignFlow, proceeding to launch...`);
+
+              // Update campaign with Tonic data and set status to ARTICLE_APPROVED
+              // This allows process-campaigns cron to pick it up and launch
+              await prisma.campaign.update({
+                where: { id: campaign.id },
+                data: {
+                  status: CampaignStatus.ARTICLE_APPROVED,
+                  tonicCampaignId: String(tonicCampaignId),
+                  tonicArticleId: articleStatus.headline_id,
+                  tonicTrackingLink: trackingLink,
+                  tonicDirectLink: directLink,
+                },
+              });
+
+              logger.success('system', `✅ [CRON] Campaign "${campaign.name}" → Direct launch path: Article approved → Tonic campaign → ARTICLE_APPROVED (ready for process-campaigns)`);
+
+              results.push({
+                campaignId: campaign.id,
+                campaignName: campaign.name,
+                status: 'approved',
+                action: `Article approved, Tonic campaign created (${tonicCampaignId}), status: ARTICLE_APPROVED (will launch via process-campaigns)`,
+              });
+            }
 
           } catch (processingError: unknown) {
             // If processing fails after approval, save partial progress

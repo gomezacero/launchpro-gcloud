@@ -851,6 +851,7 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
         contentGenerationPhrases: formData.contentGenerationPhrases.length > 0 ? formData.contentGenerationPhrases : undefined,
         skipPlatformLaunch: true, // Only save as draft, don't launch
         // DesignFlow configuration (used when article is approved by Tonic)
+        needsDesignFlow: formData.needsDesignFlow, // Persist to database for cron job
         designFlowRequester: formData.designFlowRequester,
         designFlowNotes: formData.designFlowNotes || undefined,
         // Platforms are optional in Step 1 (DesignFlow flow) - will be configured later

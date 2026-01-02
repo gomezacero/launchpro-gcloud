@@ -9,6 +9,10 @@
       "schedule": "* * * * *"
     },
     {
+      "path": "/api/cron/sync-designflow",
+      "schedule": "*/5 * * * *"
+    },
+    {
       "path": "/api/cron/evaluate-rules",
       "schedule": "*/15 * * * *"
     },
@@ -46,6 +50,9 @@
     },
     "app/api/cron/stop-loss/route.ts": {
       "maxDuration": 120
+    },
+    "app/api/cron/sync-designflow/route.ts": {
+      "maxDuration": 60
     },
     "app/api/dashboard/metrics/route.ts": {
       "maxDuration": 60
