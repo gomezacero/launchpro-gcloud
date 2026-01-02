@@ -612,7 +612,7 @@ export default function CampaignDetailPage() {
                     {/* Campaign ID */}
                     <div className="bg-white rounded-lg p-3 border border-gray-100">
                       <p className="text-xs text-gray-500 font-medium uppercase tracking-wide mb-1">Campaign ID</p>
-                      <p className="font-mono text-xs text-gray-800 truncate" title={isMeta ? platform.metaCampaignId : platform.tiktokCampaignId}>
+                      <p className="font-mono text-xs text-gray-800 truncate" title={(isMeta ? platform.metaCampaignId : platform.tiktokCampaignId) || undefined}>
                         {(isMeta ? platform.metaCampaignId : platform.tiktokCampaignId) || <span className="text-gray-400">Not created</span>}
                       </p>
                     </div>
@@ -622,7 +622,7 @@ export default function CampaignDetailPage() {
                       <p className="text-xs text-gray-500 font-medium uppercase tracking-wide mb-1">
                         {isMeta ? 'Ad Set ID' : 'Ad Group ID'}
                       </p>
-                      <p className="font-mono text-xs text-gray-800 truncate" title={isMeta ? platform.metaAdSetId : platform.tiktokAdGroupId}>
+                      <p className="font-mono text-xs text-gray-800 truncate" title={(isMeta ? platform.metaAdSetId : platform.tiktokAdGroupId) || undefined}>
                         {(isMeta ? platform.metaAdSetId : platform.tiktokAdGroupId) || <span className="text-gray-400">Not created</span>}
                       </p>
                     </div>
@@ -630,7 +630,7 @@ export default function CampaignDetailPage() {
                     {/* Ad ID */}
                     <div className="bg-white rounded-lg p-3 border border-gray-100">
                       <p className="text-xs text-gray-500 font-medium uppercase tracking-wide mb-1">Ad ID</p>
-                      <p className="font-mono text-xs text-gray-800 truncate" title={isMeta ? platform.metaAdId : platform.tiktokAdId}>
+                      <p className="font-mono text-xs text-gray-800 truncate" title={(isMeta ? platform.metaAdId : platform.tiktokAdId) || undefined}>
                         {(isMeta ? platform.metaAdId : platform.tiktokAdId) || <span className="text-gray-400">Not created</span>}
                       </p>
                     </div>
