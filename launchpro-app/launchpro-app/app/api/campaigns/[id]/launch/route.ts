@@ -35,7 +35,21 @@ export async function POST(
       );
     }
 
-    // Check if already launching or active
+    // Check if campaign is in a launchable state
+    if (campaign.status === CampaignStatus.DRAFT) {
+      return NextResponse.json(
+        { success: false, error: 'Campaign is in DRAFT state. Please complete the campaign configuration first.' },
+        { status: 400 }
+      );
+    }
+
+    if (campaign.status === CampaignStatus.AWAITING_DESIGN) {
+      return NextResponse.json(
+        { success: false, error: 'Campaign is awaiting design from DesignFlow. Please wait until the design is complete.' },
+        { status: 400 }
+      );
+    }
+
     if (campaign.status === CampaignStatus.LAUNCHING) {
       return NextResponse.json(
         { success: false, error: 'Campaign is already being launched' },

@@ -41,6 +41,7 @@ interface Campaign {
 
 const statusColors: Record<string, string> = {
   DRAFT: 'bg-gray-100 text-gray-800',
+  AWAITING_DESIGN: 'bg-purple-100 text-purple-800',
   PENDING_ARTICLE: 'bg-amber-100 text-amber-800',
   ARTICLE_APPROVED: 'bg-cyan-100 text-cyan-800',
   GENERATING_AI: 'bg-purple-100 text-purple-800',
@@ -54,6 +55,7 @@ const statusColors: Record<string, string> = {
 
 const statusIcons: Record<string, string> = {
   DRAFT: '📝',
+  AWAITING_DESIGN: '🎨',
   PENDING_ARTICLE: '⏳',
   ARTICLE_APPROVED: '✓',
   GENERATING_AI: '🤖',
@@ -148,6 +150,7 @@ export default function CampaignsPage() {
             <div className="flex flex-wrap gap-2">
               {[
                 'all',
+                'AWAITING_DESIGN',
                 'PENDING_ARTICLE',
                 'ARTICLE_APPROVED',
                 'GENERATING_AI',

@@ -410,19 +410,34 @@ export default function CampaignDetailPage() {
               </div>
             </div>
 
-            {campaign.designFlowTask.status === 'Done' && campaign.designFlowTask.deliveryLink && (
+            {campaign.designFlowTask.status === 'Done' && (
               <div className="bg-green-100 border border-green-300 rounded-lg p-4">
                 <p className="text-green-800 font-medium mb-2">
-                  ✅ Diseño completado
+                  🎉 ¡Diseño completado!
                 </p>
-                <a
-                  href={campaign.designFlowTask.deliveryLink}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-green-700 hover:text-green-900 underline text-sm"
-                >
-                  Ver entregables →
-                </a>
+                <p className="text-green-700 text-sm mb-4">
+                  El equipo de diseño ha terminado. Puedes continuar con la edición de tu campaña para agregar los assets y lanzar.
+                </p>
+                <div className="flex flex-wrap gap-3">
+                  {campaign.designFlowTask.deliveryLink && (
+                    <a
+                      href={campaign.designFlowTask.deliveryLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="bg-white text-green-700 hover:bg-green-50 border border-green-400 px-4 py-2 rounded-lg font-medium text-sm flex items-center gap-2 transition-colors"
+                    >
+                      <span>📎</span>
+                      Ver Entregables
+                    </a>
+                  )}
+                  <Link
+                    href={`/campaigns/${campaignId}/edit`}
+                    className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-medium text-sm flex items-center gap-2 transition-colors"
+                  >
+                    <span>✏️</span>
+                    Continuar Edición
+                  </Link>
+                </div>
               </div>
             )}
 

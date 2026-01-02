@@ -81,9 +81,10 @@ interface UploadedFile {
 
 interface CampaignWizardProps {
   cloneFromId?: string;
+  editCampaignId?: string;  // For editing an existing campaign (post-design flow)
 }
 
-export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
+export default function CampaignWizard({ cloneFromId, editCampaignId }: CampaignWizardProps) {
   const router = useRouter();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
@@ -215,6 +216,11 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
   const [sendingToDesign, setSendingToDesign] = useState(false);
   const [designFlowSuccess, setDesignFlowSuccess] = useState(false);
 
+  // Edit mode states (for post-design editing)
+  const isEditMode = !!editCampaignId;
+  const [loadingEdit, setLoadingEdit] = useState(!!editCampaignId);
+  const [editCampaignData, setEditCampaignData] = useState<any>(null);
+
   // Constants
   const MAX_KEYWORDS = 10;
 
@@ -282,6 +288,115 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
     loadAdAccounts();
     loadDesignFlowRequesters();
   }, []);
+
+  // Load campaign data for edit mode (go directly to step 2)
+  useEffect(() => {
+    if (!editCampaignId) return;
+
+    const loadCampaignForEdit = async () => {
+      try {
+        setLoadingEdit(true);
+        const res = await fetch(`/api/campaigns/${editCampaignId}`);
+        const data = await res.json();
+
+        if (!data.success) {
+          setError(data.error || 'Failed to load campaign for editing');
+          setLoadingEdit(false);
+          return;
+        }
+
+        const campaign = data.data;
+        setEditCampaignData(campaign);
+
+        // Populate form data with existing campaign data
+        setFormData({
+          name: campaign.name,
+          campaignType: campaign.campaignType || 'CBO',
+          tonicAccountId: campaign.tonicAccountId || '',
+          offerId: campaign.offer?.tonicId || campaign.offerId || '',
+          country: campaign.country,
+          language: campaign.language,
+          copyMaster: campaign.copyMaster || '',
+          communicationAngle: campaign.communicationAngle || '',
+          keywords: campaign.keywords || [],
+          contentGenerationPhrases: campaign.contentGenerationPhrases || [],
+          platforms: campaign.platforms.map((p: any) => ({
+            platform: p.platform,
+            accountId: p.accountId || 'auto',
+            performanceGoal: p.performanceGoal || 'OUTCOME_LEADS',
+            budget: String(p.budget || 50),
+            startDateTime: p.startDate
+              ? new Date(p.startDate).toISOString().slice(0, 16)
+              : new Date().toISOString().slice(0, 16),
+            generateWithAI: false, // Disable AI generation in edit mode
+            uploadedImages: [],
+            uploadedVideos: [],
+          })),
+          rsocMode: 'existing',
+          selectedHeadlineId: null,
+        });
+
+        // Set keywords text
+        if (campaign.keywords?.length > 0) {
+          setKeywordsText(campaign.keywords.join(', '));
+        }
+
+        // Load existing media into platform configs
+        if (campaign.media?.length > 0) {
+          const updatedPlatforms = campaign.platforms.map((p: any) => {
+            const platformMedia = campaign.media.filter((m: any) =>
+              m.platformAssignment === p.platform || !m.platformAssignment
+            );
+            return {
+              platform: p.platform,
+              accountId: p.accountId || 'auto',
+              performanceGoal: p.performanceGoal || 'OUTCOME_LEADS',
+              budget: String(p.budget || 50),
+              startDateTime: p.startDate
+                ? new Date(p.startDate).toISOString().slice(0, 16)
+                : new Date().toISOString().slice(0, 16),
+              generateWithAI: false,
+              uploadedImages: platformMedia
+                .filter((m: any) => m.type === 'IMAGE')
+                .map((m: any) => ({
+                  id: m.id,
+                  url: m.url,
+                  fileName: m.fileName,
+                  fileSize: 0,
+                  type: 'IMAGE' as const,
+                  isExisting: true,
+                })),
+              uploadedVideos: platformMedia
+                .filter((m: any) => m.type === 'VIDEO')
+                .map((m: any) => ({
+                  id: m.id,
+                  url: m.url,
+                  fileName: m.fileName,
+                  fileSize: 0,
+                  type: 'VIDEO' as const,
+                  isExisting: true,
+                })),
+            };
+          });
+
+          setFormData(prev => ({
+            ...prev,
+            platforms: updatedPlatforms,
+          }));
+        }
+
+        // Go directly to step 2 (Campaign Settings) in edit mode
+        setStep(2);
+        setLoadingEdit(false);
+      } catch (err: any) {
+        console.error('Error loading campaign for edit:', err);
+        setError(err.message);
+        setLoadingEdit(false);
+      }
+    };
+
+    loadCampaignForEdit();
+  }, [editCampaignId]);
 
   // Load countries when offer is selected
   useEffect(() => {
@@ -1498,7 +1613,171 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
     ));
   };
 
+  // Handle submit for edit mode (post-design) - simplified flow
+  const handleEditSubmit = async () => {
+    if (!editCampaignId) return;
+
+    // Validate budgets
+    for (const platform of formData.platforms) {
+      const budget = parseFloat(platform.budget);
+      const minBudget = platform.platform === 'TIKTOK' ? 50 : 5;
+      if (isNaN(budget) || budget < minBudget) {
+        setError(`${platform.platform} requires a minimum budget of $${minBudget} USD`);
+        return;
+      }
+    }
+
+    setLoading(true);
+    setError(null);
+    setIsLaunching(true);
+    setLaunchLogs([]);
+    setLaunchComplete(false);
+    setLaunchSuccess(false);
+
+    try {
+      // STEP 1: Update campaign with new budgets/dates
+      const logId1 = addLog('Actualizando campaña...');
+
+      const platformUpdates = formData.platforms.map(p => ({
+        platform: p.platform,
+        budget: parseFloat(p.budget),
+        startDate: p.startDateTime,
+      }));
+
+      const updateRes = await fetch(`/api/campaigns/${editCampaignId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          platforms: platformUpdates,
+          launchAfterSave: true,
+        }),
+      });
+
+      const updateData = await updateRes.json();
+
+      if (!updateData.success) {
+        updateLogStatus(logId1, 'error');
+        addLog(`Error: ${updateData.error}`, 'error');
+        setErrorDetails({
+          message: updateData.error,
+          details: JSON.stringify(updateData, null, 2),
+          suggestion: 'Revisa los logs del servidor para más información.',
+        });
+        setLaunchComplete(true);
+        setLaunchSuccess(false);
+        return;
+      }
+
+      updateLogStatus(logId1, 'success');
+      setLaunchedCampaignId(editCampaignId);
+
+      // STEP 2: Upload new media files (if any)
+      const fileIds = getAllTempFileIds();
+      if (fileIds.length > 0) {
+        addLog(`Subiendo ${fileIds.length} archivos nuevos...`, 'in_progress');
+
+        for (const fileId of fileIds) {
+          const file = getTempFile(fileId);
+          if (!file || fileId.startsWith('thumb-')) continue;
+
+          const isVideo = file.type.startsWith('video/');
+          const mediaType = isVideo ? 'VIDEO' : 'IMAGE';
+          const platform = formData.platforms.find(p =>
+            (p.uploadedImages?.some(img => img.id === fileId)) ||
+            (p.uploadedVideos?.some(vid => vid.id === fileId))
+          );
+
+          try {
+            // Get signed URL
+            const urlRes = await fetch(`/api/campaigns/${editCampaignId}/media/upload-url`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                fileName: file.name,
+                fileType: file.type,
+                mediaType,
+                platform: platform?.platform || null,
+              }),
+            });
+            const urlData = await urlRes.json();
+            if (!urlData.success) throw new Error(urlData.error);
+
+            // Upload to GCS
+            const uploadRes = await fetch(urlData.data.uploadUrl, {
+              method: 'PUT',
+              headers: { 'Content-Type': file.type },
+              body: file,
+            });
+            if (!uploadRes.ok) throw new Error('GCS upload failed');
+
+            // Confirm upload
+            await fetch(`/api/campaigns/${editCampaignId}/media/confirm`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                gcsPath: urlData.data.gcsPath,
+                fileName: file.name,
+                fileSize: file.size,
+                fileType: file.type,
+                mediaType,
+                platform: platform?.platform || null,
+              }),
+            });
+          } catch (err: any) {
+            console.error(`Error uploading ${file.name}:`, err);
+          }
+        }
+        addLog('Archivos subidos', 'success');
+      }
+
+      // STEP 3: Launch the campaign
+      addLog('Lanzando campaña...', 'in_progress');
+
+      const launchRes = await fetch(`/api/campaigns/${editCampaignId}/launch`, {
+        method: 'POST',
+      });
+
+      const launchData = await launchRes.json();
+
+      if (!launchData.success) {
+        addLog(`Error en lanzamiento: ${launchData.error}`, 'error');
+        setErrorDetails({
+          message: launchData.error,
+          details: JSON.stringify(launchData, null, 2),
+          suggestion: 'Verifica la configuración de la campaña e intenta nuevamente.',
+        });
+        setLaunchComplete(true);
+        setLaunchSuccess(false);
+        return;
+      }
+
+      addLog('Campaña lanzada exitosamente', 'success');
+      setLaunchComplete(true);
+      setLaunchSuccess(true);
+
+      // Clear temp files
+      clearTempFilesNamespace();
+
+    } catch (err: any) {
+      console.error('Error in edit submit:', err);
+      addLog(`Error: ${err.message}`, 'error');
+      setErrorDetails({
+        message: err.message,
+        suggestion: 'Ocurrió un error inesperado. Intenta nuevamente.',
+      });
+      setLaunchComplete(true);
+      setLaunchSuccess(false);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSubmit = async () => {
+    // If in edit mode, use the simplified edit flow
+    if (isEditMode) {
+      return handleEditSubmit();
+    }
+
     // Validate budgets before submitting
     for (const platform of formData.platforms) {
       const budget = parseFloat(platform.budget);
@@ -1820,20 +2099,45 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
     );
   }
 
+  // Show loading screen while loading campaign data for editing
+  if (loadingEdit) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-purple-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Cargando campaña para edición...</p>
+          <p className="mt-2 text-sm text-gray-500">Preparando configuración post-diseño</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold text-gray-900 mb-2">
-            {cloneFromId ? '🔄 Reconfigurar Campaña' : '🚀 Launch New Campaign'}
+            {isEditMode
+              ? '✏️ Continuar Campaña'
+              : cloneFromId
+                ? '🔄 Reconfigurar Campaña'
+                : '🚀 Launch New Campaign'}
           </h1>
           <p className="text-gray-600">
-            {cloneFromId
-              ? 'Los datos de la campaña anterior han sido precargados. Modifica lo necesario y vuelve a lanzar.'
-              : 'Create campaigns across Tonic, Meta, and TikTok with AI-powered content'
+            {isEditMode
+              ? 'El diseño está listo. Sube los assets y ajusta la configuración para lanzar.'
+              : cloneFromId
+                ? 'Los datos de la campaña anterior han sido precargados. Modifica lo necesario y vuelve a lanzar.'
+                : 'Create campaigns across Tonic, Meta, and TikTok with AI-powered content'
             }
           </p>
+          {isEditMode && editCampaignData && (
+            <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-purple-100 text-purple-800 rounded-full text-sm font-medium">
+              <span>🎨</span>
+              <span>Editando: {editCampaignData.name}</span>
+            </div>
+          )}
         </div>
 
         {/* Progress Steps */}
@@ -3883,10 +4187,10 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
                         d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                       ></path>
                     </svg>
-                    Launching...
+                    {isEditMode ? 'Guardando y Lanzando...' : 'Launching...'}
                   </>
                 ) : (
-                  <>🚀 Launch Campaign</>
+                  <>{isEditMode ? '💾 Guardar y Lanzar' : '🚀 Launch Campaign'}</>
                 )}
               </button>
             )}
