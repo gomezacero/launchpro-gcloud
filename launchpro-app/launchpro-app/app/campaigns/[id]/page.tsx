@@ -103,6 +103,16 @@ interface Campaign {
     fileName: string;
     generatedByAI: boolean;
   }[];
+  designFlowTask?: {
+    id: string;
+    designflowTaskId: string;
+    status: string;
+    title: string;
+    requester: string;
+    sentAt: string;
+    completedAt: string | null;
+    deliveryLink: string | null;
+  };
 }
 
 export default function CampaignDetailPage() {
@@ -198,7 +208,9 @@ export default function CampaignDetailPage() {
         ? 'bg-red-100 text-red-800'
         : campaign.status === 'DRAFT'
           ? 'bg-gray-100 text-gray-800'
-          : 'bg-yellow-100 text-yellow-800';
+          : campaign.status === 'AWAITING_DESIGN'
+            ? 'bg-purple-100 text-purple-800'
+            : 'bg-yellow-100 text-yellow-800';
 
   return (
     <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
@@ -349,6 +361,78 @@ export default function CampaignDetailPage() {
                 </p>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* DesignFlow Status - Shown when campaign is awaiting design */}
+        {(campaign.status === 'AWAITING_DESIGN' || campaign.designFlowTask) && campaign.designFlowTask && (
+          <div className="bg-purple-50 border border-purple-200 rounded-lg p-6 mb-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-purple-800 flex items-center gap-2">
+                <span className="text-2xl">🎨</span>
+                Estado de DesignFlow
+              </h2>
+              <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                campaign.designFlowTask.status === 'Done'
+                  ? 'bg-green-100 text-green-800'
+                  : campaign.designFlowTask.status === 'In Progress'
+                    ? 'bg-blue-100 text-blue-800'
+                    : campaign.designFlowTask.status === 'Review'
+                      ? 'bg-yellow-100 text-yellow-800'
+                      : 'bg-purple-100 text-purple-800'
+              }`}>
+                {campaign.designFlowTask.status}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+              <div>
+                <p className="text-sm text-purple-600 font-medium">Tarea</p>
+                <p className="font-semibold text-purple-900">{campaign.designFlowTask.title}</p>
+              </div>
+              <div>
+                <p className="text-sm text-purple-600 font-medium">Solicitante</p>
+                <p className="font-semibold text-purple-900">{campaign.designFlowTask.requester}</p>
+              </div>
+              <div>
+                <p className="text-sm text-purple-600 font-medium">Enviado</p>
+                <p className="font-semibold text-purple-900">
+                  {new Date(campaign.designFlowTask.sentAt).toLocaleDateString()}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-purple-600 font-medium">Completado</p>
+                <p className="font-semibold text-purple-900">
+                  {campaign.designFlowTask.completedAt
+                    ? new Date(campaign.designFlowTask.completedAt).toLocaleDateString()
+                    : 'Pendiente'}
+                </p>
+              </div>
+            </div>
+
+            {campaign.designFlowTask.status === 'Done' && campaign.designFlowTask.deliveryLink && (
+              <div className="bg-green-100 border border-green-300 rounded-lg p-4">
+                <p className="text-green-800 font-medium mb-2">
+                  ✅ Diseño completado
+                </p>
+                <a
+                  href={campaign.designFlowTask.deliveryLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-green-700 hover:text-green-900 underline text-sm"
+                >
+                  Ver entregables →
+                </a>
+              </div>
+            )}
+
+            {campaign.designFlowTask.status !== 'Done' && (
+              <div className="bg-purple-100 border border-purple-300 rounded-lg p-4">
+                <p className="text-purple-800 text-sm">
+                  El equipo de diseño está trabajando en esta campaña. Recibirás una notificación cuando los assets estén listos.
+                </p>
+              </div>
+            )}
           </div>
         )}
 

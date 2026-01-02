@@ -21,6 +21,7 @@ enum Platform {
 
 enum CampaignStatus {
   DRAFT              // Initial creation, not yet launched
+  AWAITING_DESIGN    // Sent to DesignFlow, waiting for design team
   PENDING_ARTICLE    // Waiting for Tonic article approval (async)
   ARTICLE_APPROVED   // Article approved, ready to continue processing
   GENERATING_AI      // AI is generating content
@@ -173,6 +174,9 @@ model Campaign {
   // Dashboard relations
   streak              CampaignStreak?
   stopLossViolations  StopLossViolation[]
+
+  // DesignFlow integration
+  designFlowTask      DesignFlowTask?
 
   // Metadata
   createdAt         DateTime           @default(now())
@@ -672,4 +676,34 @@ model WeeklySnapshot {
   @@index([managerId])
   @@index([year, weekNumber])
   @@index([weekStart])
+}
+
+// ============================================
+// DESIGNFLOW INTEGRATION
+// ============================================
+
+// Tracks tasks sent to DesignFlow for design work
+model DesignFlowTask {
+  id                String    @id @default(cuid())
+
+  // Link to LaunchPro campaign
+  campaignId        String    @unique
+  campaign          Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  // DesignFlow task reference
+  designflowTaskId  String    @unique  // ID in DesignFlow's tasks table
+  status            String    // To Do, In Progress, Review, Done
+  title             String
+  requester         String    // Harry, Jesus, Milher
+
+  // Timestamps
+  sentAt            DateTime  @default(now())
+  completedAt       DateTime?
+
+  // Delivery info (populated when design is complete)
+  deliveryLink      String?   // Link to final design assets
+
+  @@index([campaignId])
+  @@index([designflowTaskId])
+  @@index([status])
 }

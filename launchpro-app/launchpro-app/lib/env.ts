@@ -84,6 +84,13 @@ const envSchema = z.object({
   ENABLE_AI_CONTENT_GENERATION: z.string().default('true'),
   ENABLE_IMAGE_GENERATION: z.string().default('true'),
   ENABLE_VIDEO_GENERATION: z.string().default('true'),
+
+  // ============================================================================
+  // DESIGNFLOW INTEGRATION
+  // ============================================================================
+  // Supabase credentials for DesignFlow (design task management)
+  DESIGNFLOW_SUPABASE_URL: z.string().url().optional(),
+  DESIGNFLOW_SUPABASE_ANON_KEY: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

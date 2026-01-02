@@ -60,10 +60,20 @@ export default function SimpleCampaignWizard() {
   // Auto-selected Tonic account based on platforms
   const [selectedTonicAccount, setSelectedTonicAccount] = useState<string>('');
 
+  // DesignFlow integration states
+  const [designFlowRequesters, setDesignFlowRequesters] = useState<string[]>(['Harry', 'Jesus', 'Milher']);
+  const [selectedRequester, setSelectedRequester] = useState<string>('Harry');
+  const [savedCampaignId, setSavedCampaignId] = useState<string | null>(null);
+  const [designFlowTaskId, setDesignFlowTaskId] = useState<string | null>(null);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [sendingToDesign, setSendingToDesign] = useState(false);
+  const [designFlowSuccess, setDesignFlowSuccess] = useState(false);
+
   // Load data on mount
   useEffect(() => {
     loadOffers();
     loadTonicAccounts();
+    loadDesignFlowRequesters();
   }, []);
 
   // Load countries when offer is selected
@@ -135,6 +145,111 @@ export default function SimpleCampaignWizard() {
       }
     } catch (err: any) {
       console.error('Error loading accounts:', err);
+    }
+  };
+
+  const loadDesignFlowRequesters = async () => {
+    try {
+      const res = await fetch('/api/designflow/requesters');
+      const data = await res.json();
+      if (data.success && data.data?.length > 0) {
+        setDesignFlowRequesters(data.data);
+        setSelectedRequester(data.data[0]);
+      }
+    } catch (err: any) {
+      console.error('Error loading DesignFlow requesters:', err);
+      // Keep default values
+    }
+  };
+
+  const handleSaveDraft = async () => {
+    setError(null);
+    setSavingDraft(true);
+
+    try {
+      if (!formData.name || !formData.offerId || !formData.country || formData.platforms.length === 0) {
+        throw new Error('Please fill in all required fields');
+      }
+
+      if (!selectedTonicAccount) {
+        throw new Error('Could not determine Tonic account. Please try again.');
+      }
+
+      const keywordsArray = formData.keywords
+        ? formData.keywords.split(',').map(k => k.trim()).filter(k => k)
+        : [];
+
+      const payload = {
+        name: formData.name,
+        campaignType: 'CBO',
+        tonicAccountId: selectedTonicAccount,
+        offerId: formData.offerId,
+        country: formData.country,
+        language: formData.language,
+        keywords: keywordsArray.length > 0 ? keywordsArray : undefined,
+        skipPlatformLaunch: true, // Only save as draft, don't launch
+        platforms: formData.platforms.map(platform => ({
+          platform,
+          accountId: 'auto',
+          performanceGoal: platform === 'META' ? 'OUTCOME_LEADS' : 'LEAD_GENERATION',
+          budget: parseFloat(formData.budget),
+          startDate: formData.startDate,
+          generateWithAI: true,
+        })),
+      };
+
+      const res = await fetch('/api/campaigns', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to save campaign draft');
+      }
+
+      setSavedCampaignId(data.data.campaignId);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setSavingDraft(false);
+    }
+  };
+
+  const handleSendToDesignFlow = async () => {
+    if (!savedCampaignId) {
+      setError('Please save the campaign as draft first');
+      return;
+    }
+
+    setError(null);
+    setSendingToDesign(true);
+
+    try {
+      const res = await fetch('/api/designflow/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          campaignId: savedCampaignId,
+          requester: selectedRequester,
+          priority: 'Normal',
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to send to DesignFlow');
+      }
+
+      setDesignFlowTaskId(data.data.taskId);
+      setDesignFlowSuccess(true);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setSendingToDesign(false);
     }
   };
 
@@ -542,6 +657,101 @@ export default function SimpleCampaignWizard() {
                 <br />
                 This includes AI content generation and deployment to {formData.platforms.join(' & ')}.
               </p>
+            </div>
+
+            {/* DesignFlow Section */}
+            <div className="bg-purple-50 border border-purple-200 rounded-lg p-6">
+              <h3 className="font-semibold text-purple-900 mb-3 flex items-center">
+                <span className="mr-2">🎨</span> Solicitar Diseño (Opcional)
+              </h3>
+              <p className="text-sm text-purple-800 mb-4">
+                Envía esta campaña a DesignFlow para que el equipo de diseño cree el contenido visual antes de lanzar.
+              </p>
+
+              {designFlowSuccess ? (
+                <div className="bg-green-100 border border-green-300 rounded-lg p-4">
+                  <p className="text-green-800 font-medium flex items-center">
+                    <span className="mr-2">✅</span>
+                    Tarea enviada a DesignFlow exitosamente
+                  </p>
+                  <p className="text-sm text-green-700 mt-1">
+                    El equipo de diseño ha sido notificado. La campaña está en estado "Esperando Diseño".
+                  </p>
+                  <button
+                    onClick={() => router.push(`/campaigns/${savedCampaignId}`)}
+                    className="mt-3 px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700"
+                  >
+                    Ver Campaña
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {/* Requester Selector */}
+                  <div>
+                    <label className="block text-sm font-medium text-purple-900 mb-2">
+                      Requester (Solicitante)
+                    </label>
+                    <select
+                      value={selectedRequester}
+                      onChange={(e) => setSelectedRequester(e.target.value)}
+                      className="w-full px-4 py-2 border border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white"
+                    >
+                      {designFlowRequesters.map((requester) => (
+                        <option key={requester} value={requester}>
+                          {requester}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex space-x-3">
+                    {!savedCampaignId ? (
+                      <button
+                        onClick={handleSaveDraft}
+                        disabled={savingDraft || !formData.name || !formData.offerId || !formData.country || formData.platforms.length === 0}
+                        className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center"
+                      >
+                        {savingDraft ? (
+                          <>
+                            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            Guardando...
+                          </>
+                        ) : (
+                          <>💾 Guardar como Draft</>
+                        )}
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleSendToDesignFlow}
+                        disabled={sendingToDesign}
+                        className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center"
+                      >
+                        {sendingToDesign ? (
+                          <>
+                            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            Enviando...
+                          </>
+                        ) : (
+                          <>🎨 Enviar a DesignFlow</>
+                        )}
+                      </button>
+                    )}
+                  </div>
+
+                  {savedCampaignId && !designFlowTaskId && (
+                    <p className="text-xs text-purple-700">
+                      ✓ Campaña guardada como draft. Ahora puedes enviarla a DesignFlow.
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Navigation */}
