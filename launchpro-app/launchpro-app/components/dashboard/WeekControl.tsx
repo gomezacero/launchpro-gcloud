@@ -86,7 +86,9 @@ export default function WeekControl({ onWeekReset }: WeekControlProps) {
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('es-ES', {
+    // Add 'T12:00:00' to avoid timezone issues when parsing date-only strings
+    const dateStr = dateString.includes('T') ? dateString : dateString + 'T12:00:00';
+    return new Date(dateStr).toLocaleDateString('es-ES', {
       day: 'numeric',
       month: 'short',
       year: 'numeric',

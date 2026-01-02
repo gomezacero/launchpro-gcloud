@@ -32,8 +32,9 @@ export default function VelocityProgress({ velocity }: VelocityProgressProps) {
     : 'bg-gray-400';
 
   // Parse dates for display with safe defaults
-  const weekStart = velocity?.weekStart ? new Date(velocity.weekStart) : new Date();
-  const weekEnd = velocity?.weekEnd ? new Date(velocity.weekEnd) : new Date();
+  // Add 'T12:00:00' to avoid timezone issues when parsing date-only strings
+  const weekStart = velocity?.weekStart ? new Date(velocity.weekStart + 'T12:00:00') : new Date();
+  const weekEnd = velocity?.weekEnd ? new Date(velocity.weekEnd + 'T12:00:00') : new Date();
   const formatDate = (date: Date) => date.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
 
   return (
