@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    logger.info('designflow', `Creating DesignFlow task for campaign: ${campaignId}`);
+    logger.info('api', `[DesignFlow] Creating task for campaign: ${campaignId}`);
 
     // Get campaign details from database
     const campaign = await prisma.campaign.findUnique({
@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
     });
 
     const duration = Date.now() - startTime;
-    logger.success('designflow', `DesignFlow task created: ${designFlowTask.id}`, {
+    logger.success('api', `[DesignFlow] Task created: ${designFlowTask.id}`, {
       campaignId,
       taskId: designFlowTask.id,
       requester,
@@ -123,7 +123,7 @@ export async function POST(request: NextRequest) {
     });
   } catch (error: any) {
     const duration = Date.now() - startTime;
-    logger.error('designflow', `Error creating DesignFlow task: ${error.message}`, {
+    logger.error('api', `[DesignFlow] Error creating task: ${error.message}`, {
       stack: error.stack,
     }, duration);
 
@@ -205,7 +205,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error: any) {
-    logger.error('designflow', `Error getting DesignFlow task: ${error.message}`);
+    logger.error('api', `[DesignFlow] Error getting task: ${error.message}`);
 
     return NextResponse.json(
       {
