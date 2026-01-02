@@ -632,6 +632,7 @@ model StopLossViolation {
   @@index([campaignId])
   @@index([createdAt])
   @@index([acknowledgedAt])
+  @@index([managerId, acknowledgedAt]) // Composite index for dashboard queries
 }
 
 // Weekly performance snapshot for historical tracking

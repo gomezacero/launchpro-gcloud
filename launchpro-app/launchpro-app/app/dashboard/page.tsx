@@ -128,23 +128,36 @@ export default function DashboardPage() {
           ? `/api/dashboard/metrics?managerId=${selectedManagerId}`
           : '/api/dashboard/metrics';
 
-        const response = await fetch(url);
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.error || 'Error al cargar métricas');
-        }
-
-        setMetrics(data.data);
-
-        // Fetch comparison data for SUPERADMIN
+        // OPTIMIZATION: Fetch metrics and comparison IN PARALLEL for SUPERADMIN
         if (isSuperAdmin && !selectedManagerId) {
-          const compResponse = await fetch('/api/dashboard/comparison');
-          const compData = await compResponse.json();
+          const [metricsResponse, compResponse] = await Promise.all([
+            fetch(url),
+            fetch('/api/dashboard/comparison'),
+          ]);
+
+          const [metricsData, compData] = await Promise.all([
+            metricsResponse.json(),
+            compResponse.json(),
+          ]);
+
+          if (!metricsResponse.ok) {
+            throw new Error(metricsData.error || 'Error al cargar métricas');
+          }
+
+          setMetrics(metricsData.data);
           if (compResponse.ok && compData.success) {
             setComparison(compData.data);
           }
         } else {
+          // Regular user or specific manager selected - just fetch metrics
+          const response = await fetch(url);
+          const data = await response.json();
+
+          if (!response.ok) {
+            throw new Error(data.error || 'Error al cargar métricas');
+          }
+
+          setMetrics(data.data);
           setComparison(null);
         }
       } catch (err: any) {

@@ -9,6 +9,47 @@ import { tiktokService } from './tiktok.service';
  * Provides metrics calculations for the manager performance dashboard
  */
 
+// ============================================
+// IN-MEMORY CACHE FOR API RESULTS
+// Reduces duplicate API calls within 5-minute windows
+// ============================================
+interface CacheEntry<T> {
+  data: T;
+  timestamp: number;
+}
+
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const metricsCache = new Map<string, CacheEntry<{ grossRevenue: number; totalSpend: number; netRevenue: number }>>();
+
+function getCacheKey(managerId: string, dateRange: string): string {
+  return `${managerId}:${dateRange}`;
+}
+
+function getFromCache(key: string): { grossRevenue: number; totalSpend: number; netRevenue: number } | null {
+  const entry = metricsCache.get(key);
+  if (entry && Date.now() - entry.timestamp < CACHE_TTL_MS) {
+    return entry.data;
+  }
+  if (entry) {
+    metricsCache.delete(key);
+  }
+  return null;
+}
+
+function setInCache(key: string, data: { grossRevenue: number; totalSpend: number; netRevenue: number }): void {
+  metricsCache.set(key, { data, timestamp: Date.now() });
+}
+
+// Clean up old cache entries periodically
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of metricsCache.entries()) {
+    if (now - entry.timestamp > CACHE_TTL_MS) {
+      metricsCache.delete(key);
+    }
+  }
+}, 60 * 1000); // Check every minute
+
 // Manager Level thresholds (Net Revenue in USD)
 const MANAGER_LEVELS = [
   { name: 'Prospect', min: 0, max: 6999, icon: '🌱', color: 'gray' },
@@ -105,8 +146,11 @@ export interface DashboardMetrics {
 class DashboardService {
   /**
    * Get all dashboard metrics for a manager
+   * OPTIMIZED: Pre-fetches both date ranges in parallel to avoid duplicate API calls
    */
   async getDashboardMetrics(managerId: string): Promise<DashboardMetrics | null> {
+    const startTime = Date.now();
+
     const manager = await prisma.manager.findUnique({
       where: { id: managerId },
       select: { id: true, name: true, email: true },
@@ -117,14 +161,22 @@ class DashboardService {
       return null;
     }
 
-    // Fetch all metrics in parallel
-    const [level, velocity, effectiveness, stopLoss, everGreen] = await Promise.all([
-      this.calculateManagerLevel(managerId),
+    // OPTIMIZATION: Pre-fetch both date ranges in parallel ONCE
+    // This prevents calculateManagerLevel and calculateEffectiveness from making duplicate API calls
+    const [thisMonthMetrics, last30dMetrics, velocity, stopLoss, everGreen] = await Promise.all([
+      this.getManagerAggregatedMetrics(managerId, 'this_month'),
+      this.getManagerAggregatedMetrics(managerId, 'last_30d'),
       this.calculateVelocity(managerId),
-      this.calculateEffectiveness(managerId),
       this.getStopLossViolations(managerId),
       this.getEverGreenCampaigns(managerId),
     ]);
+
+    // Now calculate level and effectiveness using cached data (instant)
+    const level = this.calculateManagerLevelFromMetrics(thisMonthMetrics.netRevenue);
+    const effectiveness = this.calculateEffectivenessFromMetrics(last30dMetrics);
+
+    const duration = Date.now() - startTime;
+    logger.info('dashboard', `Dashboard metrics for manager ${managerId} completed in ${duration}ms`);
 
     return {
       manager,
@@ -133,6 +185,56 @@ class DashboardService {
       effectiveness,
       stopLoss,
       everGreen,
+    };
+  }
+
+  /**
+   * Calculate manager level from pre-fetched metrics (no API calls)
+   */
+  private calculateManagerLevelFromMetrics(monthlyNetRevenue: number): ManagerLevel {
+    // Find current level
+    const currentLevel = MANAGER_LEVELS.find(
+      (l) => monthlyNetRevenue >= l.min && monthlyNetRevenue <= l.max
+    ) || MANAGER_LEVELS[0];
+
+    // Find next level
+    const currentIndex = MANAGER_LEVELS.indexOf(currentLevel);
+    const nextLevelObj = currentIndex < MANAGER_LEVELS.length - 1 ? MANAGER_LEVELS[currentIndex + 1] : null;
+
+    // Calculate progress within current level
+    const levelRange = currentLevel.max - currentLevel.min;
+    const progressInLevel = monthlyNetRevenue - currentLevel.min;
+    const progressPercentage = levelRange === Infinity
+      ? 100
+      : Math.min(100, Math.round((progressInLevel / levelRange) * 100));
+
+    return {
+      current: currentLevel.name,
+      icon: currentLevel.icon,
+      color: currentLevel.color,
+      monthlyNetRevenue: Math.round(monthlyNetRevenue * 100) / 100,
+      nextLevel: nextLevelObj?.name || null,
+      amountToNextLevel: nextLevelObj ? Math.max(0, nextLevelObj.min - monthlyNetRevenue) : 0,
+      progressPercentage,
+    };
+  }
+
+  /**
+   * Calculate effectiveness from pre-fetched metrics (no API calls)
+   */
+  private calculateEffectivenessFromMetrics(metrics: { grossRevenue: number; totalSpend: number; netRevenue: number }): EffectivenessMetrics {
+    const { totalSpend, netRevenue } = metrics;
+
+    // Calculate ROI: ((Gross Revenue - Spend) / Spend) * 100
+    const roi = totalSpend > 0 ? ((netRevenue / totalSpend) * 100) : 0;
+
+    return {
+      roi: Math.round(roi * 100) / 100,
+      goal: ROI_GOAL,
+      isAchieving: roi >= ROI_GOAL,
+      totalNetRevenue: netRevenue,
+      totalSpend: totalSpend,
+      period: 'last_30_days',
     };
   }
 
@@ -146,7 +248,16 @@ class DashboardService {
     dateRange: 'today' | 'last_30d' | 'this_month' = 'this_month'
   ): Promise<{ grossRevenue: number; totalSpend: number; netRevenue: number }> {
     const startTime = Date.now();
-    logger.info('dashboard', `Fetching aggregated metrics for manager ${managerId}, range: ${dateRange}`);
+
+    // Check cache first
+    const cacheKey = getCacheKey(managerId, dateRange);
+    const cached = getFromCache(cacheKey);
+    if (cached) {
+      logger.info('dashboard', `Cache HIT for manager ${managerId}, range: ${dateRange}`);
+      return cached;
+    }
+
+    logger.info('dashboard', `Cache MISS - Fetching aggregated metrics for manager ${managerId}, range: ${dateRange}`);
 
     // Get all ACTIVE campaigns for this manager
     const campaigns = await prisma.campaign.findMany({
@@ -342,11 +453,16 @@ class DashboardService {
 
     logger.info('dashboard', `Manager ${managerId} aggregated metrics completed in ${duration}ms - Gross: $${totalGrossRevenue.toFixed(2)}, Spend: $${totalSpend.toFixed(2)}, Net: $${netRevenue.toFixed(2)}`);
 
-    return {
+    const result = {
       grossRevenue: Math.round(totalGrossRevenue * 100) / 100,
       totalSpend: Math.round(totalSpend * 100) / 100,
       netRevenue: Math.round(netRevenue * 100) / 100,
     };
+
+    // Save to cache
+    setInCache(cacheKey, result);
+
+    return result;
   }
 
   /**
@@ -590,17 +706,23 @@ class DashboardService {
         };
       }
 
-      // Fetch metrics for each manager with error handling
+      // OPTIMIZED: Fetch metrics for each manager with pre-fetched date ranges
+      // This avoids duplicate API calls within calculateManagerLevel and calculateEffectiveness
       const managersWithMetrics = await Promise.all(
         managers.map(async (m) => {
           try {
-            const [level, velocity, effectiveness, stopLoss, everGreen] = await Promise.all([
-              this.calculateManagerLevel(m.id),
+            // Pre-fetch both date ranges in parallel for this manager
+            const [thisMonthMetrics, last30dMetrics, velocity, stopLoss, everGreen] = await Promise.all([
+              this.getManagerAggregatedMetrics(m.id, 'this_month'),
+              this.getManagerAggregatedMetrics(m.id, 'last_30d'),
               this.calculateVelocity(m.id),
-              this.calculateEffectiveness(m.id),
               this.getStopLossViolations(m.id),
               this.getEverGreenCampaigns(m.id),
             ]);
+
+            // Calculate level and effectiveness from pre-fetched data (instant, no API calls)
+            const level = this.calculateManagerLevelFromMetrics(thisMonthMetrics.netRevenue);
+            const effectiveness = this.calculateEffectivenessFromMetrics(last30dMetrics);
 
             return {
               id: m.id,
