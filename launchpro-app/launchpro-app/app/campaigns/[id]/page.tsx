@@ -532,130 +532,186 @@ export default function CampaignDetailPage() {
 
         {/* Platforms */}
         <div className="bg-white shadow rounded-lg p-6 mb-6">
-          <h2 className="text-xl font-bold text-gray-900 mb-4">
-            Platform Status
+          <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+            <span>📊</span> Platform Status
           </h2>
-          <div className="space-y-4">
-            {campaign.platforms.map((platform) => (
-              <div
-                key={platform.platform}
-                className="border rounded-lg p-4"
-              >
-                <div className="flex justify-between items-center mb-3">
-                  <h3 className="text-lg font-semibold text-gray-900">
-                    {platform.platform === 'META'
-                      ? 'Meta (Facebook/Instagram)'
-                      : 'TikTok'}
-                  </h3>
-                  <span
-                    className={`px-2 py-1 rounded text-xs font-semibold ${
-                      platform.status === 'ACTIVE'
-                        ? 'bg-green-100 text-green-800'
-                        : platform.status === 'FAILED'
-                          ? 'bg-red-100 text-red-800'
-                          : 'bg-gray-100 text-gray-800'
-                    }`}
-                  >
-                    {platform.status}
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-                  <div>
-                    <p className="text-gray-600 font-medium">Budget</p>
-                    <p className="font-semibold text-gray-900">${platform.budget}</p>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {campaign.platforms.map((platform) => {
+              const isMeta = platform.platform === 'META';
+              const isTikTok = platform.platform === 'TIKTOK';
+              const isTaboola = platform.platform === 'TABOOLA';
+
+              const platformConfig = {
+                META: {
+                  name: 'Meta (Facebook/Instagram)',
+                  icon: '📘',
+                  bgColor: 'bg-blue-50',
+                  borderColor: 'border-blue-200',
+                  iconBg: 'bg-blue-100',
+                },
+                TIKTOK: {
+                  name: 'TikTok',
+                  icon: '🎵',
+                  bgColor: 'bg-pink-50',
+                  borderColor: 'border-pink-200',
+                  iconBg: 'bg-pink-100',
+                },
+                TABOOLA: {
+                  name: 'Taboola',
+                  icon: '📰',
+                  bgColor: 'bg-orange-50',
+                  borderColor: 'border-orange-200',
+                  iconBg: 'bg-orange-100',
+                },
+              }[platform.platform] || {
+                name: platform.platform,
+                icon: '📢',
+                bgColor: 'bg-gray-50',
+                borderColor: 'border-gray-200',
+                iconBg: 'bg-gray-100',
+              };
+
+              const statusConfig = {
+                ACTIVE: { bg: 'bg-green-100', text: 'text-green-800', border: 'border-green-300' },
+                FAILED: { bg: 'bg-red-100', text: 'text-red-800', border: 'border-red-300' },
+                DRAFT: { bg: 'bg-gray-100', text: 'text-gray-700', border: 'border-gray-300' },
+                PENDING: { bg: 'bg-yellow-100', text: 'text-yellow-800', border: 'border-yellow-300' },
+              }[platform.status] || { bg: 'bg-gray-100', text: 'text-gray-700', border: 'border-gray-300' };
+
+              return (
+                <div
+                  key={platform.platform}
+                  className={`${platformConfig.bgColor} ${platformConfig.borderColor} border-2 rounded-xl p-5 transition-shadow hover:shadow-md`}
+                >
+                  {/* Header */}
+                  <div className="flex justify-between items-center mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className={`${platformConfig.iconBg} w-10 h-10 rounded-lg flex items-center justify-center text-xl`}>
+                        {platformConfig.icon}
+                      </div>
+                      <h3 className="text-lg font-bold text-gray-900">
+                        {platformConfig.name}
+                      </h3>
+                    </div>
+                    <span className={`px-3 py-1.5 rounded-full text-xs font-bold ${statusConfig.bg} ${statusConfig.text} border ${statusConfig.border}`}>
+                      {platform.status}
+                    </span>
                   </div>
-                  {platform.platform === 'META' && (
-                    <>
-                      <div>
-                        <p className="text-gray-600 font-medium">Campaign ID</p>
-                        <p className="font-mono text-xs text-gray-800">
-                          {platform.metaCampaignId || '-'}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-gray-600 font-medium">Ad Set ID</p>
-                        <p className="font-mono text-xs text-gray-800">
-                          {platform.metaAdSetId || '-'}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-gray-600 font-medium">Ad ID</p>
-                        <p className="font-mono text-xs text-gray-800">
-                          {platform.metaAdId || '-'}
-                        </p>
-                      </div>
-                    </>
-                  )}
-                  {platform.platform === 'TIKTOK' && (
-                    <>
-                      <div>
-                        <p className="text-gray-600 font-medium">Campaign ID</p>
-                        <p className="font-mono text-xs text-gray-800">
-                          {platform.tiktokCampaignId || '-'}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-gray-600 font-medium">Ad Group ID</p>
-                        <p className="font-mono text-xs text-gray-800">
-                          {platform.tiktokAdGroupId || '-'}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-gray-600 font-medium">Ad ID</p>
-                        <p className="font-mono text-xs text-gray-800">
-                          {platform.tiktokAdId || '-'}
-                        </p>
-                      </div>
-                    </>
-                  )}
+
+                  {/* Stats Grid */}
+                  <div className="grid grid-cols-2 gap-4">
+                    {/* Budget */}
+                    <div className="bg-white rounded-lg p-3 border border-gray-100">
+                      <p className="text-xs text-gray-500 font-medium uppercase tracking-wide mb-1">Budget</p>
+                      <p className="text-xl font-bold text-gray-900">
+                        ${platform.budget || 0}
+                        <span className="text-sm font-normal text-gray-500">/day</span>
+                      </p>
+                    </div>
+
+                    {/* Campaign ID */}
+                    <div className="bg-white rounded-lg p-3 border border-gray-100">
+                      <p className="text-xs text-gray-500 font-medium uppercase tracking-wide mb-1">Campaign ID</p>
+                      <p className="font-mono text-xs text-gray-800 truncate" title={isMeta ? platform.metaCampaignId : platform.tiktokCampaignId}>
+                        {(isMeta ? platform.metaCampaignId : platform.tiktokCampaignId) || <span className="text-gray-400">Not created</span>}
+                      </p>
+                    </div>
+
+                    {/* Ad Set / Ad Group ID */}
+                    <div className="bg-white rounded-lg p-3 border border-gray-100">
+                      <p className="text-xs text-gray-500 font-medium uppercase tracking-wide mb-1">
+                        {isMeta ? 'Ad Set ID' : 'Ad Group ID'}
+                      </p>
+                      <p className="font-mono text-xs text-gray-800 truncate" title={isMeta ? platform.metaAdSetId : platform.tiktokAdGroupId}>
+                        {(isMeta ? platform.metaAdSetId : platform.tiktokAdGroupId) || <span className="text-gray-400">Not created</span>}
+                      </p>
+                    </div>
+
+                    {/* Ad ID */}
+                    <div className="bg-white rounded-lg p-3 border border-gray-100">
+                      <p className="text-xs text-gray-500 font-medium uppercase tracking-wide mb-1">Ad ID</p>
+                      <p className="font-mono text-xs text-gray-800 truncate" title={isMeta ? platform.metaAdId : platform.tiktokAdId}>
+                        {(isMeta ? platform.metaAdId : platform.tiktokAdId) || <span className="text-gray-400">Not created</span>}
+                      </p>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
         {/* Keywords */}
-        <div className="bg-white shadow rounded-lg p-6 mb-6">
-          <h2 className="text-xl font-bold text-gray-900 mb-4">Keywords</h2>
-          <div className="flex flex-wrap gap-2">
-            {campaign.keywords.map((keyword, index) => (
-              <span
-                key={index}
-                className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm"
-              >
-                {keyword}
-              </span>
-            ))}
+        {campaign.keywords && campaign.keywords.length > 0 && (
+          <div className="bg-white shadow rounded-lg p-6 mb-6">
+            <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+              <span>🏷️</span> Keywords
+              <span className="text-sm font-normal text-gray-500">({campaign.keywords.length})</span>
+            </h2>
+            <div className="flex flex-wrap gap-2">
+              {campaign.keywords.map((keyword, index) => (
+                <span
+                  key={index}
+                  className="bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-700 px-4 py-2 rounded-lg text-sm font-medium border border-blue-200 hover:border-blue-300 hover:shadow-sm transition-all"
+                >
+                  {keyword}
+                </span>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Media */}
         {campaign.media.length > 0 && (
           <div className="bg-white shadow rounded-lg p-6 mb-6">
-            <h2 className="text-xl font-bold text-gray-900 mb-4">Media</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+              <span>🖼️</span> Media
+              <span className="text-sm font-normal text-gray-500">({campaign.media.length} files)</span>
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {campaign.media.map((media) => (
-                <div key={media.id} className="border rounded-lg p-3">
-                  <p className="text-sm font-semibold mb-2 text-gray-800">
-                    {media.fileName}
-                  </p>
-                  <p className="text-xs text-gray-600 mb-2">
-                    Type: {media.type} |{' '}
-                    <span className="text-blue-600">{media.generatedByAI ? 'AI Generated' : 'Manual Upload'}</span>
-                  </p>
-                  {media.type === 'IMAGE' ? (
-                    <img
-                      src={media.url}
-                      alt={media.fileName}
-                      className="w-full h-40 object-cover rounded"
-                    />
-                  ) : (
-                    <video
-                      src={media.url}
-                      controls
-                      className="w-full h-40 rounded"
-                    />
-                  )}
+                <div key={media.id} className="bg-gray-50 border border-gray-200 rounded-xl overflow-hidden hover:shadow-lg transition-shadow">
+                  {/* Media Preview */}
+                  <div className="relative aspect-video bg-gray-100">
+                    {media.type === 'IMAGE' ? (
+                      <img
+                        src={media.url}
+                        alt={media.fileName}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <video
+                        src={media.url}
+                        controls
+                        className="w-full h-full object-cover"
+                      />
+                    )}
+                    {/* Type Badge */}
+                    <span className={`absolute top-2 right-2 px-2 py-1 rounded-md text-xs font-bold ${
+                      media.type === 'IMAGE'
+                        ? 'bg-purple-100 text-purple-700'
+                        : 'bg-pink-100 text-pink-700'
+                    }`}>
+                      {media.type === 'IMAGE' ? '📷 Image' : '🎬 Video'}
+                    </span>
+                  </div>
+                  {/* Media Info */}
+                  <div className="p-3">
+                    <p className="text-sm font-semibold text-gray-800 truncate" title={media.fileName}>
+                      {media.fileName}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
+                      {media.generatedByAI ? (
+                        <span className="flex items-center gap-1 text-indigo-600">
+                          <span>🤖</span> AI Generated
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1 text-gray-600">
+                          <span>📤</span> Manual Upload
+                        </span>
+                      )}
+                    </p>
+                  </div>
                 </div>
               ))}
             </div>

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, canAccessCampaign } from '@/lib/auth-utils';
 import { CampaignStatus } from '@prisma/client';
+import { designflowService } from '@/services/designflow.service';
 
 /**
  * GET /api/campaigns/[id]
@@ -50,9 +51,63 @@ export async function GET(
       );
     }
 
+    // Sync with DesignFlow if campaign is awaiting design
+    let syncedCampaign = campaign;
+    if (campaign.designFlowTask && campaign.status === CampaignStatus.AWAITING_DESIGN) {
+      try {
+        const latestTask = await designflowService.getTaskById(
+          campaign.designFlowTask.designflowTaskId
+        );
+
+        if (latestTask && latestTask.status !== campaign.designFlowTask.status) {
+          console.log(`[DesignFlow Sync] Task status changed: ${campaign.designFlowTask.status} -> ${latestTask.status}`);
+
+          // Update local DesignFlowTask record
+          await prisma.designFlowTask.update({
+            where: { id: campaign.designFlowTask.id },
+            data: {
+              status: latestTask.status,
+              deliveryLink: latestTask.deliveryLink,
+              completedAt: latestTask.status === 'Done' ? new Date() : null,
+            },
+          });
+
+          // If design is complete, update campaign status
+          if (latestTask.status === 'Done') {
+            await prisma.campaign.update({
+              where: { id: campaign.id },
+              data: { status: CampaignStatus.READY_TO_LAUNCH },
+            });
+            console.log(`[DesignFlow Sync] Campaign ${campaign.id} status updated to READY_TO_LAUNCH`);
+          }
+
+          // Re-fetch campaign with updated data
+          syncedCampaign = await prisma.campaign.findUnique({
+            where: { id },
+            include: {
+              offer: true,
+              platforms: true,
+              media: true,
+              createdBy: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                },
+              },
+              designFlowTask: true,
+            },
+          }) || campaign;
+        }
+      } catch (syncError) {
+        console.error('[DesignFlow Sync] Error syncing with DesignFlow:', syncError);
+        // Continue with original campaign data if sync fails
+      }
+    }
+
     return NextResponse.json({
       success: true,
-      data: campaign,
+      data: syncedCampaign,
     });
   } catch (error: any) {
     console.error('Error fetching campaign:', error);

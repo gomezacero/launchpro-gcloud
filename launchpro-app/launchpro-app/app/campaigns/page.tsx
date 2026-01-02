@@ -40,17 +40,17 @@ interface Campaign {
 }
 
 const statusColors: Record<string, string> = {
-  DRAFT: 'bg-gray-100 text-gray-800',
-  AWAITING_DESIGN: 'bg-purple-100 text-purple-800',
-  PENDING_ARTICLE: 'bg-amber-100 text-amber-800',
-  ARTICLE_APPROVED: 'bg-cyan-100 text-cyan-800',
-  GENERATING_AI: 'bg-purple-100 text-purple-800',
-  READY_TO_LAUNCH: 'bg-blue-100 text-blue-800',
-  LAUNCHING: 'bg-yellow-100 text-yellow-800',
-  ACTIVE: 'bg-green-100 text-green-800',
-  PAUSED: 'bg-orange-100 text-orange-800',
-  COMPLETED: 'bg-gray-100 text-gray-800',
-  FAILED: 'bg-red-100 text-red-800',
+  DRAFT: 'bg-gray-200 text-gray-700 border border-gray-300',
+  AWAITING_DESIGN: 'bg-purple-200 text-purple-900 border border-purple-400',
+  PENDING_ARTICLE: 'bg-amber-200 text-amber-900 border border-amber-400',
+  ARTICLE_APPROVED: 'bg-cyan-200 text-cyan-900 border border-cyan-400',
+  GENERATING_AI: 'bg-indigo-200 text-indigo-900 border border-indigo-400',
+  READY_TO_LAUNCH: 'bg-blue-200 text-blue-900 border border-blue-400',
+  LAUNCHING: 'bg-yellow-200 text-yellow-900 border border-yellow-400',
+  ACTIVE: 'bg-green-200 text-green-900 border border-green-500',
+  PAUSED: 'bg-orange-200 text-orange-900 border border-orange-400',
+  COMPLETED: 'bg-gray-200 text-gray-700 border border-gray-400',
+  FAILED: 'bg-red-200 text-red-900 border border-red-400',
 };
 
 const statusIcons: Record<string, string> = {
@@ -151,6 +151,7 @@ export default function CampaignsPage() {
               {[
                 'all',
                 'AWAITING_DESIGN',
+                'READY_TO_LAUNCH',
                 'PENDING_ARTICLE',
                 'ARTICLE_APPROVED',
                 'GENERATING_AI',
@@ -286,10 +287,20 @@ export default function CampaignsPage() {
                     {campaign.platforms.map((platform, index) => (
                       <div
                         key={index}
-                        className="px-3 py-1 bg-gray-100 rounded-full text-xs font-medium"
+                        className={`px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 ${
+                          platform.platform === 'META'
+                            ? 'bg-blue-100 text-blue-700 border border-blue-300'
+                            : platform.platform === 'TIKTOK'
+                              ? 'bg-pink-100 text-pink-700 border border-pink-300'
+                              : platform.platform === 'TABOOLA'
+                                ? 'bg-orange-100 text-orange-700 border border-orange-300'
+                                : 'bg-gray-100 text-gray-700 border border-gray-300'
+                        }`}
                       >
-                        {platform.platform === 'META' ? '📘' : '🎵'}{' '}
-                        {platform.platform}
+                        <span className="text-sm">
+                          {platform.platform === 'META' ? '📘' : platform.platform === 'TIKTOK' ? '🎵' : platform.platform === 'TABOOLA' ? '📰' : '📢'}
+                        </span>
+                        <span>{platform.platform}</span>
                       </div>
                     ))}
                   </div>
