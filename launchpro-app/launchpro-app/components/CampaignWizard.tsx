@@ -582,7 +582,7 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
           performanceGoal: p.performanceGoal || 'leads',
           budget: p.budget?.toString() || '50',
           startDateTime: defaultStartDateTime, // Tomorrow 1:00 AM UTC
-          generateWithAI: true,
+          generateWithAI: false,
           aiMediaType: p.aiMediaType || (p.platform === 'TIKTOK' ? 'VIDEO' : 'IMAGE'),
           aiMediaCount: p.aiMediaCount || 1,
           adsPerAdSet: p.adsPerAdSet || 1, // Include adsPerAdSet when cloning
@@ -1441,7 +1441,7 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
       performanceGoal: platform === 'TABOOLA' ? 'Lead Generation' : 'Lead Generation',
       budget: platform === 'META' ? '5' : platform === 'TIKTOK' ? '50' : '100', // Taboola default $100
       startDateTime: defaultDateTime,
-      generateWithAI: true,
+      generateWithAI: false,
       // TikTok only allows videos, Meta allows both, Taboola only images
       aiMediaType: platform === 'TIKTOK' ? 'VIDEO' : 'IMAGE',
       aiMediaCount: 1,
@@ -2884,6 +2884,106 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
                     )}
                   </div>
                 )}
+
+                {/* DesignFlow Section - Only show when Tonic account is selected */}
+                {formData.tonicAccountId && (
+                  <div className="mt-8 pt-6 border-t border-gray-200">
+                    {/* DesignFlow Toggle - Card Style */}
+                    <div
+                      onClick={() => setFormData({...formData, needsDesignFlow: !formData.needsDesignFlow})}
+                      className={`
+                        cursor-pointer rounded-xl p-5 border-2 transition-all duration-200
+                        ${formData.needsDesignFlow
+                          ? 'bg-gradient-to-r from-purple-50 to-pink-50 border-purple-400 shadow-md'
+                          : 'bg-gray-50 border-gray-200 hover:border-gray-300 hover:bg-gray-100'
+                        }
+                      `}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          <div className={`
+                            w-14 h-14 rounded-xl flex items-center justify-center text-2xl
+                            ${formData.needsDesignFlow
+                              ? 'bg-gradient-to-br from-purple-500 to-pink-500 shadow-lg'
+                              : 'bg-gray-200'
+                            }
+                          `}>
+                            {formData.needsDesignFlow ? '✨' : '🎨'}
+                          </div>
+                          <div>
+                            <h4 className={`font-semibold text-lg ${formData.needsDesignFlow ? 'text-purple-900' : 'text-gray-700'}`}>
+                              Necesito creativos del equipo de diseño
+                            </h4>
+                            <p className={`text-sm ${formData.needsDesignFlow ? 'text-purple-600' : 'text-gray-500'}`}>
+                              {formData.needsDesignFlow
+                                ? 'Se enviará a DesignFlow cuando Tonic apruebe el artículo'
+                                : 'Continuarás configurando plataformas con tus propios creativos'
+                              }
+                            </p>
+                          </div>
+                        </div>
+                        {/* Toggle Switch */}
+                        <div className={`
+                          relative w-14 h-8 rounded-full transition-colors duration-200 flex-shrink-0
+                          ${formData.needsDesignFlow ? 'bg-purple-500' : 'bg-gray-300'}
+                        `}>
+                          <div className={`
+                            absolute top-1 w-6 h-6 bg-white rounded-full shadow-md transition-transform duration-200
+                            ${formData.needsDesignFlow ? 'translate-x-7' : 'translate-x-1'}
+                          `} />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* DesignFlow Configuration - Only when enabled */}
+                    {formData.needsDesignFlow && (
+                      <div className="mt-4 bg-purple-50 border border-purple-200 rounded-xl p-6">
+                        <h3 className="font-semibold text-purple-900 mb-4 flex items-center">
+                          <span className="mr-2">🎨</span> Configuración de DesignFlow
+                        </h3>
+
+                        {/* Requester Selector */}
+                        <div className="mb-4">
+                          <label className="block text-sm font-medium text-purple-900 mb-2">
+                            Asignar tarea a:
+                          </label>
+                          <select
+                            value={formData.designFlowRequester}
+                            onChange={(e) => setFormData({...formData, designFlowRequester: e.target.value})}
+                            className="w-full md:w-64 px-4 py-2 border border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white"
+                          >
+                            {designFlowRequesters.map((requester) => (
+                              <option key={requester} value={requester}>
+                                {requester}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Additional Notes */}
+                        <div>
+                          <label className="block text-sm font-medium text-purple-900 mb-2">
+                            Notas adicionales para el equipo de diseño (opcional):
+                          </label>
+                          <textarea
+                            value={formData.designFlowNotes}
+                            onChange={(e) => setFormData({...formData, designFlowNotes: e.target.value})}
+                            placeholder="Ej: Preferimos colores cálidos, el cliente pidió estilo minimalista..."
+                            className="w-full px-4 py-2 border border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent h-24"
+                          />
+                        </div>
+
+                        {/* Info Box */}
+                        <div className="mt-4 p-3 bg-purple-100 rounded-lg">
+                          <p className="text-sm text-purple-800">
+                            <strong>Flujo:</strong> Al guardar se creará el artículo en Tonic. Cuando sea aprobado,
+                            se enviará automáticamente a DesignFlow para crear los creativos.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -3276,22 +3376,51 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
                       </p>
                     </div>
 
-                    <div className="flex items-center">
-                      <input
-                        type="checkbox"
-                        id={`ai-${index}`}
-                        checked={platform.generateWithAI}
-                        onChange={(e) =>
-                          updatePlatform(index, 'generateWithAI', e.target.checked)
+                    {/* AI Generation Toggle - Prominent Card Style */}
+                    <div
+                      onClick={() => updatePlatform(index, 'generateWithAI', !platform.generateWithAI)}
+                      className={`
+                        cursor-pointer rounded-xl p-4 border-2 transition-all duration-200
+                        ${platform.generateWithAI
+                          ? 'bg-gradient-to-r from-purple-50 to-pink-50 border-purple-400 shadow-md'
+                          : 'bg-gray-50 border-gray-200 hover:border-gray-300 hover:bg-gray-100'
                         }
-                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                      />
-                      <label
-                        htmlFor={`ai-${index}`}
-                        className="ml-2 text-sm text-gray-700"
-                      >
-                        🤖 Generate images and videos with AI
-                      </label>
+                      `}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className={`
+                            w-12 h-12 rounded-xl flex items-center justify-center text-2xl
+                            ${platform.generateWithAI
+                              ? 'bg-gradient-to-br from-purple-500 to-pink-500 shadow-lg'
+                              : 'bg-gray-200'
+                            }
+                          `}>
+                            {platform.generateWithAI ? '✨' : '🤖'}
+                          </div>
+                          <div>
+                            <h4 className={`font-semibold ${platform.generateWithAI ? 'text-purple-900' : 'text-gray-700'}`}>
+                              Generate images and videos with AI
+                            </h4>
+                            <p className={`text-sm ${platform.generateWithAI ? 'text-purple-600' : 'text-gray-500'}`}>
+                              {platform.generateWithAI
+                                ? 'AI will create creative assets for your campaign'
+                                : 'Click to enable AI-powered creative generation'
+                              }
+                            </p>
+                          </div>
+                        </div>
+                        {/* Toggle Switch */}
+                        <div className={`
+                          relative w-14 h-8 rounded-full transition-colors duration-200
+                          ${platform.generateWithAI ? 'bg-purple-500' : 'bg-gray-300'}
+                        `}>
+                          <div className={`
+                            absolute top-1 w-6 h-6 bg-white rounded-full shadow-md transition-transform duration-200
+                            ${platform.generateWithAI ? 'translate-x-7' : 'translate-x-1'}
+                          `} />
+                        </div>
+                      </div>
                     </div>
 
                     {/* AI Media Generation Options - Only shown when AI is enabled */}
@@ -4069,134 +4198,6 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
                 </p>
               </div>
 
-              {/* DesignFlow Toggle Checkbox */}
-              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mt-4">
-                <label className="flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={formData.needsDesignFlow}
-                    onChange={(e) => setFormData({...formData, needsDesignFlow: e.target.checked})}
-                    className="w-5 h-5 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
-                  />
-                  <span className="ml-3 text-gray-900 font-medium">
-                    Necesito creativos del equipo de diseño
-                  </span>
-                </label>
-                <p className="text-sm text-gray-500 mt-1 ml-8">
-                  {formData.needsDesignFlow
-                    ? 'La campaña pasará por el flujo de DesignFlow antes de lanzarse'
-                    : 'La campaña se lanzará directamente (ya tengo los creativos)'
-                  }
-                </p>
-              </div>
-
-              {/* DesignFlow Preview Section - Only show when needsDesignFlow is checked */}
-              {formData.needsDesignFlow && (
-              <div className="bg-purple-50 border border-purple-200 rounded-lg p-6 mt-4">
-                <h3 className="font-semibold text-purple-900 mb-3 flex items-center">
-                  <span className="mr-2">🎨</span> DesignFlow Preview
-                </h3>
-                <p className="text-sm text-purple-800 mb-4">
-                  Al guardar, se creará el artículo en Tonic. Cuando Tonic lo apruebe, se enviará automáticamente a DesignFlow con esta información.
-                </p>
-
-                {designFlowSuccess || savedCampaignId ? (
-                  <div className="bg-green-100 border border-green-300 rounded-lg p-4">
-                    <p className="text-green-800 font-medium flex items-center">
-                      <span className="mr-2">✅</span>
-                      Campaña guardada exitosamente
-                    </p>
-                    <p className="text-sm text-green-700 mt-1">
-                      El artículo ha sido enviado a Tonic. Cuando sea aprobado, se creará automáticamente la tarea en DesignFlow.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => router.push(`/campaigns/${savedCampaignId}`)}
-                      className="mt-3 px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700"
-                    >
-                      Ver Campaña
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {/* Preview de información */}
-                    <div className="bg-white rounded-lg p-4 border border-purple-100">
-                      <h4 className="font-medium text-gray-700 mb-2 text-sm">Información que se enviará a DesignFlow:</h4>
-                      <div className="grid grid-cols-2 gap-2 text-sm">
-                        <div><span className="text-gray-500">Campaña:</span> {formData.name || '-'}</div>
-                        <div><span className="text-gray-500">Offer:</span> {offers.find((o) => o.id === formData.offerId)?.name || '-'}</div>
-                        <div><span className="text-gray-500">País:</span> {countries.find((c) => c.code === formData.country)?.name || '-'}</div>
-                        <div><span className="text-gray-500">Idioma:</span> {formData.language.toUpperCase()}</div>
-                        <div><span className="text-gray-500">Plataformas:</span> {formData.platforms.map(p => p.platform).join(', ') || '-'}</div>
-                        <div><span className="text-gray-500">Budget:</span> {formData.platforms[0]?.budget ? `$${formData.platforms[0].budget}/día` : '-'}</div>
-                      </div>
-                      {formData.copyMaster && (
-                        <div className="mt-2">
-                          <span className="text-gray-500 text-sm">Copy Master:</span>
-                          <p className="text-sm bg-gray-50 p-2 rounded mt-1 text-gray-700">{formData.copyMaster}</p>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Requester Selector */}
-                    <div>
-                      <label className="block text-sm font-medium text-purple-900 mb-2">
-                        Asignar tarea a:
-                      </label>
-                      <select
-                        value={formData.designFlowRequester}
-                        onChange={(e) => setFormData({...formData, designFlowRequester: e.target.value})}
-                        className="w-full md:w-64 px-4 py-2 border border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white"
-                      >
-                        {designFlowRequesters.map((requester) => (
-                          <option key={requester} value={requester}>
-                            {requester}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Additional Notes */}
-                    <div>
-                      <label className="block text-sm font-medium text-purple-900 mb-2">
-                        Notas adicionales para el equipo de diseño (opcional):
-                      </label>
-                      <textarea
-                        value={formData.designFlowNotes}
-                        onChange={(e) => setFormData({...formData, designFlowNotes: e.target.value})}
-                        placeholder="Ej: Preferimos colores cálidos, el cliente pidió estilo minimalista..."
-                        className="w-full px-4 py-2 border border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white h-24"
-                      />
-                    </div>
-
-                    {/* Save Button */}
-                    <div>
-                      <button
-                        type="button"
-                        onClick={handleSaveDraftForDesign}
-                        disabled={savingDraft || !formData.name || !formData.tonicAccountId || !formData.offerId || !formData.country || formData.platforms.length === 0}
-                        className="w-full px-4 py-3 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center"
-                      >
-                        {savingDraft ? (
-                          <>
-                            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                            Guardando y enviando a Tonic...
-                          </>
-                        ) : (
-                          <>📦 Guardar y Crear Artículo en Tonic</>
-                        )}
-                      </button>
-                      <p className="text-xs text-purple-700 mt-2 text-center">
-                        Una vez aprobado por Tonic, se enviará automáticamente a DesignFlow
-                      </p>
-                    </div>
-                  </div>
-                )}
-              </div>
-              )}
             </div>
           )}
 
@@ -4212,45 +4213,71 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
             </button>
 
             {step < 3 ? (
-              <button
-                type="button"
-                onClick={() => setStep(step + 1)}
-                disabled={
-                  (step === 1 &&
-                    (!formData.name ||
-                      !formData.tonicAccountId ||
-                      !formData.offerId ||
-                      !formData.country ||
-                      // RSOC validation: existing mode requires selectedHeadlineId
-                      (formData.rsocMode === 'existing' && !formData.selectedHeadlineId) ||
-                      // Validate content generation phrases: if new mode and filled, must be 3-5
-                      (formData.rsocMode === 'new' &&
-                        formData.contentGenerationPhrases.length > 0 &&
-                        (formData.contentGenerationPhrases.length < 3 ||
-                         formData.contentGenerationPhrases.length > 5)))) ||
-                  (step === 2 &&
-                    (formData.platforms.length === 0 ||
-                      formData.platforms.some((p) => !p.accountId) ||
-                      // Meta requires Fan Page selection
-                      formData.platforms.some((p) =>
-                        p.platform === 'META' && !p.metaPageId
-                      ) ||
-                      // TikTok requires Identity selection
-                      formData.platforms.some((p) =>
-                        p.platform === 'TIKTOK' && !p.tiktokIdentityId
-                      ) ||
-                      // Meta videos must have thumbnails
-                      formData.platforms.some((p) =>
-                        p.platform === 'META' &&
-                        p.uploadedVideos &&
-                        p.uploadedVideos.length > 0 &&
-                        p.uploadedVideos.some((vid) => !vid.thumbnailId)
-                      )))
-                }
-                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Next →
-              </button>
+              // Si está en Step 1 Y needsDesignFlow está activo → Mostrar botón guardar
+              step === 1 && formData.needsDesignFlow && formData.tonicAccountId ? (
+                <button
+                  type="button"
+                  onClick={handleSaveDraftForDesign}
+                  disabled={savingDraft || !formData.name || !formData.tonicAccountId || !formData.offerId || !formData.country ||
+                    (formData.rsocMode === 'existing' && !formData.selectedHeadlineId) ||
+                    (formData.rsocMode === 'new' && formData.contentGenerationPhrases.length > 0 &&
+                      (formData.contentGenerationPhrases.length < 3 || formData.contentGenerationPhrases.length > 5))}
+                  className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                >
+                  {savingDraft ? (
+                    <>
+                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Guardando...
+                    </>
+                  ) : (
+                    <>📦 Guardar y Crear Artículo</>
+                  )}
+                </button>
+              ) : (
+                // Botón Next normal
+                <button
+                  type="button"
+                  onClick={() => setStep(step + 1)}
+                  disabled={
+                    (step === 1 &&
+                      (!formData.name ||
+                        !formData.tonicAccountId ||
+                        !formData.offerId ||
+                        !formData.country ||
+                        // RSOC validation: existing mode requires selectedHeadlineId
+                        (formData.rsocMode === 'existing' && !formData.selectedHeadlineId) ||
+                        // Validate content generation phrases: if new mode and filled, must be 3-5
+                        (formData.rsocMode === 'new' &&
+                          formData.contentGenerationPhrases.length > 0 &&
+                          (formData.contentGenerationPhrases.length < 3 ||
+                           formData.contentGenerationPhrases.length > 5)))) ||
+                    (step === 2 &&
+                      (formData.platforms.length === 0 ||
+                        formData.platforms.some((p) => !p.accountId) ||
+                        // Meta requires Fan Page selection
+                        formData.platforms.some((p) =>
+                          p.platform === 'META' && !p.metaPageId
+                        ) ||
+                        // TikTok requires Identity selection
+                        formData.platforms.some((p) =>
+                          p.platform === 'TIKTOK' && !p.tiktokIdentityId
+                        ) ||
+                        // Meta videos must have thumbnails
+                        formData.platforms.some((p) =>
+                          p.platform === 'META' &&
+                          p.uploadedVideos &&
+                          p.uploadedVideos.length > 0 &&
+                          p.uploadedVideos.some((vid) => !vid.thumbnailId)
+                        )))
+                  }
+                  className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Next →
+                </button>
+              )
             ) : (
               /* Show Launch Campaign only when NOT using DesignFlow flow */
               !formData.needsDesignFlow && (
