@@ -744,12 +744,99 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
     setDesignFlowSuccess(false);
 
     try {
-      if (!formData.name || !formData.tonicAccountId || !formData.offerId || !formData.country || formData.platforms.length === 0) {
+      if (!formData.name || !formData.tonicAccountId || !formData.offerId || !formData.country) {
         throw new Error('Please fill in all required fields');
       }
 
       // Step 1: Preparing data
       const logId1 = addDesignFlowLog('Preparando datos de la campaña...');
+
+      // Get offer info for AI generation
+      const selectedOffer = offers.find(o => o.id === formData.offerId);
+
+      // Track generated values for formData update
+      let generatedCopyMaster = formData.copyMaster;
+      let generatedKeywords = formData.keywords;
+
+      updateDesignFlowLogStatus(logId1, 'success');
+
+      // Step 2: Auto-generate Copy Master if empty
+      if (!formData.copyMaster) {
+        const logId2 = addDesignFlowLog('Generando Copy Master con IA...');
+        try {
+          const copyRes = await fetch('/api/ai/copy-suggestions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              offerName: selectedOffer?.name || formData.name,
+              offerVertical: selectedOffer?.vertical || selectedOffer?.category || selectedOffer?.niche || '',
+              country: formData.country,
+              language: formData.language,
+            }),
+          });
+          const copyData = await copyRes.json();
+          if (copyData.success && copyData.data?.suggestions?.length > 0) {
+            generatedCopyMaster = copyData.data.suggestions[0];
+            updateDesignFlowLogStatus(logId2, 'success');
+            addDesignFlowLog(`Copy Master generado: "${generatedCopyMaster.substring(0, 50)}..."`, 'success');
+          } else {
+            updateDesignFlowLogStatus(logId2, 'error');
+            addDesignFlowLog('No se pudo generar Copy Master, usando valor por defecto', 'pending');
+            generatedCopyMaster = `Discover ${selectedOffer?.name || 'great offers'}`;
+          }
+        } catch (err) {
+          updateDesignFlowLogStatus(logId2, 'error');
+          addDesignFlowLog('Error generando Copy Master, usando valor por defecto', 'pending');
+          generatedCopyMaster = `Discover ${selectedOffer?.name || 'great offers'}`;
+        }
+      }
+
+      // Step 3: Auto-generate Keywords if empty
+      if (formData.keywords.length === 0) {
+        const logId3 = addDesignFlowLog('Generando Keywords con IA...');
+        try {
+          const category = selectedOffer?.vertical || selectedOffer?.category || selectedOffer?.niche || selectedOffer?.name || '';
+          const keywordsRes = await fetch('/api/ai/keyword-suggestions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              category,
+              country: formData.country,
+              language: formData.language,
+            }),
+          });
+          const keywordsData = await keywordsRes.json();
+          if (keywordsData.success && keywordsData.data?.suggestions?.length > 0) {
+            // Extract keyword strings from the suggestions (they may have a type property)
+            generatedKeywords = keywordsData.data.suggestions.map((s: { keyword: string } | string) =>
+              typeof s === 'string' ? s : s.keyword
+            );
+            updateDesignFlowLogStatus(logId3, 'success');
+            addDesignFlowLog(`${generatedKeywords.length} keywords generados`, 'success');
+          } else {
+            updateDesignFlowLogStatus(logId3, 'error');
+            addDesignFlowLog('No se pudieron generar keywords', 'pending');
+          }
+        } catch (err) {
+          updateDesignFlowLogStatus(logId3, 'error');
+          addDesignFlowLog('Error generando keywords', 'pending');
+        }
+      }
+
+      // Update formData with generated values (for preview update)
+      if (generatedCopyMaster !== formData.copyMaster || generatedKeywords !== formData.keywords) {
+        setFormData(prev => ({
+          ...prev,
+          copyMaster: generatedCopyMaster,
+          keywords: generatedKeywords,
+        }));
+        if (generatedKeywords.length > 0) {
+          setKeywordsText(generatedKeywords.join(', '));
+        }
+      }
+
+      // Step 4: Prepare payload with generated values
+      const logId4 = addDesignFlowLog('Preparando payload final...');
 
       const payload = {
         name: formData.name,
@@ -758,28 +845,29 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
         offerId: formData.offerId,
         country: formData.country,
         language: formData.language,
-        copyMaster: formData.copyMaster || undefined,
+        copyMaster: generatedCopyMaster || undefined,
         communicationAngle: formData.communicationAngle || undefined,
-        keywords: formData.keywords.length > 0 ? formData.keywords : undefined,
+        keywords: generatedKeywords.length > 0 ? generatedKeywords : undefined,
         contentGenerationPhrases: formData.contentGenerationPhrases.length > 0 ? formData.contentGenerationPhrases : undefined,
         skipPlatformLaunch: true, // Only save as draft, don't launch
         // DesignFlow configuration (used when article is approved by Tonic)
         designFlowRequester: formData.designFlowRequester,
         designFlowNotes: formData.designFlowNotes || undefined,
-        platforms: formData.platforms.map(platform => ({
+        // Platforms are optional in Step 1 (DesignFlow flow) - will be configured later
+        platforms: formData.platforms.length > 0 ? formData.platforms.map(platform => ({
           platform: platform.platform,
           accountId: platform.accountId || 'auto',
           performanceGoal: platform.performanceGoal,
           budget: parseFloat(platform.budget),
           startDate: platform.startDateTime?.split('T')[0] || new Date().toISOString().split('T')[0],
           generateWithAI: platform.generateWithAI,
-        })),
+        })) : [],
       };
 
-      updateDesignFlowLogStatus(logId1, 'success');
+      updateDesignFlowLogStatus(logId4, 'success');
 
-      // Step 2: Saving to database and creating Tonic article
-      const logId2 = addDesignFlowLog('Guardando campaña y creando artículo en Tonic...');
+      // Step 5: Saving to database and creating Tonic article
+      const logId5 = addDesignFlowLog('Guardando campaña y creando artículo en Tonic...');
 
       const res = await fetch('/api/campaigns', {
         method: 'POST',
@@ -790,14 +878,14 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
       const data = await res.json();
 
       if (!data.success) {
-        updateDesignFlowLogStatus(logId2, 'error');
+        updateDesignFlowLogStatus(logId5, 'error');
         addDesignFlowLog(`Error: ${data.error || 'Failed to save campaign'}`, 'error');
         throw new Error(data.error || 'Failed to save campaign draft');
       }
 
-      updateDesignFlowLogStatus(logId2, 'success');
+      updateDesignFlowLogStatus(logId5, 'success');
 
-      // Step 3: Success - waiting for Tonic approval
+      // Step 6: Success - waiting for Tonic approval
       addDesignFlowLog('Campaña guardada exitosamente', 'success');
       addDesignFlowLog(`Artículo enviado a Tonic (Request ID: ${data.data.articleRequestId || 'N/A'})`, 'success');
       addDesignFlowLog('Esperando aprobación de Tonic...', 'pending');
@@ -2942,6 +3030,35 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
                           <span className="mr-2">🎨</span> Configuración de DesignFlow
                         </h3>
 
+                        {/* Preview de información que se enviará */}
+                        <div className="bg-white rounded-lg p-4 mb-4 border border-purple-100">
+                          <h4 className="font-medium text-gray-700 mb-2 text-sm">Información que se enviará a DesignFlow:</h4>
+                          <div className="grid grid-cols-2 gap-2 text-sm">
+                            <div><span className="text-gray-500">Campaña:</span> {formData.name || '-'}</div>
+                            <div><span className="text-gray-500">Offer:</span> {offers.find((o) => o.id === formData.offerId)?.name || '-'}</div>
+                            <div><span className="text-gray-500">País:</span> {countries.find((c) => c.code === formData.country)?.name || '-'}</div>
+                            <div><span className="text-gray-500">Idioma:</span> {formData.language.toUpperCase()}</div>
+                          </div>
+                          {formData.copyMaster && (
+                            <div className="mt-2">
+                              <span className="text-gray-500 text-sm">Copy Master:</span>
+                              <p className="text-sm bg-gray-50 p-2 rounded mt-1 text-gray-700">{formData.copyMaster}</p>
+                            </div>
+                          )}
+                          {formData.keywords.length > 0 && (
+                            <div className="mt-2">
+                              <span className="text-gray-500 text-sm">Keywords:</span>
+                              <p className="text-sm text-gray-700">{formData.keywords.join(', ')}</p>
+                            </div>
+                          )}
+                          {formData.communicationAngle && (
+                            <div className="mt-2">
+                              <span className="text-gray-500 text-sm">Communication Angle:</span>
+                              <p className="text-sm text-gray-700">{formData.communicationAngle}</p>
+                            </div>
+                          )}
+                        </div>
+
                         {/* Requester Selector */}
                         <div className="mb-4">
                           <label className="block text-sm font-medium text-purple-900 mb-2">
@@ -4485,7 +4602,7 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
 
       {/* Modal de DesignFlow - Guardar y crear artículo */}
       {isDesignFlowSaving && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-2xl max-w-lg w-full mx-4 max-h-[80vh] flex flex-col">
             {/* Header */}
             <div className={`p-4 flex-shrink-0 ${designFlowComplete ? (designFlowSuccess ? 'bg-purple-600' : 'bg-red-600') : 'bg-purple-600'} text-white`}>
