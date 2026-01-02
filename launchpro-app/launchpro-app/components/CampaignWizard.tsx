@@ -105,6 +105,12 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
   const [errorDetails, setErrorDetails] = useState<{ message: string; details?: string; suggestion?: string; tonicData?: string } | null>(null);
   const [showErrorDetails, setShowErrorDetails] = useState(false);
 
+  // Estado para modal de DesignFlow (similar a isLaunching)
+  const [isDesignFlowSaving, setIsDesignFlowSaving] = useState(false);
+  const [designFlowLogs, setDesignFlowLogs] = useState<LaunchLog[]>([]);
+  const [designFlowComplete, setDesignFlowComplete] = useState(false);
+  // Note: designFlowSuccess is declared below in "DesignFlow integration states"
+
   // Content phrases validation state
   const [phrasesValidation, setPhrasesValidation] = useState<{
     status: 'idle' | 'validating' | 'valid' | 'invalid';
@@ -166,6 +172,7 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
     rsocMode: 'new' as 'new' | 'existing',
     selectedHeadlineId: null as number | null,
     // DesignFlow configuration (used when article is approved by Tonic)
+    needsDesignFlow: true, // Toggle: true = send to DesignFlow, false = launch directly
     designFlowRequester: 'Harry',
     designFlowNotes: '',
   });
@@ -337,6 +344,7 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
           })),
           rsocMode: 'existing',
           selectedHeadlineId: null,
+          needsDesignFlow: true,
           designFlowRequester: campaign.designFlowRequester || 'Harry',
           designFlowNotes: campaign.designFlowNotes || '',
         });
@@ -606,6 +614,7 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
           platforms: platformsConfig,
           rsocMode: 'new', // Default to new article when cloning
           selectedHeadlineId: null,
+          needsDesignFlow: true,
           designFlowRequester: campaign.designFlowRequester || 'Harry',
           designFlowNotes: '', // Start fresh for clone
         });
@@ -707,15 +716,40 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
     }
   };
 
-  // Save campaign as draft for DesignFlow
+  // Helper functions for DesignFlow modal logs
+  const addDesignFlowLog = (message: string, status: LaunchLog['status'] = 'in_progress') => {
+    const log: LaunchLog = {
+      id: `df-${Date.now()}-${Math.random()}`,
+      message,
+      status,
+      timestamp: new Date(),
+    };
+    setDesignFlowLogs(prev => [...prev, log]);
+    return log.id;
+  };
+
+  const updateDesignFlowLogStatus = (logId: string, status: LaunchLog['status']) => {
+    setDesignFlowLogs(prev => prev.map(log =>
+      log.id === logId ? { ...log, status } : log
+    ));
+  };
+
+  // Save campaign as draft for DesignFlow (with modal)
   const handleSaveDraftForDesign = async () => {
     setError(null);
     setSavingDraft(true);
+    setIsDesignFlowSaving(true);
+    setDesignFlowLogs([]);
+    setDesignFlowComplete(false);
+    setDesignFlowSuccess(false);
 
     try {
       if (!formData.name || !formData.tonicAccountId || !formData.offerId || !formData.country || formData.platforms.length === 0) {
         throw new Error('Please fill in all required fields');
       }
+
+      // Step 1: Preparing data
+      const logId1 = addDesignFlowLog('Preparando datos de la campaña...');
 
       const payload = {
         name: formData.name,
@@ -742,6 +776,11 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
         })),
       };
 
+      updateDesignFlowLogStatus(logId1, 'success');
+
+      // Step 2: Saving to database and creating Tonic article
+      const logId2 = addDesignFlowLog('Guardando campaña y creando artículo en Tonic...');
+
       const res = await fetch('/api/campaigns', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -751,14 +790,27 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
       const data = await res.json();
 
       if (!data.success) {
+        updateDesignFlowLogStatus(logId2, 'error');
+        addDesignFlowLog(`Error: ${data.error || 'Failed to save campaign'}`, 'error');
         throw new Error(data.error || 'Failed to save campaign draft');
       }
 
+      updateDesignFlowLogStatus(logId2, 'success');
+
+      // Step 3: Success - waiting for Tonic approval
+      addDesignFlowLog('Campaña guardada exitosamente', 'success');
+      addDesignFlowLog(`Artículo enviado a Tonic (Request ID: ${data.data.articleRequestId || 'N/A'})`, 'success');
+      addDesignFlowLog('Esperando aprobación de Tonic...', 'pending');
+
       setSavedCampaignId(data.data.campaignId);
+      setDesignFlowSuccess(true);
     } catch (err: any) {
       setError(err.message);
+      addDesignFlowLog(`Error: ${err.message}`, 'error');
+      setDesignFlowSuccess(false);
     } finally {
       setSavingDraft(false);
+      setDesignFlowComplete(true);
     }
   };
 
@@ -4017,7 +4069,29 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
                 </p>
               </div>
 
-              {/* DesignFlow Preview Section */}
+              {/* DesignFlow Toggle Checkbox */}
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mt-4">
+                <label className="flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.needsDesignFlow}
+                    onChange={(e) => setFormData({...formData, needsDesignFlow: e.target.checked})}
+                    className="w-5 h-5 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                  />
+                  <span className="ml-3 text-gray-900 font-medium">
+                    Necesito creativos del equipo de diseño
+                  </span>
+                </label>
+                <p className="text-sm text-gray-500 mt-1 ml-8">
+                  {formData.needsDesignFlow
+                    ? 'La campaña pasará por el flujo de DesignFlow antes de lanzarse'
+                    : 'La campaña se lanzará directamente (ya tengo los creativos)'
+                  }
+                </p>
+              </div>
+
+              {/* DesignFlow Preview Section - Only show when needsDesignFlow is checked */}
+              {formData.needsDesignFlow && (
               <div className="bg-purple-50 border border-purple-200 rounded-lg p-6 mt-4">
                 <h3 className="font-semibold text-purple-900 mb-3 flex items-center">
                   <span className="mr-2">🎨</span> DesignFlow Preview
@@ -4122,6 +4196,7 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
                   </div>
                 )}
               </div>
+              )}
             </div>
           )}
 
@@ -4177,6 +4252,8 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
                 Next →
               </button>
             ) : (
+              /* Show Launch Campaign only when NOT using DesignFlow flow */
+              !formData.needsDesignFlow && (
               <button
                 type="button"
                 onClick={handleSubmit}
@@ -4211,6 +4288,7 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
                   <>{isEditMode ? '💾 Guardar y Lanzar' : '🚀 Launch Campaign'}</>
                 )}
               </button>
+              )
             )}
           </div>
         </div>
@@ -4355,6 +4433,7 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
                       platforms: [],
                       rsocMode: 'new',
                       selectedHeadlineId: null,
+                      needsDesignFlow: true,
                       designFlowRequester: 'Harry',
                       designFlowNotes: '',
                     });
@@ -4370,6 +4449,131 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
                   className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
                 >
                   Lanzar Otra Campaña
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de DesignFlow - Guardar y crear artículo */}
+      {isDesignFlowSaving && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-2xl max-w-lg w-full mx-4 max-h-[80vh] flex flex-col">
+            {/* Header */}
+            <div className={`p-4 flex-shrink-0 ${designFlowComplete ? (designFlowSuccess ? 'bg-purple-600' : 'bg-red-600') : 'bg-purple-600'} text-white`}>
+              <h3 className="text-lg font-bold flex items-center gap-2">
+                {designFlowComplete ? (
+                  designFlowSuccess ? (
+                    <><span>🎨</span> ¡Campaña Guardada!</>
+                  ) : (
+                    <><span>❌</span> Error al Guardar</>
+                  )
+                ) : (
+                  <><span className="animate-spin">⚙️</span> Guardando Campaña...</>
+                )}
+              </h3>
+            </div>
+
+            {/* Logs - scrollable */}
+            <div className="p-4 flex-1 overflow-y-auto min-h-0">
+              <div className="space-y-2">
+                {designFlowLogs.map((log) => (
+                  <div
+                    key={log.id}
+                    className={`flex items-start gap-2 p-2 rounded ${
+                      log.status === 'error'
+                        ? 'bg-red-50 text-red-800'
+                        : log.status === 'success'
+                          ? 'bg-green-50 text-green-800'
+                          : log.status === 'pending'
+                            ? 'bg-yellow-50 text-yellow-800'
+                            : 'bg-blue-50 text-blue-800'
+                    }`}
+                  >
+                    <span className="flex-shrink-0">
+                      {log.status === 'in_progress' && <span className="animate-spin inline-block">⏳</span>}
+                      {log.status === 'success' && '✅'}
+                      {log.status === 'error' && '❌'}
+                      {log.status === 'pending' && '⏳'}
+                    </span>
+                    <span className="text-sm">{log.message}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t bg-gray-50 flex-shrink-0">
+              {designFlowComplete && designFlowSuccess && (
+                <div className="text-center mb-4 p-3 bg-purple-50 rounded-lg">
+                  <p className="text-purple-800 text-sm">
+                    Cuando Tonic apruebe el artículo, se enviará automáticamente a DesignFlow.
+                  </p>
+                </div>
+              )}
+              {designFlowComplete && !designFlowSuccess && (
+                <div className="text-center mb-4 p-3 bg-red-50 rounded-lg">
+                  <p className="text-red-800 text-sm">
+                    Hubo un error al guardar la campaña. Por favor intenta de nuevo.
+                  </p>
+                </div>
+              )}
+              <div className="flex gap-3">
+                {savedCampaignId ? (
+                  <button
+                    onClick={() => {
+                      setIsDesignFlowSaving(false);
+                      router.push(`/campaigns/${savedCampaignId}`);
+                    }}
+                    className="flex-1 px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 font-medium"
+                  >
+                    Ver Campaña
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setIsDesignFlowSaving(false)}
+                    className="flex-1 px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 font-medium"
+                  >
+                    Cerrar
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    // Reset form for new campaign
+                    setIsDesignFlowSaving(false);
+                    setDesignFlowLogs([]);
+                    setDesignFlowComplete(false);
+                    setDesignFlowSuccess(false);
+                    setSavedCampaignId(null);
+                    setStep(1);
+                    setFormData({
+                      name: '',
+                      campaignType: 'CBO',
+                      tonicAccountId: '',
+                      offerId: '',
+                      country: '',
+                      language: 'en',
+                      copyMaster: '',
+                      communicationAngle: '',
+                      keywords: [],
+                      contentGenerationPhrases: [],
+                      platforms: [],
+                      rsocMode: 'new',
+                      selectedHeadlineId: null,
+                      needsDesignFlow: true,
+                      designFlowRequester: 'Harry',
+                      designFlowNotes: '',
+                    });
+                    setKeywordsText('');
+                    setContentPhrasesText('');
+                    setPhrasesValidation({ status: 'idle' });
+                    setError(null);
+                    wizardSessionIdRef.current = `wizard-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+                  }}
+                  className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium"
+                >
+                  Crear Otra Campaña
                 </button>
               </div>
             </div>
