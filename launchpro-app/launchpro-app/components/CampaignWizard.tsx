@@ -172,7 +172,7 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
     rsocMode: 'new' as 'new' | 'existing',
     selectedHeadlineId: null as number | null,
     // DesignFlow configuration (used when article is approved by Tonic)
-    needsDesignFlow: true, // Toggle: true = send to DesignFlow, false = launch directly
+    needsDesignFlow: false, // Toggle: false by default, user must explicitly enable
     designFlowRequester: 'Harry',
     designFlowNotes: '',
   });
@@ -344,7 +344,7 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
           })),
           rsocMode: 'existing',
           selectedHeadlineId: null,
-          needsDesignFlow: true,
+          needsDesignFlow: campaign.needsDesignFlow || false, // Keep campaign's saved value
           designFlowRequester: campaign.designFlowRequester || 'Harry',
           designFlowNotes: campaign.designFlowNotes || '',
         });
@@ -614,7 +614,7 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
           platforms: platformsConfig,
           rsocMode: 'new', // Default to new article when cloning
           selectedHeadlineId: null,
-          needsDesignFlow: true,
+          needsDesignFlow: false,
           designFlowRequester: campaign.designFlowRequester || 'Harry',
           designFlowNotes: '', // Start fresh for clone
         });
@@ -2977,55 +2977,111 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
                 {/* DesignFlow Section - Only show when Tonic account is selected */}
                 {formData.tonicAccountId && (
                   <div className="mt-8 pt-6 border-t border-gray-200">
-                    {/* DesignFlow Toggle - Card Style */}
-                    <div
-                      onClick={() => setFormData({...formData, needsDesignFlow: !formData.needsDesignFlow})}
-                      className={`
-                        cursor-pointer rounded-xl p-5 border-2 transition-all duration-200
-                        ${formData.needsDesignFlow
-                          ? 'bg-gradient-to-r from-purple-50 to-pink-50 border-purple-400 shadow-md'
-                          : 'bg-gray-50 border-gray-200 hover:border-gray-300 hover:bg-gray-100'
-                        }
-                      `}
-                    >
-                      <div className="flex items-center justify-between">
+                    {/* Show different state based on DesignFlow task status */}
+                    {editCampaignData?.designFlowTask?.status === 'Done' ? (
+                      /* DesignFlow COMPLETED - Show success message */
+                      <div className="bg-green-50 border-2 border-green-200 rounded-xl p-5">
                         <div className="flex items-center gap-4">
-                          <div className={`
-                            w-14 h-14 rounded-xl flex items-center justify-center text-2xl
-                            ${formData.needsDesignFlow
-                              ? 'bg-gradient-to-br from-purple-500 to-pink-500 shadow-lg'
-                              : 'bg-gray-200'
-                            }
-                          `}>
-                            {formData.needsDesignFlow ? '✨' : '🎨'}
+                          <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-green-500 to-emerald-500 flex items-center justify-center text-2xl shadow-lg">
+                            ✅
                           </div>
-                          <div>
-                            <h4 className={`font-semibold text-lg ${formData.needsDesignFlow ? 'text-purple-900' : 'text-gray-700'}`}>
-                              Necesito creativos del equipo de diseño
+                          <div className="flex-1">
+                            <h4 className="font-semibold text-lg text-green-800">
+                              Creativos ya trabajados
                             </h4>
-                            <p className={`text-sm ${formData.needsDesignFlow ? 'text-purple-600' : 'text-gray-500'}`}>
-                              {formData.needsDesignFlow
-                                ? 'Se enviará a DesignFlow cuando Tonic apruebe el artículo'
-                                : 'Continuarás configurando plataformas con tus propios creativos'
-                              }
+                            <p className="text-sm text-green-600">
+                              El equipo de diseño completó esta tarea
+                              {editCampaignData.designFlowTask.completedAt && (
+                                <> el {new Date(editCampaignData.designFlowTask.completedAt).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })}</>
+                              )}
                             </p>
                           </div>
                         </div>
-                        {/* Toggle Switch */}
-                        <div className={`
-                          relative w-14 h-8 rounded-full transition-colors duration-200 flex-shrink-0
-                          ${formData.needsDesignFlow ? 'bg-purple-500' : 'bg-gray-300'}
-                        `}>
+                        {editCampaignData.designFlowTask.deliveryLink && (
+                          <a
+                            href={editCampaignData.designFlowTask.deliveryLink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors text-sm font-medium"
+                          >
+                            📦 Ver entrega de diseño
+                          </a>
+                        )}
+                      </div>
+                    ) : editCampaignData?.designFlowTask ? (
+                      /* DesignFlow IN PROGRESS - Show status message */
+                      <div className="bg-purple-50 border-2 border-purple-200 rounded-xl p-5">
+                        <div className="flex items-center gap-4">
+                          <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-2xl shadow-lg animate-pulse">
+                            🎨
+                          </div>
+                          <div className="flex-1">
+                            <h4 className="font-semibold text-lg text-purple-800">
+                              Diseño en progreso
+                            </h4>
+                            <p className="text-sm text-purple-600">
+                              Estado: <span className="font-medium">{editCampaignData.designFlowTask.status}</span>
+                              {editCampaignData.designFlowTask.requester && (
+                                <> • Asignado a: <span className="font-medium">{editCampaignData.designFlowTask.requester}</span></>
+                              )}
+                            </p>
+                          </div>
+                        </div>
+                        <p className="mt-3 text-xs text-purple-500">
+                          Recibirás una notificación cuando el equipo de diseño complete los creativos.
+                        </p>
+                      </div>
+                    ) : (
+                      /* DesignFlow NOT STARTED - Show toggle */
+                      <div
+                        onClick={() => setFormData({...formData, needsDesignFlow: !formData.needsDesignFlow})}
+                        className={`
+                          cursor-pointer rounded-xl p-5 border-2 transition-all duration-200
+                          ${formData.needsDesignFlow
+                            ? 'bg-gradient-to-r from-purple-50 to-pink-50 border-purple-400 shadow-md'
+                            : 'bg-gray-50 border-gray-200 hover:border-gray-300 hover:bg-gray-100'
+                          }
+                        `}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-4">
+                            <div className={`
+                              w-14 h-14 rounded-xl flex items-center justify-center text-2xl
+                              ${formData.needsDesignFlow
+                                ? 'bg-gradient-to-br from-purple-500 to-pink-500 shadow-lg'
+                                : 'bg-gray-200'
+                              }
+                            `}>
+                              {formData.needsDesignFlow ? '✨' : '🎨'}
+                            </div>
+                            <div>
+                              <h4 className={`font-semibold text-lg ${formData.needsDesignFlow ? 'text-purple-900' : 'text-gray-700'}`}>
+                                Necesito creativos del equipo de diseño
+                              </h4>
+                              <p className={`text-sm ${formData.needsDesignFlow ? 'text-purple-600' : 'text-gray-500'}`}>
+                                {formData.needsDesignFlow
+                                  ? 'Se enviará a DesignFlow cuando Tonic apruebe el artículo'
+                                  : 'Continuarás configurando plataformas con tus propios creativos'
+                                }
+                              </p>
+                            </div>
+                          </div>
+                          {/* Toggle Switch */}
                           <div className={`
-                            absolute top-1 w-6 h-6 bg-white rounded-full shadow-md transition-transform duration-200
-                            ${formData.needsDesignFlow ? 'translate-x-7' : 'translate-x-1'}
-                          `} />
+                            relative w-14 h-8 rounded-full transition-colors duration-200 flex-shrink-0
+                            ${formData.needsDesignFlow ? 'bg-purple-500' : 'bg-gray-300'}
+                          `}>
+                            <div className={`
+                              absolute top-1 w-6 h-6 bg-white rounded-full shadow-md transition-transform duration-200
+                              ${formData.needsDesignFlow ? 'translate-x-7' : 'translate-x-1'}
+                            `} />
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    )}
 
-                    {/* DesignFlow Configuration - Only when enabled */}
-                    {formData.needsDesignFlow && (
+                    {/* DesignFlow Configuration - Only when enabled AND no existing task */}
+                    {formData.needsDesignFlow && !editCampaignData?.designFlowTask && (
                       <div className="mt-4 bg-purple-50 border border-purple-200 rounded-xl p-6">
                         <h3 className="font-semibold text-purple-900 mb-4 flex items-center">
                           <span className="mr-2">🎨</span> Configuración de DesignFlow
@@ -4578,7 +4634,7 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
                       platforms: [],
                       rsocMode: 'new',
                       selectedHeadlineId: null,
-                      needsDesignFlow: true,
+                      needsDesignFlow: false,
                       designFlowRequester: 'Harry',
                       designFlowNotes: '',
                     });
@@ -4706,7 +4762,7 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
                       platforms: [],
                       rsocMode: 'new',
                       selectedHeadlineId: null,
-                      needsDesignFlow: true,
+                      needsDesignFlow: false,
                       designFlowRequester: 'Harry',
                       designFlowNotes: '',
                     });

@@ -81,8 +81,19 @@ export async function GET(request: NextRequest) {
     let filteredHeadlines = headlines || [];
 
     if (filterOfferId) {
-      // Compare as strings since Tonic API returns offer_id as string
-      filteredHeadlines = filteredHeadlines.filter(h => String(h.offer_id) === String(filterOfferId));
+      // IMPORTANT: filterOfferId from frontend is LaunchPro CUID, but Tonic uses numeric IDs
+      // Resolve LaunchPro offerId → Tonic offer_id (tonicId)
+      let tonicOfferId = filterOfferId;
+      const offer = await prisma.offer.findUnique({
+        where: { id: filterOfferId },
+        select: { tonicId: true }
+      });
+      if (offer?.tonicId) {
+        tonicOfferId = offer.tonicId;
+        logger.info('api', `Resolved offerId ${filterOfferId} → tonicId ${tonicOfferId}`);
+      }
+      // Compare as strings since Tonic API returns offer_id as string/number
+      filteredHeadlines = filteredHeadlines.filter(h => String(h.offer_id) === String(tonicOfferId));
     }
 
     if (filterCountry) {

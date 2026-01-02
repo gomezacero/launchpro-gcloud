@@ -120,15 +120,44 @@ export async function GET(request: NextRequest) {
             // Wait a moment for Tonic to process, then fetch campaign details
             await new Promise(resolve => setTimeout(resolve, 2000));
 
-            const campaignList = await tonicService.getCampaignList(credentials, 'active');
-            const tonicCampaign = campaignList.find((c: { id: string | number }) =>
-              String(c.id) === String(tonicCampaignId)
-            );
+            // Try multiple states since new campaigns might be in pending/incomplete
+            const statesToCheck: Array<'active' | 'pending' | 'incomplete'> = ['active', 'pending', 'incomplete'];
+            let tonicCampaign: any = null;
+
+            for (const state of statesToCheck) {
+              if (tonicCampaign) break;
+              try {
+                const campaignList = await tonicService.getCampaignList(credentials, state);
+                tonicCampaign = campaignList.find((c: { id: string | number }) =>
+                  String(c.id) === String(tonicCampaignId)
+                );
+                if (tonicCampaign) {
+                  logger.info('tonic', `🔗 [CRON] Found campaign in '${state}' state`);
+                }
+              } catch (listError) {
+                logger.warn('tonic', `Could not fetch ${state} campaigns: ${listError}`);
+              }
+            }
 
             if (tonicCampaign) {
               trackingLink = tonicCampaign.link || null;
               directLink = tonicCampaign.direct_link || null;
               logger.info('tonic', `🔗 [CRON] Got links - tracking: ${trackingLink}, direct: ${directLink}`);
+            } else {
+              // Fallback: try getCampaignStatus endpoint
+              try {
+                const campaignStatus = await tonicService.getCampaignStatus(credentials, String(tonicCampaignId));
+                // getCampaignStatus returns: { "0": { "link": "domain.com", "ssl": true }, "status": "active" }
+                const linkData = campaignStatus['0'] || campaignStatus;
+                if (linkData.link) {
+                  const protocol = linkData.ssl ? 'https://' : 'http://';
+                  trackingLink = linkData.link.startsWith('http') ? linkData.link : `${protocol}${linkData.link}`;
+                }
+                directLink = linkData.direct_link || campaignStatus.direct_link || null;
+                logger.info('tonic', `🔗 [CRON] Got links from status endpoint - tracking: ${trackingLink}, direct: ${directLink}`);
+              } catch (statusError) {
+                logger.warn('tonic', `Could not fetch campaign status: ${statusError}`);
+              }
             }
 
             // 3. Check if campaign needs DesignFlow or should launch directly
