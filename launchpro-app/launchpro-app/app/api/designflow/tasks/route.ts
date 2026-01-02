@@ -105,11 +105,11 @@ export async function POST(request: NextRequest) {
     });
 
     const duration = Date.now() - startTime;
-    logger.success('api', `[DesignFlow] Task created: ${designFlowTask.id}`, {
+    logger.success('api', `[DesignFlow] Task created: ${designFlowTask.id} (${duration}ms)`, {
       campaignId,
       taskId: designFlowTask.id,
       requester,
-    }, duration);
+    });
 
     return NextResponse.json({
       success: true,
@@ -123,9 +123,9 @@ export async function POST(request: NextRequest) {
     });
   } catch (error: any) {
     const duration = Date.now() - startTime;
-    logger.error('api', `[DesignFlow] Error creating task: ${error.message}`, {
+    logger.error('api', `[DesignFlow] Error creating task: ${error.message} (${duration}ms)`, {
       stack: error.stack,
-    }, duration);
+    });
 
     return NextResponse.json(
       {
