@@ -101,9 +101,10 @@ export async function GET(request: NextRequest) {
 
           try {
             // 1. Create campaign in Tonic with the approved headline
+            // IMPORTANT: Use campaign.offer.tonicId (numeric Tonic ID), NOT campaign.offerId (LaunchPro CUID)
             const tonicCampaignId = await tonicService.createCampaign(credentials, {
               name: campaign.name,
-              offer_id: campaign.offerId,
+              offer_id: campaign.offer?.tonicId || campaign.offerId, // Use Tonic's offer ID
               country: campaign.country,
               type: 'rsoc',
               headline_id: articleStatus.headline_id,
@@ -225,30 +226,58 @@ export async function GET(request: NextRequest) {
             }
 
           } catch (processingError: unknown) {
-            // If processing fails after approval, save partial progress
+            // If processing fails after approval, handle based on needsDesignFlow
             const errorMessage = processingError instanceof Error ? processingError.message : 'Unknown error';
             logger.error('system', `❌ [CRON] Error processing approved article for "${campaign.name}": ${errorMessage}`);
 
-            // Save the article approval at least, so we can retry later
-            await prisma.campaign.update({
-              where: { id: campaign.id },
-              data: {
-                status: CampaignStatus.ARTICLE_APPROVED, // Fallback status for retry
-                tonicArticleId: articleStatus.headline_id,
-                errorDetails: {
-                  step: 'post-article-processing',
-                  message: errorMessage,
-                  timestamp: new Date().toISOString(),
+            // IMPORTANT: If campaign needs DesignFlow and we failed to create the task,
+            // mark as FAILED - we cannot allow process-campaigns to launch it
+            if (campaign.needsDesignFlow) {
+              // DesignFlow required but failed to create task → FAILED (cannot launch without design)
+              await prisma.campaign.update({
+                where: { id: campaign.id },
+                data: {
+                  status: CampaignStatus.FAILED,
+                  tonicArticleId: articleStatus.headline_id,
+                  errorDetails: {
+                    step: 'designflow-creation',
+                    message: `Failed to create DesignFlow task: ${errorMessage}`,
+                    timestamp: new Date().toISOString(),
+                    requiresDesignFlow: true,
+                  },
                 },
-              },
-            });
+              });
 
-            results.push({
-              campaignId: campaign.id,
-              campaignName: campaign.name,
-              status: 'partial',
-              action: `Article approved but processing failed: ${errorMessage}. Status: ARTICLE_APPROVED for retry.`,
-            });
+              logger.error('system', `❌ [CRON] Campaign "${campaign.name}" FAILED: Could not create DesignFlow task`);
+
+              results.push({
+                campaignId: campaign.id,
+                campaignName: campaign.name,
+                status: 'failed',
+                action: `DesignFlow task creation failed: ${errorMessage}. Status: FAILED (requires manual intervention).`,
+              });
+            } else {
+              // No DesignFlow required → ARTICLE_APPROVED for retry via process-campaigns
+              await prisma.campaign.update({
+                where: { id: campaign.id },
+                data: {
+                  status: CampaignStatus.ARTICLE_APPROVED,
+                  tonicArticleId: articleStatus.headline_id,
+                  errorDetails: {
+                    step: 'post-article-processing',
+                    message: errorMessage,
+                    timestamp: new Date().toISOString(),
+                  },
+                },
+              });
+
+              results.push({
+                campaignId: campaign.id,
+                campaignName: campaign.name,
+                status: 'partial',
+                action: `Article approved but processing failed: ${errorMessage}. Status: ARTICLE_APPROVED for retry.`,
+              });
+            }
           }
 
         } else if (articleStatus.request_status === 'rejected') {
