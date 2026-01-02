@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { metaService } from '@/services/meta.service';
 import { tiktokService } from '@/services/tiktok.service';
+import { taboolaService } from '@/services/taboola.service';
+import { env } from '@/lib/env';
 
 /**
  * GET /api/ad-accounts
- * Fetches ad accounts from Meta and TikTok APIs
+ * Fetches ad accounts from Meta, TikTok, and Taboola APIs
  *
  * Query params:
- * - platform: 'meta' | 'tiktok' | 'all' (default: 'all')
+ * - platform: 'meta' | 'tiktok' | 'taboola' | 'all' (default: 'all')
  */
 export async function GET(req: NextRequest) {
   try {
@@ -17,6 +19,7 @@ export async function GET(req: NextRequest) {
     const result: {
       meta?: any[];
       tiktok?: any[];
+      taboola?: any[];
     } = {};
 
     // Fetch Meta ad accounts
@@ -38,6 +41,26 @@ export async function GET(req: NextRequest) {
       } catch (error: any) {
         console.error('Error fetching TikTok advertiser accounts:', error);
         result.tiktok = [];
+      }
+    }
+
+    // Fetch Taboola advertiser accounts
+    if (platform === 'taboola' || platform === 'all') {
+      try {
+        // Only fetch if Taboola credentials are configured
+        if (env.TABOOLA_CLIENT_ID && env.TABOOLA_CLIENT_SECRET) {
+          await taboolaService.getAccessToken();
+          const taboolaAccounts = await taboolaService.getAllowedAccounts();
+          // Filter to only advertiser accounts
+          result.taboola = taboolaAccounts.filter(
+            (acc) => acc.partner_types?.includes('ADVERTISER')
+          );
+        } else {
+          result.taboola = [];
+        }
+      } catch (error: any) {
+        console.error('Error fetching Taboola advertiser accounts:', error);
+        result.taboola = [];
       }
     }
 

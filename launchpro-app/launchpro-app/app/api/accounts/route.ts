@@ -51,6 +51,13 @@ export async function GET(request: NextRequest) {
             tiktok: accounts,
           },
         });
+      } else if (type === AccountType.TABOOLA) {
+        return NextResponse.json({
+          success: true,
+          data: {
+            taboola: accounts,
+          },
+        });
       }
     } else if (platform) {
       // Get accounts for a specific platform
@@ -77,6 +84,11 @@ export async function GET(request: NextRequest) {
 
       const tiktokAccounts = await prisma.account.findMany({
         where: { accountType: AccountType.TIKTOK, isActive: true },
+        orderBy: { name: 'asc' },
+      });
+
+      const taboolaAccounts = await prisma.account.findMany({
+        where: { accountType: AccountType.TABOOLA, isActive: true },
         orderBy: { name: 'asc' },
       });
 
@@ -126,6 +138,21 @@ export async function GET(request: NextRequest) {
               status = status === 'error' ? 'error' : 'warning';
             }
             break;
+
+          case AccountType.TABOOLA:
+            if (!account.taboolaAccountId) {
+              issues.push('Missing account ID');
+              status = 'error';
+            }
+            if (!account.taboolaAccessToken) {
+              issues.push('Missing access token');
+              status = status === 'error' ? 'error' : 'warning';
+            }
+            if (!account.taboolaPixelId) {
+              issues.push('Missing pixel ID');
+              status = status === 'error' ? 'error' : 'warning';
+            }
+            break;
         }
 
         return { ...account, status, issues };
@@ -134,6 +161,7 @@ export async function GET(request: NextRequest) {
       const tonicWithStatus = tonicAccounts.map(acc => addHealthStatus(acc, AccountType.TONIC));
       const metaWithStatus = metaAccounts.map(acc => addHealthStatus(acc, AccountType.META));
       const tiktokWithStatus = tiktokAccounts.map(acc => addHealthStatus(acc, AccountType.TIKTOK));
+      const taboolaWithStatus = taboolaAccounts.map(acc => addHealthStatus(acc, AccountType.TABOOLA));
 
       // Group Meta accounts by portfolio
       const metaByPortfolio = metaAccounts.reduce((acc, account) => {
@@ -154,6 +182,7 @@ export async function GET(request: NextRequest) {
             byPortfolio: metaByPortfolio,
           },
           tiktok: tiktokWithStatus,
+          taboola: taboolaWithStatus,
         },
       });
     }
@@ -195,6 +224,9 @@ export async function POST(request: NextRequest) {
         metaAdAccountId: body.metaAdAccountId,
         metaPortfolio: body.metaPortfolio,
         tiktokAdvertiserId: body.tiktokAdvertiserId,
+        taboolaAccountId: body.taboolaAccountId,
+        taboolaAccessToken: body.taboolaAccessToken,
+        taboolaPixelId: body.taboolaPixelId,
         isActive: body.isActive !== false,
       },
     });

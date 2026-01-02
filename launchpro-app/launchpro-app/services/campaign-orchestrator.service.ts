@@ -85,6 +85,10 @@ export interface CreateCampaignParams {
     };
     // Manual Ad Copy (TikTok only)
     manualTiktokAdText?: string;
+    // Taboola-specific settings
+    taboolaBidStrategy?: 'FIXED' | 'MAX_CONVERSIONS' | 'TARGET_CPA' | 'ENHANCED_CPC';
+    taboolaCpc?: number;
+    taboolaBrandingText?: string;
   }[];
 
   // Manual keywords (optional, will be AI-generated if not provided)
@@ -1183,6 +1187,20 @@ class CampaignOrchestratorService {
                 campaignLogger.completeStep(campaign.id, 'tiktok_campaign', 'Campaña creada en TikTok');
               } else {
                 campaignLogger.failStep(campaign.id, 'tiktok_campaign', 'Error al crear campaña en TikTok', (result as any).error);
+              }
+            } else if (platformConfig.platform === Platform.TABOOLA) {
+              campaignLogger.startStep(campaign.id, 'taboola_campaign', 'Creando campaña en Taboola...');
+              const result = await this.launchToTaboola(
+                campaign,
+                platformConfig,
+                aiContentResult,
+                tonicCampaignId?.toString()
+              );
+              platformResults.push(result);
+              if (result.success) {
+                campaignLogger.completeStep(campaign.id, 'taboola_campaign', 'Campaña creada en Taboola');
+              } else {
+                campaignLogger.failStep(campaign.id, 'taboola_campaign', 'Error al crear campaña en Taboola', (result as any).error);
               }
             }
           } catch (error: any) {
@@ -2905,6 +2923,204 @@ class CampaignOrchestratorService {
       adGroupId: adGroup.adgroup_id,
       adId: lastAd.adId,
     };
+  }
+
+  /**
+   * Launch campaign to Taboola
+   *
+   * Taboola uses "Backstage API" (aka Realize) for campaign management.
+   * Campaign hierarchy: Campaign → Items (Ads)
+   *
+   * NOTE: This is a placeholder implementation. Full integration requires:
+   * 1. Taboola API credentials (client_id, client_secret)
+   * 2. Taboola account_id
+   * 3. These will be configured when the user provides them
+   */
+  private async launchToTaboola(campaign: any, platformConfig: any, aiContent: any, tonicCampaignId?: string) {
+    logger.info('taboola', 'Starting Taboola campaign launch...', { campaignId: campaign.id });
+
+    try {
+      // Get the Taboola account from DB
+      const taboolaAccount = await prisma.account.findFirst({
+        where: {
+          id: platformConfig.taboolaAccountId,
+          accountType: 'TABOOLA',
+          isActive: true,
+        },
+      });
+
+      if (!taboolaAccount) {
+        throw new Error('Taboola account not found or inactive');
+      }
+
+      // Check if Taboola credentials are configured
+      if (!taboolaAccount.taboolaAccountId || !taboolaAccount.taboolaAccessToken) {
+        logger.warn('taboola', 'Taboola API credentials not configured. Skipping Taboola launch.', {
+          hasAccountId: !!taboolaAccount.taboolaAccountId,
+          hasAccessToken: !!taboolaAccount.taboolaAccessToken,
+        });
+
+        // Update CampaignPlatform status to indicate pending configuration
+        await prisma.campaignPlatform.update({
+          where: {
+            campaignId_platform: {
+              campaignId: campaign.id,
+              platform: Platform.TABOOLA,
+            },
+          },
+          data: {
+            status: CampaignStatus.DRAFT,
+            taboolaBidStrategy: platformConfig.taboolaBidStrategy,
+            taboolaCpc: platformConfig.taboolaCpc,
+            taboolaBrandingText: platformConfig.taboolaBrandingText,
+          },
+        });
+
+        return {
+          platform: Platform.TABOOLA,
+          success: false,
+          error: 'Taboola API credentials not configured. Please configure your Taboola account credentials.',
+        };
+      }
+
+      // Import and use Taboola service
+      const { TaboolaService } = await import('./taboola.service');
+      const taboolaService = TaboolaService.withAccount(
+        taboolaAccount.taboolaAccountId,
+        taboolaAccount.taboolaAccessToken
+      );
+
+      // Get tracking link
+      const trackingLink = campaign.tonicTrackingLink || `https://example.com/track/${campaign.id}`;
+
+      // Generate ad copy for Taboola (uses similar format to Meta)
+      const adCopy = aiContent?.adCopy || {
+        headline: campaign.name,
+        description: campaign.communicationAngle || 'Learn more',
+      };
+
+      // Create Taboola campaign
+      logger.info('taboola', 'Creating Taboola campaign...');
+      const taboolaCampaign = await taboolaService.createCampaign({
+        name: campaign.name,
+        branding_text: platformConfig.taboolaBrandingText || 'Sponsored',
+        marketing_objective: platformConfig.performanceGoal === 'Traffic' ? 'DRIVE_WEBSITE_TRAFFIC' : 'LEADS_GENERATION',
+        bid_strategy: platformConfig.taboolaBidStrategy || 'MAX_CONVERSIONS',
+        cpc: platformConfig.taboolaBidStrategy === 'FIXED' ? platformConfig.taboolaCpc : undefined,
+        spending_limit: platformConfig.budget * 30, // Monthly budget (daily * 30)
+        spending_limit_model: 'MONTHLY',
+        country_targeting: {
+          type: 'INCLUDE',
+          value: [campaign.country],
+        },
+        is_active: false, // Start paused, activate after item is ready
+      });
+
+      logger.info('taboola', 'Taboola campaign created', { campaignId: taboolaCampaign.id });
+
+      // Create campaign item (ad) with the tracking URL
+      logger.info('taboola', 'Creating Taboola campaign item...');
+      const taboolaItem = await taboolaService.createItem(
+        taboolaCampaign.id,
+        trackingLink,
+        taboolaAccount.taboolaAccountId
+      );
+
+      logger.info('taboola', 'Taboola item created', { itemId: taboolaItem.id, status: taboolaItem.status });
+
+      // Wait for item to finish crawling (up to 60 seconds)
+      logger.info('taboola', 'Waiting for item to finish crawling...');
+      try {
+        const readyItem = await taboolaService.waitForItemReady(
+          taboolaCampaign.id,
+          taboolaItem.id,
+          60000, // 60 second timeout
+          5000,  // poll every 5 seconds
+          taboolaAccount.taboolaAccountId
+        );
+
+        // Update item with ad copy if crawling completed
+        if (readyItem.status !== 'CRAWLING') {
+          logger.info('taboola', 'Updating item with ad copy...');
+          await taboolaService.updateItem(
+            taboolaCampaign.id,
+            taboolaItem.id,
+            {
+              title: adCopy.headline,
+              description: adCopy.description,
+            },
+            taboolaAccount.taboolaAccountId
+          );
+        }
+      } catch (waitError: any) {
+        logger.warn('taboola', 'Item still crawling after timeout, will be updated later', {
+          error: waitError.message,
+        });
+      }
+
+      // Activate the campaign
+      logger.info('taboola', 'Activating Taboola campaign...');
+      await taboolaService.resumeCampaign(taboolaCampaign.id, taboolaAccount.taboolaAccountId);
+
+      // Update database
+      await prisma.campaignPlatform.update({
+        where: {
+          campaignId_platform: {
+            campaignId: campaign.id,
+            platform: Platform.TABOOLA,
+          },
+        },
+        data: {
+          taboolaCampaignId: taboolaCampaign.id,
+          taboolaItemId: taboolaItem.id,
+          taboolaBidStrategy: platformConfig.taboolaBidStrategy,
+          taboolaCpc: platformConfig.taboolaCpc,
+          taboolaBrandingText: platformConfig.taboolaBrandingText,
+          status: CampaignStatus.ACTIVE,
+        },
+      });
+
+      logger.success('taboola', 'Taboola campaign launched successfully', {
+        campaignId: taboolaCampaign.id,
+        itemId: taboolaItem.id,
+      });
+
+      return {
+        platform: Platform.TABOOLA,
+        success: true,
+        campaignId: taboolaCampaign.id,
+        adId: taboolaItem.id,
+      };
+
+    } catch (error: any) {
+      logger.error('taboola', `Failed to launch Taboola campaign: ${error.message}`, {
+        campaignId: campaign.id,
+        error: error.message,
+        stack: error.stack,
+      });
+
+      // Update CampaignPlatform with error status
+      await prisma.campaignPlatform.update({
+        where: {
+          campaignId_platform: {
+            campaignId: campaign.id,
+            platform: Platform.TABOOLA,
+          },
+        },
+        data: {
+          status: CampaignStatus.FAILED,
+          taboolaBidStrategy: platformConfig.taboolaBidStrategy,
+          taboolaCpc: platformConfig.taboolaCpc,
+          taboolaBrandingText: platformConfig.taboolaBrandingText,
+        },
+      });
+
+      return {
+        platform: Platform.TABOOLA,
+        success: false,
+        error: error.message,
+      };
+    }
   }
 
   /**

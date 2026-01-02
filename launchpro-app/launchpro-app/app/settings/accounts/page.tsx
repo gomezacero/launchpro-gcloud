@@ -90,10 +90,11 @@ export default function AccountsPage() {
   };
 
   const getAccountTypeColor = (type: AccountType) => {
-    const colors = {
+    const colors: Record<AccountType, string> = {
       TONIC: 'bg-blue-100 text-blue-800',
       META: 'bg-purple-100 text-purple-800',
       TIKTOK: 'bg-pink-100 text-pink-800',
+      TABOOLA: 'bg-orange-100 text-orange-800',
     };
     return colors[type] || 'bg-gray-100 text-gray-800';
   };

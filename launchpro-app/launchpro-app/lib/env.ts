@@ -51,6 +51,16 @@ const envSchema = z.object({
   TIKTOK_PIXEL_ID: z.string().optional(),
 
   // ============================================================================
+  // TABOOLA BACKSTAGE API
+  // ============================================================================
+  // Credentials for Taboola Realize (Backstage API)
+  // Token expires after 12 hours
+  TABOOLA_CLIENT_ID: z.string().optional(),
+  TABOOLA_CLIENT_SECRET: z.string().optional(),
+  // Default account ID (optional, usually discovered via API)
+  TABOOLA_ACCOUNT_ID: z.string().optional(),
+
+  // ============================================================================
   // AI SERVICES
   // ============================================================================
   // Anthropic Claude para generación de contenido

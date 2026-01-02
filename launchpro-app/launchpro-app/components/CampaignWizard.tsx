@@ -27,17 +27,18 @@ interface Country {
 interface Account {
   id: string;
   name: string;
-  accountType: 'TONIC' | 'META' | 'TIKTOK';
+  accountType: 'TONIC' | 'META' | 'TIKTOK' | 'TABOOLA';
   tonicConsumerKey?: string;
   metaAdAccountId?: string;
   metaPortfolio?: string;
   tiktokAdvertiserId?: string;
+  taboolaAccountId?: string;
   linkedTonicAccountId?: string;
   isActive: boolean;
 }
 
 interface PlatformConfig {
-  platform: 'META' | 'TIKTOK';
+  platform: 'META' | 'TIKTOK' | 'TABOOLA';
   accountId?: string;
   performanceGoal: string;
   budget: string;
@@ -60,6 +61,10 @@ interface PlatformConfig {
   // Identity for TikTok (user selectable)
   tiktokIdentityId?: string;
   tiktokIdentityType?: string;
+  // Taboola-specific fields
+  taboolaBidStrategy?: 'FIXED' | 'MAX_CONVERSIONS' | 'TARGET_CPA' | 'ENHANCED_CPC';
+  taboolaCpc?: string;  // Cost per click when bid_strategy is FIXED
+  taboolaBrandingText?: string;  // Branding text for Taboola ads
 }
 
 interface UploadedFile {
@@ -112,12 +117,14 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
   const [tonicAccounts, setTonicAccounts] = useState<Account[]>([]);
   const [metaAccounts, setMetaAccounts] = useState<Account[]>([]);
   const [tiktokAccounts, setTiktokAccounts] = useState<Account[]>([]);
+  const [taboolaAccounts, setTaboolaAccounts] = useState<Account[]>([]);
   const [accountsLoaded, setAccountsLoaded] = useState(false); // Track when accounts finish loading
   const [adAccountsLoaded, setAdAccountsLoaded] = useState(false); // Track when ad accounts (advertisers) finish loading
 
-  // Ad accounts from Meta/TikTok APIs (not from local DB)
+  // Ad accounts from Meta/TikTok/Taboola APIs (not from local DB)
   const [metaAdAccounts, setMetaAdAccounts] = useState<any[]>([]);
   const [tiktokAdvertiserAccounts, setTiktokAdvertiserAccounts] = useState<any[]>([]);
+  const [taboolaAdvertiserAccounts, setTaboolaAdvertiserAccounts] = useState<any[]>([]);
 
   // Fan Pages for Meta (loaded when Meta account is selected)
   const [metaPages, setMetaPages] = useState<{ id: string; name: string }[]>([]);
@@ -528,6 +535,7 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
         setTonicAccounts(data.data.tonic || []);
         setMetaAccounts(data.data.meta?.all || []);
         setTiktokAccounts(data.data.tiktok || []);
+        setTaboolaAccounts(data.data.taboola || []);
       }
     } catch (err: any) {
       console.error('Error loading accounts:', err);
@@ -543,6 +551,7 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
       if (data.success) {
         setMetaAdAccounts(data.data.meta || []);
         setTiktokAdvertiserAccounts(data.data.tiktok || []);
+        setTaboolaAdvertiserAccounts(data.data.taboola || []);
       }
     } catch (err: any) {
       console.error('Error loading ad accounts from APIs:', err);
@@ -1130,7 +1139,7 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
     }
   };
 
-  const addPlatform = (platform: 'META' | 'TIKTOK') => {
+  const addPlatform = (platform: 'META' | 'TIKTOK' | 'TABOOLA') => {
     // Default to tomorrow at 1:00 AM UTC
     const tomorrow = new Date();
     tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
@@ -1139,15 +1148,18 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
 
     const newPlatform: PlatformConfig = {
       platform,
-      performanceGoal: platform === 'META' ? 'Lead Generation' : 'Lead Generation',
-      budget: platform === 'META' ? '5' : '50',
+      performanceGoal: platform === 'TABOOLA' ? 'Lead Generation' : 'Lead Generation',
+      budget: platform === 'META' ? '5' : platform === 'TIKTOK' ? '50' : '100', // Taboola default $100
       startDateTime: defaultDateTime,
       generateWithAI: true,
-      // TikTok only allows videos, Meta allows both
+      // TikTok only allows videos, Meta allows both, Taboola only images
       aiMediaType: platform === 'TIKTOK' ? 'VIDEO' : 'IMAGE',
       aiMediaCount: 1,
       adsPerAdSet: 1, // For ABO: How many ads per ad set
       specialAdCategories: [],
+      // Taboola-specific defaults
+      taboolaBidStrategy: platform === 'TABOOLA' ? 'MAX_CONVERSIONS' : undefined,
+      taboolaBrandingText: platform === 'TABOOLA' ? '' : undefined,
     };
     setFormData((prev) => ({
       ...prev,
@@ -2408,7 +2420,7 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Select Platforms *
                 </label>
-                <div className="flex gap-4 mb-4">
+                <div className="flex gap-4 mb-4 flex-wrap">
                   <button
                     type="button"
                     onClick={() => addPlatform('META')}
@@ -2425,12 +2437,20 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
                   >
                     + Add TikTok
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => addPlatform('TABOOLA')}
+                    disabled={formData.platforms.some((p) => p.platform === 'TABOOLA')}
+                    className="px-6 py-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                  >
+                    + Add Taboola
+                  </button>
                 </div>
               </div>
 
               {formData.platforms.length === 0 && (
                 <div className="text-center py-8 text-gray-500">
-                  No platforms selected. Add Meta or TikTok to continue.
+                  No platforms selected. Add Meta, TikTok, or Taboola to continue.
                 </div>
               )}
 
@@ -2450,13 +2470,15 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
                   <h3 className="text-lg font-semibold mb-4">
                     {platform.platform === 'META'
                       ? '📘 Meta (Facebook/Instagram)'
-                      : '🎵 TikTok'}
+                      : platform.platform === 'TIKTOK'
+                      ? '🎵 TikTok'
+                      : '📰 Taboola'}
                   </h3>
 
                   <div className="space-y-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        {platform.platform === 'META' ? 'Meta Ad Account *' : 'TikTok Advertiser *'}
+                        {platform.platform === 'META' ? 'Meta Ad Account *' : platform.platform === 'TIKTOK' ? 'TikTok Advertiser *' : 'Taboola Account *'}
                       </label>
                       <select
                         value={platform.accountId || ''}
@@ -2477,7 +2499,7 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
                         required
                       >
                         <option value="">
-                          {`Select ${platform.platform === 'META' ? 'Meta account' : 'TikTok advertiser'}...`}
+                          {`Select ${platform.platform === 'META' ? 'Meta account' : platform.platform === 'TIKTOK' ? 'TikTok advertiser' : 'Taboola account'}...`}
                         </option>
                         {platform.platform === 'META' &&
                           metaAccounts.map((account) => (
@@ -2488,6 +2510,12 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
                           ))}
                         {platform.platform === 'TIKTOK' &&
                           tiktokAccounts.map((account) => (
+                            <option key={account.id} value={account.id}>
+                              {account.name}
+                            </option>
+                          ))}
+                        {platform.platform === 'TABOOLA' &&
+                          taboolaAccounts.map((account) => (
                             <option key={account.id} value={account.id}>
                               {account.name}
                             </option>
@@ -2555,6 +2583,66 @@ export default function CampaignWizard({ cloneFromId }: CampaignWizardProps) {
                           The TikTok account to display in ads.
                         </p>
                       </div>
+                    )}
+
+                    {/* Taboola-specific Settings */}
+                    {platform.platform === 'TABOOLA' && (
+                      <>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Branding Text *
+                          </label>
+                          <input
+                            type="text"
+                            value={platform.taboolaBrandingText || ''}
+                            onChange={(e) => updatePlatform(index, 'taboolaBrandingText', e.target.value)}
+                            placeholder="e.g., Your Brand Name"
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+                            required
+                          />
+                          <p className="text-xs text-gray-500 mt-1">
+                            The brand name that will appear on your Taboola ads.
+                          </p>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Bid Strategy *
+                          </label>
+                          <select
+                            value={platform.taboolaBidStrategy || 'MAX_CONVERSIONS'}
+                            onChange={(e) => updatePlatform(index, 'taboolaBidStrategy', e.target.value)}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+                            required
+                          >
+                            <option value="MAX_CONVERSIONS">Maximize Conversions (Recommended)</option>
+                            <option value="FIXED">Fixed CPC</option>
+                            <option value="TARGET_CPA">Target CPA</option>
+                            <option value="ENHANCED_CPC">Enhanced CPC</option>
+                          </select>
+                        </div>
+
+                        {platform.taboolaBidStrategy === 'FIXED' && (
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              CPC (Cost Per Click) *
+                            </label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0.01"
+                              value={platform.taboolaCpc || ''}
+                              onChange={(e) => updatePlatform(index, 'taboolaCpc', e.target.value)}
+                              placeholder="e.g., 0.50"
+                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+                              required
+                            />
+                            <p className="text-xs text-gray-500 mt-1">
+                              Fixed cost per click in USD.
+                            </p>
+                          </div>
+                        )}
+                      </>
                     )}
 
                     <div>

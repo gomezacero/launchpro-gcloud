@@ -16,6 +16,7 @@ enum Platform {
   TONIC
   META
   TIKTOK
+  TABOOLA
 }
 
 enum CampaignStatus {
@@ -45,6 +46,7 @@ enum AccountType {
   TONIC
   META
   TIKTOK
+  TABOOLA
 }
 
 enum ManagerRole {
@@ -90,7 +92,13 @@ model Account {
   tiktokAccessToken  String? @db.Text // Account-specific access token
   tiktokPixelId      String? // Account-specific pixel ID
 
-  // Linked Tonic Account (for Meta/TikTok accounts)
+  // Taboola accounts
+  taboolaAccountId    String? // Account ID de Taboola (string alfanumérico como "taboola-account-name")
+  taboolaAccessToken  String? @db.Text // Account-specific access token
+  taboolaTokenExpiry  DateTime? // Token expiration (12 hours)
+  taboolaPixelId      String? // Account-specific pixel ID
+
+  // Linked Tonic Account (for Meta/TikTok/Taboola accounts)
   linkedTonicAccountId String?
   linkedTonicAccount   Account?  @relation("LinkedTonicAccount", fields: [linkedTonicAccountId], references: [id])
   linkedAccounts       Account[] @relation("LinkedTonicAccount")
@@ -99,6 +107,7 @@ model Account {
   campaignsAsTonic CampaignPlatform[] @relation("TonicAccount")
   campaignsAsMeta  CampaignPlatform[] @relation("MetaAccount")
   campaignsAsTikTok CampaignPlatform[] @relation("TikTokAccount")
+  campaignsAsTaboola CampaignPlatform[] @relation("TaboolaAccount")
 
   // Ad Rules
   adRulesAsMeta    AdRule[]       @relation("MetaRuleAccount")
@@ -207,6 +216,9 @@ model CampaignPlatform {
   tiktokAccountId    String?
   tiktokAccount      Account? @relation("TikTokAccount", fields: [tiktokAccountId], references: [id])
 
+  taboolaAccountId   String?
+  taboolaAccount     Account? @relation("TaboolaAccount", fields: [taboolaAccountId], references: [id])
+
   // Campaign Settings
   performanceGoal    String?
   pixelId            String?
@@ -242,6 +254,14 @@ model CampaignPlatform {
   tiktokAdGroupId    String?
   tiktokAdId         String?
 
+  taboolaCampaignId  String?
+  taboolaItemId      String?  // "Item" is the Ad in Taboola
+
+  // Taboola-specific settings
+  taboolaBidStrategy String?  // FIXED, MAX_CONVERSIONS, TARGET_CPA, ENHANCED_CPC
+  taboolaCpc         Float?   // Cost per click (when bid_strategy is FIXED)
+  taboolaBrandingText String? // Branding text for Taboola ads
+
   // Status
   status             CampaignStatus @default(DRAFT)
 
@@ -254,6 +274,7 @@ model CampaignPlatform {
   @@index([tonicAccountId])
   @@index([metaAccountId])
   @@index([tiktokAccountId])
+  @@index([taboolaAccountId])
 }
 
 model AIContent {

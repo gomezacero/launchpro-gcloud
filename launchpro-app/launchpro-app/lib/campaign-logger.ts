@@ -13,6 +13,7 @@ export type CampaignLogStep =
   | 'keywords'
   | 'pixel_meta'
   | 'pixel_tiktok'
+  | 'pixel_taboola'
   | 'meta_campaign'
   | 'meta_adset'
   | 'meta_media'
@@ -20,6 +21,8 @@ export type CampaignLogStep =
   | 'tiktok_campaign'
   | 'tiktok_video'
   | 'tiktok_ad'
+  | 'taboola_campaign'
+  | 'taboola_item'
   | 'complete'
   | 'error';
 
