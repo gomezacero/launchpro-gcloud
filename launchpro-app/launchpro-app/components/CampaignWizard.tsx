@@ -165,6 +165,9 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
     // RSOC article mode: 'new' = create new article, 'existing' = reuse existing headline
     rsocMode: 'new' as 'new' | 'existing',
     selectedHeadlineId: null as number | null,
+    // DesignFlow configuration (used when article is approved by Tonic)
+    designFlowRequester: 'Harry',
+    designFlowNotes: '',
   });
 
   // Local state for text inputs that need onBlur conversion
@@ -334,6 +337,8 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
           })),
           rsocMode: 'existing',
           selectedHeadlineId: null,
+          designFlowRequester: campaign.designFlowRequester || 'Harry',
+          designFlowNotes: campaign.designFlowNotes || '',
         });
 
         // Set keywords text
@@ -601,6 +606,8 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
           platforms: platformsConfig,
           rsocMode: 'new', // Default to new article when cloning
           selectedHeadlineId: null,
+          designFlowRequester: campaign.designFlowRequester || 'Harry',
+          designFlowNotes: '', // Start fresh for clone
         });
 
         // Update text inputs for keywords
@@ -722,6 +729,9 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
         keywords: formData.keywords.length > 0 ? formData.keywords : undefined,
         contentGenerationPhrases: formData.contentGenerationPhrases.length > 0 ? formData.contentGenerationPhrases : undefined,
         skipPlatformLaunch: true, // Only save as draft, don't launch
+        // DesignFlow configuration (used when article is approved by Tonic)
+        designFlowRequester: formData.designFlowRequester,
+        designFlowNotes: formData.designFlowNotes || undefined,
         platforms: formData.platforms.map(platform => ({
           platform: platform.platform,
           accountId: platform.accountId || 'auto',
@@ -4007,23 +4017,23 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
                 </p>
               </div>
 
-              {/* DesignFlow Section */}
+              {/* DesignFlow Preview Section */}
               <div className="bg-purple-50 border border-purple-200 rounded-lg p-6 mt-4">
                 <h3 className="font-semibold text-purple-900 mb-3 flex items-center">
-                  <span className="mr-2">🎨</span> Solicitar Diseño (Opcional)
+                  <span className="mr-2">🎨</span> DesignFlow Preview
                 </h3>
                 <p className="text-sm text-purple-800 mb-4">
-                  Envía esta campaña a DesignFlow para que el equipo de diseño cree el contenido visual antes de lanzar.
+                  Al guardar, se creará el artículo en Tonic. Cuando Tonic lo apruebe, se enviará automáticamente a DesignFlow con esta información.
                 </p>
 
-                {designFlowSuccess ? (
+                {designFlowSuccess || savedCampaignId ? (
                   <div className="bg-green-100 border border-green-300 rounded-lg p-4">
                     <p className="text-green-800 font-medium flex items-center">
                       <span className="mr-2">✅</span>
-                      Tarea enviada a DesignFlow exitosamente
+                      Campaña guardada exitosamente
                     </p>
                     <p className="text-sm text-green-700 mt-1">
-                      El equipo de diseño ha sido notificado. La campaña está en estado &quot;Esperando Diseño&quot;.
+                      El artículo ha sido enviado a Tonic. Cuando sea aprobado, se creará automáticamente la tarea en DesignFlow.
                     </p>
                     <button
                       type="button"
@@ -4035,15 +4045,34 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
                   </div>
                 ) : (
                   <div className="space-y-4">
+                    {/* Preview de información */}
+                    <div className="bg-white rounded-lg p-4 border border-purple-100">
+                      <h4 className="font-medium text-gray-700 mb-2 text-sm">Información que se enviará a DesignFlow:</h4>
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        <div><span className="text-gray-500">Campaña:</span> {formData.name || '-'}</div>
+                        <div><span className="text-gray-500">Offer:</span> {offers.find((o) => o.id === formData.offerId)?.name || '-'}</div>
+                        <div><span className="text-gray-500">País:</span> {countries.find((c) => c.code === formData.country)?.name || '-'}</div>
+                        <div><span className="text-gray-500">Idioma:</span> {formData.language.toUpperCase()}</div>
+                        <div><span className="text-gray-500">Plataformas:</span> {formData.platforms.map(p => p.platform).join(', ') || '-'}</div>
+                        <div><span className="text-gray-500">Budget:</span> {formData.platforms[0]?.budget ? `$${formData.platforms[0].budget}/día` : '-'}</div>
+                      </div>
+                      {formData.copyMaster && (
+                        <div className="mt-2">
+                          <span className="text-gray-500 text-sm">Copy Master:</span>
+                          <p className="text-sm bg-gray-50 p-2 rounded mt-1 text-gray-700">{formData.copyMaster}</p>
+                        </div>
+                      )}
+                    </div>
+
                     {/* Requester Selector */}
                     <div>
                       <label className="block text-sm font-medium text-purple-900 mb-2">
-                        Requester (Solicitante)
+                        Asignar tarea a:
                       </label>
                       <select
-                        value={selectedRequester}
-                        onChange={(e) => setSelectedRequester(e.target.value)}
-                        className="w-full px-4 py-2 border border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white"
+                        value={formData.designFlowRequester}
+                        onChange={(e) => setFormData({...formData, designFlowRequester: e.target.value})}
+                        className="w-full md:w-64 px-4 py-2 border border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white"
                       >
                         {designFlowRequesters.map((requester) => (
                           <option key={requester} value={requester}>
@@ -4053,54 +4082,43 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
                       </select>
                     </div>
 
-                    {/* Action Buttons */}
-                    <div className="flex space-x-3">
-                      {!savedCampaignId ? (
-                        <button
-                          type="button"
-                          onClick={handleSaveDraftForDesign}
-                          disabled={savingDraft || !formData.name || !formData.tonicAccountId || !formData.offerId || !formData.country || formData.platforms.length === 0}
-                          className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center"
-                        >
-                          {savingDraft ? (
-                            <>
-                              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                              </svg>
-                              Guardando...
-                            </>
-                          ) : (
-                            <>💾 Guardar como Draft</>
-                          )}
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={handleSendToDesignFlow}
-                          disabled={sendingToDesign}
-                          className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center"
-                        >
-                          {sendingToDesign ? (
-                            <>
-                              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                              </svg>
-                              Enviando...
-                            </>
-                          ) : (
-                            <>🎨 Enviar a DesignFlow</>
-                          )}
-                        </button>
-                      )}
+                    {/* Additional Notes */}
+                    <div>
+                      <label className="block text-sm font-medium text-purple-900 mb-2">
+                        Notas adicionales para el equipo de diseño (opcional):
+                      </label>
+                      <textarea
+                        value={formData.designFlowNotes}
+                        onChange={(e) => setFormData({...formData, designFlowNotes: e.target.value})}
+                        placeholder="Ej: Preferimos colores cálidos, el cliente pidió estilo minimalista..."
+                        className="w-full px-4 py-2 border border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white h-24"
+                      />
                     </div>
 
-                    {savedCampaignId && !designFlowTaskId && (
-                      <p className="text-xs text-purple-700">
-                        ✓ Campaña guardada como draft. Ahora puedes enviarla a DesignFlow.
+                    {/* Save Button */}
+                    <div>
+                      <button
+                        type="button"
+                        onClick={handleSaveDraftForDesign}
+                        disabled={savingDraft || !formData.name || !formData.tonicAccountId || !formData.offerId || !formData.country || formData.platforms.length === 0}
+                        className="w-full px-4 py-3 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center"
+                      >
+                        {savingDraft ? (
+                          <>
+                            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            Guardando y enviando a Tonic...
+                          </>
+                        ) : (
+                          <>📦 Guardar y Crear Artículo en Tonic</>
+                        )}
+                      </button>
+                      <p className="text-xs text-purple-700 mt-2 text-center">
+                        Una vez aprobado por Tonic, se enviará automáticamente a DesignFlow
                       </p>
-                    )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -4337,6 +4355,8 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
                       platforms: [],
                       rsocMode: 'new',
                       selectedHeadlineId: null,
+                      designFlowRequester: 'Harry',
+                      designFlowNotes: '',
                     });
                     setKeywordsText('');
                     setContentPhrasesText('');

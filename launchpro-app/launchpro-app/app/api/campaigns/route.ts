@@ -142,6 +142,9 @@ export async function POST(request: NextRequest) {
       rsocMode: body.rsocMode || 'new',
       selectedHeadlineId: body.selectedHeadlineId || null,
       createdById: user!.id, // Set owner to current user
+      // DesignFlow configuration (used when article is approved by Tonic cron job)
+      designFlowRequester: body.designFlowRequester || 'Harry',
+      designFlowNotes: body.designFlowNotes,
       platforms: body.platforms.map((p: any) => {
         // Keep startDateTime as string - we'll convert it later with proper timezone handling
         // The user configures in their local timezone, we need to preserve this

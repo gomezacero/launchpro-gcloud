@@ -167,6 +167,11 @@ model Campaign {
   tonicArticleId        String?
   tonicArticleRequestId String?            // Article request ID for async polling
   tonicTrackingLink     String?
+  tonicDirectLink       String?            // Preview URL for RSOC article
+
+  // DesignFlow configuration (set in wizard, used when article is approved)
+  designFlowRequester   String?            // Requester for DesignFlow task (Harry/Jesus/Milher)
+  designFlowNotes       String?            // Additional notes for design team
 
   // Error details (when status is FAILED)
   errorDetails      Json?              // { step, message, timestamp, platform?, technicalDetails? }

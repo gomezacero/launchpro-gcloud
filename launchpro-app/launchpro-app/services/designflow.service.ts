@@ -27,6 +27,7 @@ export interface CreateDesignTaskParams {
   requester: string;
   priority?: 'Normal' | 'High';
   referenceLinks?: string[];
+  additionalNotes?: string;  // User's additional notes for the design team
 }
 
 export interface DesignFlowTask {
@@ -121,6 +122,24 @@ class DesignFlowService {
     if (params.campaignId) {
       lines.push('');
       lines.push(`LaunchPro Campaign ID: ${params.campaignId}`);
+    }
+
+    // Additional notes from the requester
+    if (params.additionalNotes) {
+      lines.push('');
+      lines.push('--- Notas del Solicitante ---');
+      lines.push(params.additionalNotes);
+    }
+
+    // Tonic links (if provided via referenceLinks)
+    if (params.referenceLinks && params.referenceLinks.length > 0) {
+      lines.push('');
+      lines.push('--- Tonic Links ---');
+      params.referenceLinks.forEach((link, i) => {
+        // First link is tracking, second is preview/article
+        const label = i === 0 ? 'Tracking Link' : 'Article Preview';
+        lines.push(`${label}: ${link}`);
+      });
     }
 
     return lines.join('\n');

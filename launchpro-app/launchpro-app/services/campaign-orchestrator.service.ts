@@ -109,6 +109,10 @@ export interface CreateCampaignParams {
 
   // Owner - Manager ID who created this campaign
   createdById?: string;
+
+  // DesignFlow configuration (used when article is approved by Tonic cron job)
+  designFlowRequester?: string;  // Requester for DesignFlow task (Harry/Jesus/Milher)
+  designFlowNotes?: string;      // Additional notes for design team
 }
 
 export interface LaunchResult {
@@ -3415,6 +3419,9 @@ class CampaignOrchestratorService {
         communicationAngle: params.communicationAngle,
         keywords: params.keywords || [],
         contentGenerationPhrases: params.contentGenerationPhrases || [],
+        // DesignFlow configuration (used when article is approved by Tonic cron job)
+        designFlowRequester: params.designFlowRequester || 'Harry',
+        designFlowNotes: params.designFlowNotes,
         platforms: {
           create: params.platforms.map((p) => ({
             platform: p.platform,

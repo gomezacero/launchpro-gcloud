@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger';
 import { tonicService } from '@/services/tonic.service';
+import { designflowService } from '@/services/designflow.service';
 import { emailService } from '@/services/email.service';
 import { CampaignStatus } from '@prisma/client';
 
@@ -39,6 +40,7 @@ export async function GET(request: NextRequest) {
         },
         offer: true,
       },
+      // Note: designFlowRequester and designFlowNotes are included by default (scalar fields)
     });
 
     if (pendingCampaigns.length === 0) {
@@ -94,22 +96,131 @@ export async function GET(request: NextRequest) {
         });
 
         if (articleStatus.request_status === 'published') {
-          // Article approved! Update campaign
-          await prisma.campaign.update({
-            where: { id: campaign.id },
-            data: {
-              status: CampaignStatus.ARTICLE_APPROVED,
-              tonicArticleId: articleStatus.headline_id,
-            },
-          });
+          // Article approved! Now create Tonic campaign and send to DesignFlow
+          logger.info('tonic', `✅ [CRON] Article approved for "${campaign.name}", creating Tonic campaign...`);
 
-          logger.success('system', `✅ [CRON] Campaign "${campaign.name}" article approved! headline_id: ${articleStatus.headline_id}`);
-          results.push({
-            campaignId: campaign.id,
-            campaignName: campaign.name,
-            status: 'approved',
-            action: `Updated to ARTICLE_APPROVED, headline_id: ${articleStatus.headline_id}`,
-          });
+          try {
+            // 1. Create campaign in Tonic with the approved headline
+            const tonicCampaignId = await tonicService.createCampaign(credentials, {
+              name: campaign.name,
+              offer_id: campaign.offerId,
+              country: campaign.country,
+              type: 'rsoc',
+              headline_id: articleStatus.headline_id,
+              return_type: 'id',
+            });
+
+            logger.info('tonic', `📦 [CRON] Tonic campaign created: ${tonicCampaignId}`);
+
+            // 2. Get tracking link and direct_link from campaign list
+            let trackingLink: string | null = null;
+            let directLink: string | null = null;
+
+            // Wait a moment for Tonic to process, then fetch campaign details
+            await new Promise(resolve => setTimeout(resolve, 2000));
+
+            const campaignList = await tonicService.getCampaignList(credentials, 'active');
+            const tonicCampaign = campaignList.find((c: { id: string | number }) =>
+              String(c.id) === String(tonicCampaignId)
+            );
+
+            if (tonicCampaign) {
+              trackingLink = tonicCampaign.link || null;
+              directLink = tonicCampaign.direct_link || null;
+              logger.info('tonic', `🔗 [CRON] Got links - tracking: ${trackingLink}, direct: ${directLink}`);
+            }
+
+            // 3. Prepare reference links for DesignFlow
+            const referenceLinks: string[] = [];
+            if (trackingLink) {
+              // Add https:// if not present
+              const fullTrackingLink = trackingLink.startsWith('http')
+                ? trackingLink
+                : `https://${trackingLink}`;
+              referenceLinks.push(fullTrackingLink);
+            }
+            if (directLink) {
+              referenceLinks.push(directLink);
+            }
+
+            // 4. Create DesignFlow task automatically
+            logger.info('system', `🎨 [CRON] Creating DesignFlow task for "${campaign.name}"...`);
+
+            const designFlowTask = await designflowService.createTask({
+              campaignName: campaign.name,
+              campaignId: campaign.id,
+              offerId: campaign.offerId,
+              offerName: campaign.offer?.name,
+              country: campaign.country,
+              language: campaign.language,
+              platforms: campaign.platforms.map(p => p.platform),
+              copyMaster: campaign.copyMaster || undefined,
+              requester: campaign.designFlowRequester || 'Harry',
+              priority: 'Normal',
+              referenceLinks,
+              additionalNotes: campaign.designFlowNotes || undefined,
+            });
+
+            logger.success('system', `✅ [CRON] DesignFlow task created: ${designFlowTask.id}`);
+
+            // 5. Save DesignFlowTask record in database
+            await prisma.designFlowTask.create({
+              data: {
+                campaignId: campaign.id,
+                designflowTaskId: designFlowTask.id,
+                status: designFlowTask.status,
+                title: designFlowTask.title,
+                requester: campaign.designFlowRequester || 'Harry',
+              },
+            });
+
+            // 6. Update campaign with all data and change status to AWAITING_DESIGN
+            await prisma.campaign.update({
+              where: { id: campaign.id },
+              data: {
+                status: CampaignStatus.AWAITING_DESIGN,
+                tonicCampaignId: String(tonicCampaignId),
+                tonicArticleId: articleStatus.headline_id,
+                tonicTrackingLink: trackingLink,
+                tonicDirectLink: directLink,
+              },
+            });
+
+            logger.success('system', `🚀 [CRON] Campaign "${campaign.name}" fully processed: Article approved → Tonic campaign created → DesignFlow task created → Status: AWAITING_DESIGN`);
+
+            results.push({
+              campaignId: campaign.id,
+              campaignName: campaign.name,
+              status: 'approved',
+              action: `Article approved, Tonic campaign created (${tonicCampaignId}), DesignFlow task created (${designFlowTask.id}), status: AWAITING_DESIGN`,
+            });
+
+          } catch (processingError: unknown) {
+            // If processing fails after approval, save partial progress
+            const errorMessage = processingError instanceof Error ? processingError.message : 'Unknown error';
+            logger.error('system', `❌ [CRON] Error processing approved article for "${campaign.name}": ${errorMessage}`);
+
+            // Save the article approval at least, so we can retry later
+            await prisma.campaign.update({
+              where: { id: campaign.id },
+              data: {
+                status: CampaignStatus.ARTICLE_APPROVED, // Fallback status for retry
+                tonicArticleId: articleStatus.headline_id,
+                errorDetails: {
+                  step: 'post-article-processing',
+                  message: errorMessage,
+                  timestamp: new Date().toISOString(),
+                },
+              },
+            });
+
+            results.push({
+              campaignId: campaign.id,
+              campaignName: campaign.name,
+              status: 'partial',
+              action: `Article approved but processing failed: ${errorMessage}. Status: ARTICLE_APPROVED for retry.`,
+            });
+          }
 
         } else if (articleStatus.request_status === 'rejected') {
           // Article rejected! Mark campaign as failed
