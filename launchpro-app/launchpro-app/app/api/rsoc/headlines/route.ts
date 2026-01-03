@@ -13,6 +13,8 @@ export interface TonicHeadline {
   teaser?: string;
   status?: string;
   created_at?: string;
+  updated_at?: string;
+  last_traffic_at?: string;
 }
 
 /**
@@ -79,6 +81,41 @@ export async function GET(request: NextRequest) {
 
     // Filter by offer and/or country if provided
     let filteredHeadlines = headlines || [];
+
+    // IMPORTANT: Filter only ACTIVE articles
+    // Articles expire after 14 days without traffic in Tonic
+    // Only show articles with status 'active', 'approved', or 'running'
+    // Exclude expired, paused, stopped, or deleted articles
+    const ACTIVE_STATUSES = ['active', 'approved', 'running', 'live'];
+    const originalCount = filteredHeadlines.length;
+
+    filteredHeadlines = filteredHeadlines.filter(h => {
+      // If status is available, check if it's active
+      if (h.status) {
+        const isActiveStatus = ACTIVE_STATUSES.includes(h.status.toLowerCase());
+        if (!isActiveStatus) {
+          logger.info('api', `Filtered out headline ${h.headline_id} with status: ${h.status}`);
+          return false;
+        }
+      }
+
+      // Additional check: if last_traffic_at is available, check if it's within 14 days
+      // This is a secondary filter in case status doesn't reflect the expiration
+      if (h.last_traffic_at) {
+        const lastTrafficDate = new Date(h.last_traffic_at);
+        const fourteenDaysAgo = new Date();
+        fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
+
+        if (lastTrafficDate < fourteenDaysAgo) {
+          logger.info('api', `Filtered out headline ${h.headline_id} - no traffic for 14+ days (last: ${h.last_traffic_at})`);
+          return false;
+        }
+      }
+
+      return true;
+    });
+
+    logger.info('api', `Active filter: ${originalCount} total → ${filteredHeadlines.length} active headlines`);
 
     if (filterOfferId) {
       // IMPORTANT: filterOfferId from frontend is LaunchPro CUID, but Tonic uses numeric IDs

@@ -550,16 +550,21 @@ class DashboardService {
   }
 
   /**
-   * Calculate effectiveness (average ROI over last 30 days)
-   * Now fetches real data from APIs instead of cached DailyMetrics
+   * Calculate effectiveness (ROI for the current calendar month)
+   * Evaluation period is the CALENDAR MONTH (e.g., January 1-31), NOT the last 30 days
    */
   async calculateEffectiveness(managerId: string): Promise<EffectivenessMetrics> {
-    // Get real metrics from APIs for last 30 days
-    const { grossRevenue, totalSpend, netRevenue } = await this.getManagerAggregatedMetrics(managerId, 'last_30d');
+    // Get real metrics from APIs for THIS MONTH (calendar month)
+    const { grossRevenue, totalSpend, netRevenue } = await this.getManagerAggregatedMetrics(managerId, 'this_month');
 
     // Calculate ROI: ((Gross Revenue - Spend) / Spend) * 100
     // This is equivalent to (Net Revenue / Spend) * 100
     const roi = totalSpend > 0 ? ((netRevenue / totalSpend) * 100) : 0;
+
+    // Get current month name for display
+    const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+                        'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+    const currentMonth = monthNames[new Date().getMonth()];
 
     return {
       roi: Math.round(roi * 100) / 100,
@@ -567,7 +572,7 @@ class DashboardService {
       isAchieving: roi >= ROI_GOAL,
       totalNetRevenue: netRevenue,
       totalSpend: totalSpend,
-      period: 'last_30_days',
+      period: currentMonth,
     };
   }
 
