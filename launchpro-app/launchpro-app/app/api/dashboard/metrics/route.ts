@@ -3,6 +3,9 @@ import { dashboardService } from '@/services/dashboard.service';
 import { requireAuth, isSuperAdmin } from '@/lib/auth-utils';
 import { logger } from '@/lib/logger';
 
+// Increase timeout for this route (Vercel Pro: up to 60s, Hobby: 10s)
+export const maxDuration = 60;
+
 /**
  * GET /api/dashboard/metrics
  * Get dashboard metrics for a manager

@@ -161,19 +161,19 @@ class DashboardService {
       return null;
     }
 
-    // OPTIMIZATION: Pre-fetch both date ranges in parallel ONCE
-    // This prevents calculateManagerLevel and calculateEffectiveness from making duplicate API calls
-    const [thisMonthMetrics, last30dMetrics, velocity, stopLoss, everGreen] = await Promise.all([
+    // OPTIMIZATION: Pre-fetch metrics in parallel ONCE
+    // Both level and effectiveness use THIS MONTH (calendar month) metrics
+    const [thisMonthMetrics, velocity, stopLoss, everGreen] = await Promise.all([
       this.getManagerAggregatedMetrics(managerId, 'this_month'),
-      this.getManagerAggregatedMetrics(managerId, 'last_30d'),
       this.calculateVelocity(managerId),
       this.getStopLossViolations(managerId),
       this.getEverGreenCampaigns(managerId),
     ]);
 
     // Now calculate level and effectiveness using cached data (instant)
+    // Both use THIS MONTH metrics for calendar month evaluation
     const level = this.calculateManagerLevelFromMetrics(thisMonthMetrics.netRevenue);
-    const effectiveness = this.calculateEffectivenessFromMetrics(last30dMetrics);
+    const effectiveness = this.calculateEffectivenessFromMetrics(thisMonthMetrics);
 
     const duration = Date.now() - startTime;
     logger.info('dashboard', `Dashboard metrics for manager ${managerId} completed in ${duration}ms`);
@@ -221,6 +221,7 @@ class DashboardService {
 
   /**
    * Calculate effectiveness from pre-fetched metrics (no API calls)
+   * Uses CALENDAR MONTH for evaluation period
    */
   private calculateEffectivenessFromMetrics(metrics: { grossRevenue: number; totalSpend: number; netRevenue: number }): EffectivenessMetrics {
     const { totalSpend, netRevenue } = metrics;
@@ -228,13 +229,18 @@ class DashboardService {
     // Calculate ROI: ((Gross Revenue - Spend) / Spend) * 100
     const roi = totalSpend > 0 ? ((netRevenue / totalSpend) * 100) : 0;
 
+    // Get current month name for display
+    const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+                        'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+    const currentMonth = monthNames[new Date().getMonth()];
+
     return {
       roi: Math.round(roi * 100) / 100,
       goal: ROI_GOAL,
       isAchieving: roi >= ROI_GOAL,
       totalNetRevenue: netRevenue,
       totalSpend: totalSpend,
-      period: 'last_30_days',
+      period: currentMonth,
     };
   }
 
