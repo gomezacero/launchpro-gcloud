@@ -46,13 +46,13 @@ export default function Header() {
   };
 
   return (
-    <header className="bg-white shadow-sm sticky top-0 z-50">
+    <header className="header-glass sticky top-0 z-50 shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Logo - clickable */}
-          <Link href="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
-            <div className="text-3xl">🚀</div>
-            <h1 className="text-2xl font-bold text-gray-900">LaunchPro</h1>
+          <Link href="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity group">
+            <div className="text-3xl group-hover:scale-110 transition-transform">🚀</div>
+            <h1 className="text-2xl font-bold aurora-text">LaunchPro</h1>
           </Link>
 
           {/* Desktop Navigation */}
@@ -61,10 +61,10 @@ export default function Header() {
               <Link
                 key={item.name}
                 href={item.href}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                   isActive(item.href)
-                    ? 'bg-blue-100 text-blue-700'
-                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                    ? 'bg-gradient-to-r from-indigo-100 to-purple-100 text-indigo-700 shadow-sm'
+                    : 'text-gray-600 hover:text-indigo-600 hover:bg-indigo-50'
                 }`}
               >
                 <span className="mr-1.5">{item.icon}</span>
@@ -74,10 +74,10 @@ export default function Header() {
 
             {/* User Menu */}
             {session?.user && (
-              <div className="flex items-center gap-3 ml-4 pl-4 border-l border-gray-200">
+              <div className="flex items-center gap-3 ml-4 pl-4 border-l border-indigo-100">
                 <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                    <span className="text-blue-700 font-semibold text-sm">
+                  <div className="w-8 h-8 bg-gradient-to-br from-indigo-400 to-purple-500 rounded-full flex items-center justify-center shadow-sm">
+                    <span className="text-white font-semibold text-sm">
                       {session.user.name?.charAt(0).toUpperCase() || 'U'}
                     </span>
                   </div>
@@ -88,7 +88,7 @@ export default function Header() {
                     {/* Role Badge */}
                     <span className={`text-xs px-2 py-0.5 rounded-full text-center ${
                       isSuperAdmin
-                        ? 'bg-purple-100 text-purple-700'
+                        ? 'bg-gradient-to-r from-purple-100 to-pink-100 text-purple-700'
                         : 'bg-gray-100 text-gray-600'
                     }`}>
                       {isSuperAdmin ? 'SUPERADMIN' : 'MANAGER'}
@@ -127,17 +127,17 @@ export default function Header() {
 
         {/* Mobile Navigation */}
         {mobileMenuOpen && (
-          <div className="md:hidden py-3 border-t border-gray-200">
+          <div className="md:hidden py-3 border-t border-indigo-100">
             <nav className="flex flex-col gap-1">
               {navigation.map((item) => (
                 <Link
                   key={item.name}
                   href={item.href}
                   onClick={() => setMobileMenuOpen(false)}
-                  className={`px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+                  className={`px-4 py-3 rounded-lg text-sm font-medium transition-all ${
                     isActive(item.href)
-                      ? 'bg-blue-100 text-blue-700'
-                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                      ? 'bg-gradient-to-r from-indigo-100 to-purple-100 text-indigo-700'
+                      : 'text-gray-600 hover:text-indigo-600 hover:bg-indigo-50'
                   }`}
                 >
                   <span className="mr-2">{item.icon}</span>
@@ -146,12 +146,12 @@ export default function Header() {
               ))}
               {/* Mobile User Info & Logout */}
               {session?.user && (
-                <div className="mt-3 pt-3 border-t border-gray-200">
+                <div className="mt-3 pt-3 border-t border-indigo-100">
                   <div className="px-4 py-2 text-sm text-gray-600">
                     <div>Conectado como: <strong>{session.user.name || session.user.email}</strong></div>
                     <span className={`inline-block mt-1 text-xs px-2 py-0.5 rounded-full ${
                       isSuperAdmin
-                        ? 'bg-purple-100 text-purple-700'
+                        ? 'bg-gradient-to-r from-purple-100 to-pink-100 text-purple-700'
                         : 'bg-gray-100 text-gray-600'
                     }`}>
                       {isSuperAdmin ? 'SUPERADMIN' : 'MANAGER'}

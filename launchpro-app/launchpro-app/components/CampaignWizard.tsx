@@ -3550,48 +3550,59 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
                       </p>
                     </div>
 
-                    {/* AI Generation Toggle - Prominent Card Style */}
+                    {/* AI Generation Toggle - Aurora Highlighted Card */}
                     <div
                       onClick={() => updatePlatform(index, 'generateWithAI', !platform.generateWithAI)}
                       className={`
-                        cursor-pointer rounded-xl p-4 border-2 transition-all duration-200
+                        cursor-pointer rounded-xl p-5 border-2 transition-all duration-300 relative overflow-hidden
                         ${platform.generateWithAI
-                          ? 'bg-gradient-to-r from-purple-50 to-pink-50 border-purple-400 shadow-md'
-                          : 'bg-gray-50 border-gray-200 hover:border-gray-300 hover:bg-gray-100'
+                          ? 'bg-gradient-to-r from-purple-50 to-pink-50 border-purple-400 shadow-lg'
+                          : 'ai-toggle-highlight hover:shadow-lg'
                         }
                       `}
                     >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
+                      {/* Aurora glow effect for unchecked state */}
+                      {!platform.generateWithAI && (
+                        <div className="absolute inset-0 bg-gradient-to-r from-purple-500/5 via-pink-500/5 to-purple-500/5 animate-pulse pointer-events-none" />
+                      )}
+                      <div className="flex items-center justify-between relative z-10">
+                        <div className="flex items-center gap-4">
                           <div className={`
-                            w-12 h-12 rounded-xl flex items-center justify-center text-2xl
+                            w-14 h-14 rounded-xl flex items-center justify-center text-2xl transition-all duration-300
                             ${platform.generateWithAI
-                              ? 'bg-gradient-to-br from-purple-500 to-pink-500 shadow-lg'
-                              : 'bg-gray-200'
+                              ? 'bg-gradient-to-br from-purple-500 to-pink-500 shadow-lg scale-100'
+                              : 'bg-gradient-to-br from-indigo-400 to-purple-500 shadow-md animate-pulse'
                             }
                           `}>
                             {platform.generateWithAI ? '✨' : '🤖'}
                           </div>
                           <div>
-                            <h4 className={`font-semibold ${platform.generateWithAI ? 'text-purple-900' : 'text-gray-700'}`}>
-                              Generate images and videos with AI
-                            </h4>
-                            <p className={`text-sm ${platform.generateWithAI ? 'text-purple-600' : 'text-gray-500'}`}>
+                            <div className="flex items-center gap-2">
+                              <h4 className={`font-bold text-lg ${platform.generateWithAI ? 'text-purple-900' : 'text-purple-800'}`}>
+                                Generate Media with AI
+                              </h4>
+                              {!platform.generateWithAI && (
+                                <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs font-semibold rounded-full">
+                                  Optional
+                                </span>
+                              )}
+                            </div>
+                            <p className={`text-sm mt-1 ${platform.generateWithAI ? 'text-purple-600' : 'text-purple-600'}`}>
                               {platform.generateWithAI
                                 ? 'AI will create creative assets for your campaign'
-                                : 'Click to enable AI-powered creative generation'
+                                : 'Click to enable AI-powered images & videos'
                               }
                             </p>
                           </div>
                         </div>
                         {/* Toggle Switch */}
                         <div className={`
-                          relative w-14 h-8 rounded-full transition-colors duration-200
-                          ${platform.generateWithAI ? 'bg-purple-500' : 'bg-gray-300'}
+                          relative w-16 h-9 rounded-full transition-colors duration-300 shadow-inner
+                          ${platform.generateWithAI ? 'bg-gradient-to-r from-purple-500 to-pink-500' : 'bg-gray-300'}
                         `}>
                           <div className={`
-                            absolute top-1 w-6 h-6 bg-white rounded-full shadow-md transition-transform duration-200
-                            ${platform.generateWithAI ? 'translate-x-7' : 'translate-x-1'}
+                            absolute top-1.5 w-6 h-6 bg-white rounded-full shadow-md transition-transform duration-300
+                            ${platform.generateWithAI ? 'translate-x-8' : 'translate-x-1.5'}
                           `} />
                         </div>
                       </div>
