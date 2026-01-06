@@ -102,13 +102,24 @@ export async function GET(
 
     console.log(`[API] Found ${identities.length} Identity(s) for account ${account.name}`);
 
+    // Check if all identities are CUSTOMIZED_USER (deprecated in January 2026)
+    const hasOnlyDeprecated = identities.every(
+      (i: any) => i.identity_type === 'CUSTOMIZED_USER'
+    );
+
     return NextResponse.json({
       success: true,
       data: identities.map((i: any) => ({
         id: i.identity_id,
         name: i.display_name || 'Unnamed',
         type: i.identity_type,
+        // Flag deprecated identity types (CUSTOMIZED_USER will be phased out in January 2026)
+        isDeprecated: i.identity_type === 'CUSTOMIZED_USER',
       })),
+      // Include warning if all identities are deprecated
+      ...(hasOnlyDeprecated && {
+        warning: 'All identities are CUSTOMIZED_USER type which will be deprecated in January 2026. Please link real TikTok accounts in TikTok Ads Manager.',
+      }),
     });
   } catch (error: any) {
     console.error('[API] Error fetching TikTok Identities:', error);

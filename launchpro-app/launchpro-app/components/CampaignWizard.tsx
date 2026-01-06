@@ -58,6 +58,8 @@ interface PlatformConfig {
   manualTiktokAdText?: string;
   // Fan Page for Meta (user selectable)
   metaPageId?: string;
+  // Instagram Account for Meta (optional - if not set, page-backed Instagram is used)
+  instagramAccountId?: string;
   // Identity for TikTok (user selectable)
   tiktokIdentityId?: string;
   tiktokIdentityType?: string;
@@ -138,8 +140,13 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
   const [loadingMetaPages, setLoadingMetaPages] = useState(false);
 
   // Identities for TikTok (loaded when TikTok account is selected)
-  const [tiktokIdentities, setTiktokIdentities] = useState<{ id: string; name: string; type: string }[]>([]);
+  const [tiktokIdentities, setTiktokIdentities] = useState<{ id: string; name: string; type: string; isDeprecated?: boolean }[]>([]);
   const [loadingTiktokIdentities, setLoadingTiktokIdentities] = useState(false);
+  const [tiktokIdentitiesWarning, setTiktokIdentitiesWarning] = useState<string | null>(null);
+
+  // Instagram accounts for Meta (loaded when Meta account is selected)
+  const [instagramAccounts, setInstagramAccounts] = useState<{ id: string; username: string; profile_picture_url?: string }[]>([]);
+  const [loadingInstagramAccounts, setLoadingInstagramAccounts] = useState(false);
 
   // RSOC Headlines state (for reusing existing articles)
   interface RSOCHeadline {
@@ -996,15 +1003,21 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
   const loadTiktokIdentities = async (accountId: string) => {
     if (!accountId) {
       setTiktokIdentities([]);
+      setTiktokIdentitiesWarning(null);
       return;
     }
 
     setLoadingTiktokIdentities(true);
+    setTiktokIdentitiesWarning(null);
     try {
       const res = await fetch(`/api/accounts/${accountId}/identities`);
       const data = await res.json();
       if (data.success) {
         setTiktokIdentities(data.data || []);
+        // Set warning if API returned one (all identities are deprecated)
+        if (data.warning) {
+          setTiktokIdentitiesWarning(data.warning);
+        }
       } else {
         console.error('Error loading TikTok identities:', data.error);
         setTiktokIdentities([]);
@@ -1017,7 +1030,32 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
     }
   };
 
-  // Load Meta Pages and TikTok Identities when cloning completes
+  // Load Instagram accounts for a Meta account
+  const loadInstagramAccounts = async (accountId: string) => {
+    if (!accountId) {
+      setInstagramAccounts([]);
+      return;
+    }
+
+    setLoadingInstagramAccounts(true);
+    try {
+      const res = await fetch(`/api/accounts/${accountId}/instagram-accounts`);
+      const data = await res.json();
+      if (data.success) {
+        setInstagramAccounts(data.data || []);
+      } else {
+        console.error('Error loading Instagram accounts:', data.error);
+        setInstagramAccounts([]);
+      }
+    } catch (err: any) {
+      console.error('Error loading Instagram accounts:', err);
+      setInstagramAccounts([]);
+    } finally {
+      setLoadingInstagramAccounts(false);
+    }
+  };
+
+  // Load Meta Pages, Instagram Accounts, and TikTok Identities when cloning completes
   // This runs after loadingClone becomes false and platforms have accountIds
   useEffect(() => {
     // Only run when clone just finished (loadingClone went from true to false)
@@ -1027,6 +1065,7 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
         if (platform.accountId) {
           if (platform.platform === 'META') {
             loadMetaPages(platform.accountId);
+            loadInstagramAccounts(platform.accountId);
           } else if (platform.platform === 'TIKTOK') {
             loadTiktokIdentities(platform.accountId);
           }
@@ -3238,10 +3277,12 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
                         onChange={(e) => {
                           const accountId = e.target.value;
                           updatePlatform(index, 'accountId', accountId);
-                          // Clear and reload Fan Pages or Identities when account changes
+                          // Clear and reload Fan Pages/Instagram or Identities when account changes
                           if (platform.platform === 'META') {
                             updatePlatform(index, 'metaPageId', '');
+                            updatePlatform(index, 'instagramAccountId', '');
                             loadMetaPages(accountId);
+                            loadInstagramAccounts(accountId);
                           } else if (platform.platform === 'TIKTOK') {
                             updatePlatform(index, 'tiktokIdentityId', '');
                             updatePlatform(index, 'tiktokIdentityType', '');
@@ -3305,6 +3346,34 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
                       </div>
                     )}
 
+                    {/* Instagram Account Selector for Meta (Optional) */}
+                    {platform.platform === 'META' && platform.accountId && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Instagram Account (Optional)
+                        </label>
+                        {loadingInstagramAccounts ? (
+                          <div className="text-sm text-gray-500 py-2">Loading Instagram accounts...</div>
+                        ) : (
+                          <select
+                            value={platform.instagramAccountId || ''}
+                            onChange={(e) => updatePlatform(index, 'instagramAccountId', e.target.value)}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          >
+                            <option value="">Use Facebook Page as Instagram (default)</option>
+                            {instagramAccounts.map((account) => (
+                              <option key={account.id} value={account.id}>
+                                @{account.username}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        <p className="text-xs text-gray-500 mt-1">
+                          Select a specific Instagram account, or leave empty to use the page-backed Instagram.
+                        </p>
+                      </div>
+                    )}
+
                     {/* Identity Selector for TikTok */}
                     {platform.platform === 'TIKTOK' && platform.accountId && (
                       <div>
@@ -3314,23 +3383,42 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
                         {loadingTiktokIdentities ? (
                           <div className="text-sm text-gray-500 py-2">Loading Identities...</div>
                         ) : (
-                          <select
-                            value={platform.tiktokIdentityId || ''}
-                            onChange={(e) => {
-                              const selectedIdentity = tiktokIdentities.find(i => i.id === e.target.value);
-                              updatePlatform(index, 'tiktokIdentityId', e.target.value);
-                              updatePlatform(index, 'tiktokIdentityType', selectedIdentity?.type || 'CUSTOMIZED_USER');
-                            }}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                            required
-                          >
-                            <option value="">Select an Identity...</option>
-                            {tiktokIdentities.map((identity) => (
-                              <option key={identity.id} value={identity.id}>
-                                {identity.name} ({identity.type})
-                              </option>
-                            ))}
-                          </select>
+                          <>
+                            <select
+                              value={platform.tiktokIdentityId || ''}
+                              onChange={(e) => {
+                                const selectedIdentity = tiktokIdentities.find(i => i.id === e.target.value);
+                                updatePlatform(index, 'tiktokIdentityId', e.target.value);
+                                updatePlatform(index, 'tiktokIdentityType', selectedIdentity?.type || 'CUSTOMIZED_USER');
+                              }}
+                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                              required
+                            >
+                              <option value="">Select an Identity...</option>
+                              {tiktokIdentities.map((identity) => (
+                                <option key={identity.id} value={identity.id}>
+                                  {identity.name} ({identity.type}){identity.isDeprecated ? ' ⚠️' : ''}
+                                </option>
+                              ))}
+                            </select>
+                            {/* Deprecation warning for CUSTOMIZED_USER identities */}
+                            {platform.tiktokIdentityId && tiktokIdentities.find(i => i.id === platform.tiktokIdentityId)?.isDeprecated && (
+                              <div className="mt-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                                <p className="text-sm text-yellow-800">
+                                  <strong>Warning:</strong> CUSTOMIZED_USER identities will be deprecated by TikTok in January 2026.
+                                  Please link a real TikTok account in TikTok Ads Manager for future campaigns.
+                                </p>
+                              </div>
+                            )}
+                            {/* Warning if ALL identities are deprecated */}
+                            {tiktokIdentitiesWarning && (
+                              <div className="mt-2 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                                <p className="text-sm text-orange-800">
+                                  <strong>Action Required:</strong> {tiktokIdentitiesWarning}
+                                </p>
+                              </div>
+                            )}
+                          </>
                         )}
                         <p className="text-xs text-gray-500 mt-1">
                           The TikTok account to display in ads.

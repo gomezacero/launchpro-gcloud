@@ -1826,26 +1826,33 @@ class CampaignOrchestratorService {
     }
     logger.info('meta', `Using Fan Page ID: ${effectivePageId} (user-selected: ${!!platformConfig.metaPageId})`);
 
-    // Get Instagram actor ID for "Use Facebook Page as Instagram" option
-    // This is required to properly set the Instagram identity in ads
-    // IMPORTANT: Use the SAME page ID that was selected by the user
-    // NOTE: Page-backed Instagram accounts are special - they represent "Use Facebook Page as Instagram"
-    // and always work if you have access to the Fan Page. They do NOT need verification against
-    // /instagram_accounts because they are not real Instagram accounts.
+    // Get Instagram actor ID
+    // Priority: 1) User-selected Instagram account, 2) Page-backed Instagram (fallback)
     let instagramActorId: string | null = null;
-    try {
-      instagramActorId = await metaService.getPageBackedInstagramAccount(
-        effectivePageId,
-        accessToken
-      );
-      if (instagramActorId) {
-        logger.info('meta', `✅ Got page-backed Instagram actor ID: ${instagramActorId} for page ${effectivePageId}`);
-        logger.info('meta', `ℹ️ This represents "Use Facebook Page as Instagram" option`);
-      } else {
-        logger.warn('meta', `⚠️ No page-backed Instagram account found for page ${effectivePageId}. Instagram identity will be empty.`);
+
+    if (platformConfig.instagramAccountId) {
+      // User explicitly selected an Instagram account in the wizard
+      instagramActorId = platformConfig.instagramAccountId;
+      logger.info('meta', `✅ Using user-selected Instagram account ID: ${instagramActorId}`);
+    } else {
+      // Fallback: Get page-backed Instagram for "Use Facebook Page as Instagram" option
+      // NOTE: Page-backed Instagram accounts are special - they represent "Use Facebook Page as Instagram"
+      // and always work if you have access to the Fan Page. They do NOT need verification against
+      // /instagram_accounts because they are not real Instagram accounts.
+      try {
+        instagramActorId = await metaService.getPageBackedInstagramAccount(
+          effectivePageId,
+          accessToken
+        );
+        if (instagramActorId) {
+          logger.info('meta', `✅ Got page-backed Instagram actor ID: ${instagramActorId} for page ${effectivePageId}`);
+          logger.info('meta', `ℹ️ This represents "Use Facebook Page as Instagram" option`);
+        } else {
+          logger.warn('meta', `⚠️ No page-backed Instagram account found for page ${effectivePageId}. Instagram identity will be empty.`);
+        }
+      } catch (error: any) {
+        logger.warn('meta', `Failed to get Instagram actor ID for page ${effectivePageId}: ${error.message}. Continuing without it.`);
       }
-    } catch (error: any) {
-      logger.warn('meta', `Failed to get Instagram actor ID for page ${effectivePageId}: ${error.message}. Continuing without it.`);
     }
 
     // FORMAT TONIC LINK
@@ -2637,23 +2644,40 @@ class CampaignOrchestratorService {
       identityId = platformConfig.tiktokIdentityId;
       identityType = platformConfig.tiktokIdentityType || 'CUSTOMIZED_USER';
       logger.info('tiktok', `Using user-selected TikTok identity: ${identityId}, type: ${identityType}`);
+
+      // Warn if CUSTOMIZED_USER is selected (deprecated in January 2026)
+      if (identityType === 'CUSTOMIZED_USER') {
+        logger.warn('tiktok', `⚠️ CUSTOMIZED_USER identity selected. This type will be deprecated by TikTok in January 2026. Consider linking a real TikTok account.`);
+      }
     } else {
-      // Fallback: Try to get custom identities if none was selected (for backwards compatibility)
+      // Fallback: Try to get identities if none was selected (for backwards compatibility)
+      // Priority: BC_OWNED > AUTH_USER > CUSTOMIZED_USER (deprecated)
       try {
         const identities = await tiktokService.getIdentities(advertiserId, accessToken);
         logger.info('tiktok', `Identities response: ${JSON.stringify(identities)}`);
 
-        // Find an available CUSTOMIZED_USER identity
-        const availableIdentity = identities.identity_list?.find((identity: any) => {
-          return identity.identity_id && identity.identity_type === 'CUSTOMIZED_USER';
+        // Prefer non-deprecated identity types (BC_OWNED, AUTH_USER) over CUSTOMIZED_USER
+        const preferredIdentity = identities.identity_list?.find((identity: any) => {
+          return identity.identity_id && (identity.identity_type === 'BC_OWNED' || identity.identity_type === 'AUTH_USER');
         });
 
-        if (availableIdentity) {
-          identityId = availableIdentity.identity_id;
-          identityType = availableIdentity.identity_type;
-          logger.info('tiktok', `Using auto-selected TikTok identity: ${availableIdentity.display_name} (${identityId}, type: ${identityType})`);
+        if (preferredIdentity) {
+          identityId = preferredIdentity.identity_id;
+          identityType = preferredIdentity.identity_type;
+          logger.info('tiktok', `Using auto-selected TikTok identity (preferred): ${preferredIdentity.display_name} (${identityId}, type: ${identityType})`);
         } else {
-          logger.info('tiktok', `No custom identity found. Will use display_name for non-Spark ads.`);
+          // Fallback to CUSTOMIZED_USER if no preferred identity found
+          const fallbackIdentity = identities.identity_list?.find((identity: any) => {
+            return identity.identity_id && identity.identity_type === 'CUSTOMIZED_USER';
+          });
+
+          if (fallbackIdentity) {
+            identityId = fallbackIdentity.identity_id;
+            identityType = fallbackIdentity.identity_type;
+            logger.warn('tiktok', `⚠️ Using CUSTOMIZED_USER identity (deprecated in Jan 2026): ${fallbackIdentity.display_name} (${identityId}). Link a real TikTok account for future campaigns.`);
+          } else {
+            logger.info('tiktok', `No custom identity found. Will use display_name for non-Spark ads.`);
+          }
         }
       } catch (identityError: any) {
         logger.warn('tiktok', `Failed to fetch identities: ${identityError.message}. Will use display_name for non-Spark ads.`);

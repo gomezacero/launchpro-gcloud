@@ -834,6 +834,37 @@ class MetaService {
   }
 
   /**
+   * Get all Instagram accounts authorized for an Ad Account
+   * These are Instagram accounts the ad account can use for ads
+   * @param adAccountId The Ad Account ID (e.g., "act_123456789")
+   * @param accessToken Optional access token
+   * @returns Array of Instagram accounts with id, username, and profile_picture_url
+   */
+  async getInstagramAccounts(
+    adAccountId: string,
+    accessToken?: string
+  ): Promise<{ id: string; username: string; profile_picture_url?: string }[]> {
+    try {
+      const client = this.getClient(accessToken);
+      const response = await client.get(`/${adAccountId}/instagram_accounts`, {
+        params: {
+          fields: 'id,username,profile_picture_url',
+        },
+      });
+
+      const accounts = response.data?.data || [];
+      console.log(`[META] Found ${accounts.length} Instagram accounts for ad account ${adAccountId}`);
+      return accounts;
+    } catch (error: any) {
+      console.error(`[META] ❌ Failed to fetch Instagram accounts:`, error.message);
+      if (error.response?.data?.error) {
+        console.error(`[META] Error details:`, JSON.stringify(error.response.data.error, null, 2));
+      }
+      return [];
+    }
+  }
+
+  /**
    * Verify if an Ad Account has access to a specific Instagram account
    * This checks against the ad account's authorized Instagram accounts
    * @param adAccountId The Ad Account ID (e.g., "act_123456789")

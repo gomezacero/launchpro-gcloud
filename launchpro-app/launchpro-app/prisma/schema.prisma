@@ -87,6 +87,8 @@ model Account {
   metaPageId      String? // e.g., "1039541308325786"
   metaAccessToken String? @db.Text // Account-specific access token
   metaPixelId     String? // Account-specific pixel ID
+  metaInstagramAccountId String? // Instagram Account ID linked to this Meta account
+  metaInstagramUsername  String? // Instagram username (e.g., "capitalhome")
 
   // TikTok accounts
   tiktokAdvertiserId String? // e.g., "7476563770333167633"
@@ -252,6 +254,7 @@ model CampaignPlatform {
 
   // User-selected Fan Page/Identity (for wizard selection)
   metaPageId         String?  // Facebook Fan Page ID selected by user in wizard
+  instagramAccountId String?  // Instagram Account ID selected by user in wizard (optional)
   tiktokIdentityId   String?  // TikTok Identity ID selected by user in wizard
   tiktokIdentityType String?  // TikTok Identity type (CUSTOMIZED_USER, BC_OWNED, etc.)
 
