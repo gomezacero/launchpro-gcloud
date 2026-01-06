@@ -594,8 +594,14 @@ class CampaignOrchestratorService {
       // STEP 5: Create campaign in Tonic
       // ============================================
       campaignLogger.startStep(campaign.id, 'tonic_campaign', 'Creando campaña en Tonic...');
+
+      // Generate unique campaign name to avoid collisions in Tonic
+      // Tonic rejects duplicate campaign names even from failed/deleted campaigns
+      const uniqueSuffix = Date.now().toString(36).slice(-4);
+      const tonicCampaignName = `${params.name}_${uniqueSuffix}`;
+
       logger.info('tonic', `Creating ${campaignType.toUpperCase()} campaign in Tonic...`, {
-        name: params.name,
+        name: tonicCampaignName,
         country: params.country,
         offer: offer.name,
         type: campaignType,
@@ -604,7 +610,7 @@ class CampaignOrchestratorService {
 
       try {
         const campaignParams = {
-          name: params.name,
+          name: tonicCampaignName,
           offer: offer.name,      // Tonic API requires offer name
           offer_id: params.offerId, // And also accepts offer_id
           country: params.country,
@@ -3618,8 +3624,13 @@ class CampaignOrchestratorService {
     // ============================================
     logger.info('tonic', `Creating ${campaignType.toUpperCase()} campaign in Tonic...`);
 
+    // Generate unique campaign name to avoid collisions in Tonic
+    // Tonic rejects duplicate campaign names even from failed/deleted campaigns
+    const uniqueSuffix = Date.now().toString(36).slice(-4);
+    const tonicCampaignName = `${campaign.name}_${uniqueSuffix}`;
+
     const campaignParams = {
-      name: campaign.name,
+      name: tonicCampaignName,
       offer: campaign.offer.name,
       offer_id: campaign.offer.tonicId,
       country: campaign.country,
