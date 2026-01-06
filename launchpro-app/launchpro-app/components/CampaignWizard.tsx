@@ -1030,32 +1030,34 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
     }
   };
 
-  // Load Instagram accounts for a Meta account
-  const loadInstagramAccounts = async (accountId: string) => {
-    if (!accountId) {
+  // Load Instagram account linked to a specific Facebook Page
+  const loadInstagramForPage = async (pageId: string) => {
+    if (!pageId) {
       setInstagramAccounts([]);
       return;
     }
 
     setLoadingInstagramAccounts(true);
     try {
-      const res = await fetch(`/api/accounts/${accountId}/instagram-accounts`);
+      const res = await fetch(`/api/pages/${pageId}/instagram`);
       const data = await res.json();
-      if (data.success) {
-        setInstagramAccounts(data.data || []);
+      if (data.success && data.data) {
+        // Return as array with single item for consistency with dropdown
+        setInstagramAccounts([data.data]);
       } else {
-        console.error('Error loading Instagram accounts:', data.error);
+        console.log('No Instagram account linked to this page:', data.message);
         setInstagramAccounts([]);
       }
     } catch (err: any) {
-      console.error('Error loading Instagram accounts:', err);
+      console.error('Error loading Instagram for page:', err);
       setInstagramAccounts([]);
     } finally {
       setLoadingInstagramAccounts(false);
     }
   };
 
-  // Load Meta Pages, Instagram Accounts, and TikTok Identities when cloning completes
+  // Load Meta Pages and TikTok Identities when cloning completes
+  // Instagram is loaded separately when Fan Page is selected
   // This runs after loadingClone becomes false and platforms have accountIds
   useEffect(() => {
     // Only run when clone just finished (loadingClone went from true to false)
@@ -1065,7 +1067,10 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
         if (platform.accountId) {
           if (platform.platform === 'META') {
             loadMetaPages(platform.accountId);
-            loadInstagramAccounts(platform.accountId);
+            // Load Instagram for the selected page (if page is already set from clone)
+            if (platform.metaPageId) {
+              loadInstagramForPage(platform.metaPageId);
+            }
           } else if (platform.platform === 'TIKTOK') {
             loadTiktokIdentities(platform.accountId);
           }
@@ -3277,12 +3282,12 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
                         onChange={(e) => {
                           const accountId = e.target.value;
                           updatePlatform(index, 'accountId', accountId);
-                          // Clear and reload Fan Pages/Instagram or Identities when account changes
+                          // Clear and reload Fan Pages or Identities when account changes
                           if (platform.platform === 'META') {
                             updatePlatform(index, 'metaPageId', '');
                             updatePlatform(index, 'instagramAccountId', '');
+                            setInstagramAccounts([]); // Clear Instagram (will reload when Page is selected)
                             loadMetaPages(accountId);
-                            loadInstagramAccounts(accountId);
                           } else if (platform.platform === 'TIKTOK') {
                             updatePlatform(index, 'tiktokIdentityId', '');
                             updatePlatform(index, 'tiktokIdentityType', '');
@@ -3328,7 +3333,17 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
                         ) : (
                           <select
                             value={platform.metaPageId || ''}
-                            onChange={(e) => updatePlatform(index, 'metaPageId', e.target.value)}
+                            onChange={(e) => {
+                              const pageId = e.target.value;
+                              updatePlatform(index, 'metaPageId', pageId);
+                              updatePlatform(index, 'instagramAccountId', ''); // Clear Instagram selection
+                              // Load Instagram account linked to this page
+                              if (pageId) {
+                                loadInstagramForPage(pageId);
+                              } else {
+                                setInstagramAccounts([]);
+                              }
+                            }}
                             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                             required
                           >
@@ -3346,15 +3361,15 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
                       </div>
                     )}
 
-                    {/* Instagram Account Selector for Meta (Optional) */}
-                    {platform.platform === 'META' && platform.accountId && (
+                    {/* Instagram Account Selector for Meta (Optional) - Shows Instagram linked to selected Fan Page */}
+                    {platform.platform === 'META' && platform.accountId && platform.metaPageId && (
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
                           Instagram Account (Optional)
                         </label>
                         {loadingInstagramAccounts ? (
-                          <div className="text-sm text-gray-500 py-2">Loading Instagram accounts...</div>
-                        ) : (
+                          <div className="text-sm text-gray-500 py-2">Loading Instagram account...</div>
+                        ) : instagramAccounts.length > 0 ? (
                           <select
                             value={platform.instagramAccountId || ''}
                             onChange={(e) => updatePlatform(index, 'instagramAccountId', e.target.value)}
@@ -3367,9 +3382,15 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
                               </option>
                             ))}
                           </select>
+                        ) : (
+                          <div className="text-sm text-amber-600 py-2 px-3 bg-amber-50 border border-amber-200 rounded-lg">
+                            No Instagram account linked to this Fan Page. Using page-backed Instagram.
+                          </div>
                         )}
                         <p className="text-xs text-gray-500 mt-1">
-                          Select a specific Instagram account, or leave empty to use the page-backed Instagram.
+                          {instagramAccounts.length > 0
+                            ? 'Select the Instagram account linked to this page, or use page-backed Instagram.'
+                            : 'Link an Instagram account to this Fan Page in Meta Business Suite to use a specific Instagram.'}
                         </p>
                       </div>
                     )}
