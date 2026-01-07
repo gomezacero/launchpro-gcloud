@@ -63,10 +63,12 @@ export class NeuralEngineOrchestrator {
     data?: CreativePackage;
     state: NeuralEngineState;
     errors: AgentError[];
+    warnings: string[];
   }> {
     const startTime = new Date();
     const cacheHits: string[] = [];
     const errors: AgentError[] = [];
+    const warnings: string[] = [];
     const allModelUsage: ModelUsage[] = [];
 
     // Initialize state
@@ -193,6 +195,11 @@ export class NeuralEngineOrchestrator {
         throw new Error('Compliance Assembler failed: ' + (assemblyResult.error?.error || 'Unknown error'));
       }
 
+      // Capture any warnings (e.g., quota exceeded)
+      if (assemblyResult.warning) {
+        warnings.push(assemblyResult.warning);
+      }
+
       // Collect model usage
       allModelUsage.push(...assemblyResult.modelUsage);
 
@@ -215,6 +222,7 @@ export class NeuralEngineOrchestrator {
       console.log(`[${ORCHESTRATOR_NAME}] Pipeline completed successfully in ${state.timing.totalMs}ms`, {
         cacheHits: cacheHits.length,
         errors: errors.length,
+        warnings: warnings.length,
         imagesGenerated: state.creativePackage?.visuals?.images?.length || 0,
       });
 
@@ -223,6 +231,7 @@ export class NeuralEngineOrchestrator {
         data: state.creativePackage,
         state,
         errors,
+        warnings,
       };
     } catch (error: any) {
       console.error(`[${ORCHESTRATOR_NAME}] Pipeline failed:`, error.message);
@@ -237,6 +246,7 @@ export class NeuralEngineOrchestrator {
         success: false,
         state,
         errors,
+        warnings,
       };
     }
   }

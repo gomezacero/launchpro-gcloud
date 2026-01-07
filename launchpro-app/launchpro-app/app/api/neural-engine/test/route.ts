@@ -71,11 +71,13 @@ export async function POST(request: NextRequest) {
       console.log('[NeuralEngine/Test] Success!', {
         imagesGenerated: result.data?.visuals?.images?.length || 0,
         cacheHits: result.state.cacheHits.length,
+        warnings: result.warnings.length,
         totalTimeMs: result.state.timing.totalMs,
       });
 
       return NextResponse.json({
         success: true,
+        warnings: result.warnings.length > 0 ? result.warnings : undefined,
         data: {
           creativePackage: result.data,
           timing: result.state.timing,
@@ -90,6 +92,7 @@ export async function POST(request: NextRequest) {
         {
           success: false,
           errors: result.errors,
+          warnings: result.warnings.length > 0 ? result.warnings : undefined,
           state: {
             timing: result.state.timing,
             culturalContextGenerated: !!result.state.culturalContext,

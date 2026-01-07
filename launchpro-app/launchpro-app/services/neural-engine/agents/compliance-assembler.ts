@@ -131,31 +131,36 @@ export class ComplianceAssembler {
     data?: CreativePackage;
     error?: AgentError;
     modelUsage: ModelUsage[];
+    warning?: string;
   }> {
     const startTime = Date.now();
     const modelUsage: ModelUsage[] = [];
+    let warning: string | undefined;
 
     console.log(`[${AGENT_NAME}] Starting creative assembly for ${input.offer.name}`);
 
     try {
       // Step 1: Generate base images from prompts
-      const generatedImages = await this.generateImages(visualPrompts, modelUsage);
-
-      if (generatedImages.length === 0) {
-        throw new Error('No images generated');
-      }
+      const { images: generatedImages, quotaExceeded } = await this.generateImagesWithFallback(visualPrompts, modelUsage);
 
       // Step 2: Select appropriate Safe Copy
       const selectedCopy = this.selectSafeCopy(strategyBrief, retrievedAssets);
 
-      // Step 3: Composite text onto images
-      const assembledImages = await this.compositeImages(
-        generatedImages,
-        selectedCopy,
-        strategyBrief
-      );
+      let assembledImages: GeneratedImage[] = [];
 
-      // Step 4: Build final creative package
+      if (generatedImages.length > 0) {
+        // Step 3: Composite text onto images (only if we have images)
+        assembledImages = await this.compositeImages(
+          generatedImages,
+          selectedCopy,
+          strategyBrief
+        );
+      } else if (quotaExceeded) {
+        warning = 'Image generation skipped due to Imagen 3 quota limit (1/minute). Strategy and copy are complete.';
+        console.warn(`[${AGENT_NAME}] ${warning}`);
+      }
+
+      // Step 4: Build final creative package (works with or without images)
       const creativePackage = this.buildCreativePackage(
         input,
         strategyBrief,
@@ -169,9 +174,10 @@ export class ComplianceAssembler {
       console.log(`[${AGENT_NAME}] Assembly completed in ${duration}ms`, {
         imagesGenerated: generatedImages.length,
         imagesAssembled: assembledImages.length,
+        quotaExceeded,
       });
 
-      return { success: true, data: creativePackage, modelUsage };
+      return { success: true, data: creativePackage, modelUsage, warning };
     } catch (error: any) {
       console.error(`[${AGENT_NAME}] Error:`, error.message);
 
@@ -186,6 +192,34 @@ export class ComplianceAssembler {
         },
         modelUsage,
       };
+    }
+  }
+
+  /**
+   * Generate images with graceful fallback for quota errors
+   */
+  private async generateImagesWithFallback(
+    prompts: VisualPrompt[],
+    modelUsage: ModelUsage[]
+  ): Promise<{ images: GeneratedImage[]; quotaExceeded: boolean }> {
+    try {
+      const images = await this.generateImages(prompts, modelUsage);
+      return { images, quotaExceeded: false };
+    } catch (error: any) {
+      // Check if it's a quota error
+      const isQuotaError =
+        error.message?.includes('RESOURCE_EXHAUSTED') ||
+        error.message?.includes('Quota exceeded') ||
+        error.code === 8 || // gRPC RESOURCE_EXHAUSTED code
+        error.details?.includes('quota');
+
+      if (isQuotaError) {
+        console.warn(`[${AGENT_NAME}] Quota exceeded for Imagen 3. Continuing without images.`);
+        return { images: [], quotaExceeded: true };
+      }
+
+      // Re-throw non-quota errors
+      throw error;
     }
   }
 
