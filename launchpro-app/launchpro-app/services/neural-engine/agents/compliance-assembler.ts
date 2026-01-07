@@ -199,6 +199,15 @@ export class ComplianceAssembler {
     const client = this.getPredictionClient();
     const endpoint = `projects/${this.projectId}/locations/${this.location}/publishers/google/models/${IMAGE_MODEL}`;
 
+    console.log(`[${AGENT_NAME}] Image generation config:`, {
+      endpoint,
+      projectId: this.projectId,
+      location: this.location,
+      model: IMAGE_MODEL,
+      hasCredentials: !!this.credentials,
+      promptCount: prompts.length,
+    });
+
     const generatedImages: GeneratedImage[] = [];
 
     // Generate images for each prompt (limited to 4 for cost control)
@@ -209,6 +218,7 @@ export class ComplianceAssembler {
 
       try {
         console.log(`[${AGENT_NAME}] Generating image ${i + 1}/${promptsToProcess.length}...`);
+        console.log(`[${AGENT_NAME}] Prompt: ${prompt.prompt.substring(0, 100)}...`);
 
         const startTime = Date.now();
 
@@ -274,10 +284,17 @@ export class ComplianceAssembler {
         });
       } catch (error: any) {
         console.error(`[${AGENT_NAME}] Error generating image ${i + 1}:`, error.message);
+        console.error(`[${AGENT_NAME}] Error details:`, JSON.stringify({
+          code: error.code,
+          details: error.details,
+          metadata: error.metadata,
+          stack: error.stack?.substring(0, 500),
+        }));
         // Continue with other images
       }
     }
 
+    console.log(`[${AGENT_NAME}] Image generation complete. Generated ${generatedImages.length} images out of ${promptsToProcess.length} prompts.`);
     return generatedImages;
   }
 
