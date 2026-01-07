@@ -225,6 +225,7 @@ export class ComplianceAssembler {
 
   /**
    * Generate base images using Imagen 3
+   * Throws on quota errors to allow graceful fallback
    */
   private async generateImages(
     prompts: VisualPrompt[],
@@ -243,6 +244,7 @@ export class ComplianceAssembler {
     });
 
     const generatedImages: GeneratedImage[] = [];
+    let quotaExceeded = false;
 
     // Generate images for each prompt (limited to 4 for cost control)
     const promptsToProcess = prompts.slice(0, 4);
@@ -324,11 +326,32 @@ export class ComplianceAssembler {
           metadata: error.metadata,
           stack: error.stack?.substring(0, 500),
         }));
-        // Continue with other images
+
+        // Check if it's a quota error - if so, stop and throw
+        const isQuotaError =
+          error.message?.includes('RESOURCE_EXHAUSTED') ||
+          error.message?.includes('Quota exceeded') ||
+          error.code === 8 || // gRPC RESOURCE_EXHAUSTED code
+          error.details?.includes('quota');
+
+        if (isQuotaError) {
+          quotaExceeded = true;
+          console.warn(`[${AGENT_NAME}] Quota exceeded - stopping image generation`);
+          break; // Stop trying more images
+        }
+        // For other errors, continue with other images
       }
     }
 
     console.log(`[${AGENT_NAME}] Image generation complete. Generated ${generatedImages.length} images out of ${promptsToProcess.length} prompts.`);
+
+    // If we got quota error and no images, throw to trigger fallback
+    if (quotaExceeded && generatedImages.length === 0) {
+      const quotaError = new Error('RESOURCE_EXHAUSTED: Quota exceeded for Imagen 3');
+      (quotaError as any).code = 8;
+      throw quotaError;
+    }
+
     return generatedImages;
   }
 

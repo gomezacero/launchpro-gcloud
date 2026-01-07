@@ -1,0 +1,59 @@
+
+Documento de Arquitectura: RSOC Creative Neural Engine
+Versión: 1.0 (Draft)
+Objetivo: Automatización de Creativos para Search Arbitrage a Escala Global.
+1. Introducción del Sistema
+El RSOC Creative Neural Engine es un sistema de orquestación multi-agente diseñado para resolver el desafío del "Trilema del Arbitraje": Escala, Relevancia Local y Cumplimiento Normativo (Compliance).
+A diferencia de los generadores de imágenes estándar, este sistema no solo "crea", sino que investiga, razona y ensambla. Está diseñado para operar sobre más de 2,000 categorías en más de 150 geografías simultáneamente. Su núcleo diferencial radica en su capacidad híbrida:
+Cold Start Inteligente: Realiza investigación de mercado en tiempo real para campañas nuevas sin histórico.
+Optimización Histórica: Utiliza RAG (Retrieval-Augmented Generation) para aprender de los "Top Ads" y activos ganadores previos.
+Safety-First Design: Desacopla la generación visual de la inserción de texto, utilizando un repositorio de "Safe Copies" y ensamblaje programático para garantizar un 100% de adherencia a las políticas de RSOC y plataformas de tráfico (Meta/TikTok).
+El resultado son activos visuales nativos, de alta conversión (CTR), generados con eficiencia financiera y seguridad de marca.
+
+2. Desglose de Roles de Agentes y Stack Tecnológico (Google Cloud)
+El sistema opera bajo una arquitectura de grafos (Graph-based orchestration), donde 5 agentes especializados colaboran secuencialmente.
+Agente 01: The Global Scout (Investigador de Contexto)
+Rol: Analista Cultural y Demográfico.
+Responsabilidad: Eliminar la alucinación cultural. Antes de generar cualquier píxel, este agente consulta datos en tiempo real sobre el país y la categoría solicitada. Identifica códigos visuales locales, clima actual, tendencias de búsqueda y demografía objetivo para asegurar que el anuncio se sienta "nativo" en el país de destino.
+Stack Tecnológico:
+Modelo: Vertex AI Gemini 1.5 Flash (Baja latencia).
+Feature Clave: Grounding with Google Search. Permite al modelo acceder a internet en vivo para validar datos del país.
+Agente 02: The Asset Manager (Gestor de Activos & Memoria)
+Rol: Bibliotecario de RAG (Retrieval-Augmented Generation).
+Responsabilidad: Determinar si la campaña es nueva o existente.
+Si existe histórico: Recupera los vectores de los "Top Ads" visuales y los "Safe Copies" (textos aprobados) más efectivos.
+Si es nueva: Busca la categoría semánticamente más cercana o plantillas universales de alto rendimiento. Gestiona la lista negra de términos prohibidos.
+Stack Tecnológico:
+Base de Datos: Vertex AI Vector Search (para búsqueda semántica de imágenes y textos).
+Almacenamiento: Firestore (Metadatos de campañas).
+Agente 03: The Angle Strategist (Director Creativo)
+Rol: Estratega de Marketing y Psicología del Consumidor.
+Responsabilidad: Cruzar la data del Global Scout con los activos del Asset Manager. No genera imágenes, genera Conceptos. Define 4 ángulos psicológicos de ataque (ej. Urgencia, Curiosidad, Prueba Social, Autoridad) adaptados a la cultura local identificada.
+Stack Tecnológico:
+Modelo: Vertex AI Gemini 1.5 Pro. Se requiere la ventana de contexto más amplia y la mayor capacidad de razonamiento lógico para conectar puntos culturales complejos.
+Agente 04: The Visual Engineer (Ingeniero de Prompts)
+Rol: Traductor Técnico de "Concepto" a "Imagen".
+Responsabilidad: Convertir los conceptos abstractos del Estratega en Prompts técnicos optimizados para el modelo de imagen. Su función crítica es forzar la estética "Native/Amateur" (UGC style, iluminación imperfecta, encuadres realistas) y asegurar que la imagen base sea segura (Brand Safety) mediante Negative Prompting agresivo.
+Stack Tecnológico:
+Modelo: Gemini 1.5 Flash (Fine-tuned con ejemplos de prompts de alta calidad).
+Agente 05: The Compliance Assembler (Ensamblador Determinista)
+Rol: Fábrica de Producción y Control de Calidad.
+Responsabilidad: Ejecución final.
+Genera la imagen base (1:1 - 1200x1200px).
+Selecciona el "Safe Copy" aprobado del repositorio.
+Realiza la composición final mediante código (superposición de texto, filtros de legibilidad), garantizando que nunca se invente texto nuevo.
+Stack Tecnológico:
+Generación: Vertex AI Imagen 3 (Configurado con safety_filter: block_medium y person_generation: allow).
+Procesamiento: Cloud Run Jobs ejecutando Python (Librería Pillow/OpenCV) para la manipulación de imagen y texto.
+
+3. Recomendaciones del CTO (Estrategia Técnica)
+Para construir este sistema con estándares de "Clase Mundial", estas son las directrices de arquitectura:
+A. Orquestación Serverless y Escalable
+No utilice servidores virtuales (VMs) permanentes. Utilice LangGraph desplegado sobre Google Cloud Run. Esto permite que el sistema escale a cero (costo cero) cuando no se usa y escale a miles de instancias simultáneas cuando necesite lanzar campañas masivas en 50 países a la vez.
+B. Caché Semántico para Optimización Financiera (Cost-Efficiency)
+El mayor costo será la inferencia de los LLMs. Implemente una capa de caché en Redis (Memorystore) o Firestore. Si el Agente 01 ya investigó "Seguros en México" hoy a las 8:00 AM, y a las 10:00 AM se pide otra campaña similar, el sistema no debe volver a "pensar", debe recuperar la memoria. Esto reduce costos operativos en un 40-60%.
+C. Seguridad de Marca (Governance)
+La separación de preocupaciones (Separation of Concerns) es vital. La IA Generativa (Imagen 3) crea los píxeles, pero el código determinista (Python) pone el texto. Nunca confíe en que el modelo de imagen "escriba" el texto legal o la oferta. Esta arquitectura híbrida es la única forma de garantizar el cumplimiento de políticas de RSOC al 100%.
+D. Pipeline de Datos para Mejora Continua (Data Flywheel)
+El sistema no debe ser estático. Conecte la API de rendimiento de sus campañas (Meta Ads API / Tonic report) de vuelta a BigQuery. Utilice esos datos para re-entrenar o ajustar los pesos del "Asset Manager". Si un estilo visual específico logra un alto CTR consistentemente, el sistema debe "enterarse" automáticamente para priorizarlo en futuras generaciones.
+
