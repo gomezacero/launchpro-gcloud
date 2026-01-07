@@ -408,22 +408,51 @@ class MetaService {
       formData.append('source', imagePath);
     }
 
-    const response = await axios.post(
-      `https://graph.facebook.com/${env.META_API_VERSION}/${accountId}/adimages`,
-      formData,
-      {
-        headers: {
-          ...formData.getHeaders(),
-        },
-        params: {
-          access_token: accessToken || env.META_ACCESS_TOKEN,
-        },
-      }
-    );
+    const tokenToUse = accessToken || env.META_ACCESS_TOKEN;
+    console.log('[META] 📤 uploadImage call:', {
+      accountId,
+      filename: filename || 'image.jpg',
+      hasAccessToken: !!accessToken,
+      usingEnvFallback: !accessToken,
+      tokenPreview: tokenToUse ? `${tokenToUse.substring(0, 20)}...` : 'NONE',
+      bufferSize: Buffer.isBuffer(imagePath) ? imagePath.length : 'N/A',
+    });
 
-    // Response contains the image hash
-    const imageHash = response.data.images[Object.keys(response.data.images)[0]].hash;
-    return imageHash;
+    try {
+      const response = await axios.post(
+        `https://graph.facebook.com/${env.META_API_VERSION}/${accountId}/adimages`,
+        formData,
+        {
+          headers: {
+            ...formData.getHeaders(),
+          },
+          params: {
+            access_token: tokenToUse,
+          },
+        }
+      );
+
+      // Response contains the image hash
+      const imageHash = response.data.images[Object.keys(response.data.images)[0]].hash;
+      console.log('[META] ✅ Image uploaded successfully:', { imageHash, filename });
+      return imageHash;
+    } catch (error: any) {
+      const metaError = error.response?.data?.error || {};
+      console.error('[META] ❌ Image upload failed:', {
+        accountId,
+        filename,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        errorMessage: metaError.message || error.message,
+        errorType: metaError.type,
+        errorCode: metaError.code,
+        errorSubcode: metaError.error_subcode,
+        errorUserMsg: metaError.error_user_msg,
+        fbtraceId: metaError.fbtrace_id,
+        fullError: error.response?.data,
+      });
+      throw error;
+    }
   }
 
   /**
