@@ -28,7 +28,7 @@ export const MODEL_COSTS = {
 
   // Anthropic - Best reasoning
   'claude-3-5-haiku-20241022': { input: 0.80, output: 4.0 },
-  'claude-3-5-sonnet-20241022': { input: 3.0, output: 15.0 },
+  'claude-sonnet-4-20250514': { input: 3.0, output: 15.0 },
 
   // Embeddings
   'text-embedding-004': { input: 0.00001, output: 0 }, // Per character
@@ -114,7 +114,7 @@ export const ANGLE_STRATEGIST_CONFIG: AgentConfig = {
   name: 'AngleStrategist',
   model: {
     provider: 'anthropic',
-    model: 'claude-3-5-sonnet-20241022',
+    model: 'claude-sonnet-4-20250514',
     temperature: 0.7, // Higher for creative strategy
     maxTokens: 3000,
   },
@@ -273,7 +273,7 @@ export function estimateCampaignCost(): {
 
   // Angle Strategist (Claude Sonnet)
   breakdown.angleStrategist = estimateCost(
-    'claude-3-5-sonnet-20241022',
+    'claude-sonnet-4-20250514',
     usage.angleStrategist.input,
     usage.angleStrategist.output
   );
