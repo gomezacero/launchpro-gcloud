@@ -73,11 +73,23 @@ export class ComplianceAssembler {
   private projectId: string;
   private location: string;
   private bucket: string;
+  private credentials: any = null;
 
   constructor() {
     this.projectId = process.env.GCP_PROJECT_ID || '';
     this.location = process.env.GCP_LOCATION || 'us-central1';
     this.bucket = process.env.GCP_STORAGE_BUCKET || '';
+
+    // Parse credentials from environment (for Vercel)
+    const credentialsJson = process.env.GCP_SERVICE_ACCOUNT_KEY;
+    if (credentialsJson) {
+      try {
+        this.credentials = JSON.parse(credentialsJson);
+        console.log(`[${AGENT_NAME}] Using explicit GCP credentials for project: ${this.credentials.project_id}`);
+      } catch (e: any) {
+        console.warn(`[${AGENT_NAME}] Failed to parse GCP_SERVICE_ACCOUNT_KEY:`, e.message);
+      }
+    }
 
     this.storage = getStorage();
 
@@ -91,9 +103,17 @@ export class ComplianceAssembler {
    */
   private getPredictionClient(): any {
     if (!this.predictionClient) {
-      this.predictionClient = new PredictionServiceClient({
+      const clientOptions: any = {
         apiEndpoint: `${this.location}-aiplatform.googleapis.com`,
-      });
+      };
+
+      // Use explicit credentials if available (for Vercel deployment)
+      if (this.credentials) {
+        clientOptions.credentials = this.credentials;
+        clientOptions.projectId = this.credentials.project_id || this.projectId;
+      }
+
+      this.predictionClient = new PredictionServiceClient(clientOptions);
     }
     return this.predictionClient;
   }
