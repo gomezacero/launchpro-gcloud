@@ -82,13 +82,22 @@ export class NeuralEngineOrchestrator {
       },
     };
 
-    console.log(`[${ORCHESTRATOR_NAME}] Starting pipeline for ${input.offer.name} in ${input.country}`);
+    console.log(`\n${'='.repeat(70)}`);
+    console.log(`[${ORCHESTRATOR_NAME}] 🧠 NEURAL ENGINE PIPELINE STARTING`);
+    console.log(`${'='.repeat(70)}`);
+    console.log(`[${ORCHESTRATOR_NAME}] 📋 Input Configuration:`);
+    console.log(`[${ORCHESTRATOR_NAME}]   - Offer: ${input.offer.name}`);
+    console.log(`[${ORCHESTRATOR_NAME}]   - Vertical: ${input.offer.vertical}`);
+    console.log(`[${ORCHESTRATOR_NAME}]   - Country: ${input.country}`);
+    console.log(`[${ORCHESTRATOR_NAME}]   - Language: ${input.language}`);
+    console.log(`[${ORCHESTRATOR_NAME}]   - Platform: ${input.platform}`);
+    console.log(`${'='.repeat(70)}\n`);
 
     try {
       // ========================================================================
       // PHASE 1: Research & Retrieval (Parallel)
       // ========================================================================
-      console.log(`[${ORCHESTRATOR_NAME}] Phase 1: Research & Retrieval`);
+      console.log(`[${ORCHESTRATOR_NAME}] 🔍 PHASE 1: Research & Retrieval (GlobalScout + AssetManager in parallel)`);
 
       const phase1Start = Date.now();
 
@@ -102,7 +111,7 @@ export class NeuralEngineOrchestrator {
         ),
       ]);
 
-      console.log(`[${ORCHESTRATOR_NAME}] Phase 1 completed in ${Date.now() - phase1Start}ms`);
+      console.log(`[${ORCHESTRATOR_NAME}] ✅ Phase 1 completed in ${Date.now() - phase1Start}ms`);
 
       // Handle Global Scout result
       if (!scoutResult.success || !scoutResult.data) {
@@ -112,9 +121,14 @@ export class NeuralEngineOrchestrator {
 
       if (scoutResult.fromCache) {
         cacheHits.push('GlobalScout');
+        console.log(`[${ORCHESTRATOR_NAME}]   📦 GlobalScout: CACHE HIT`);
+      } else {
+        console.log(`[${ORCHESTRATOR_NAME}]   🔄 GlobalScout: Fresh research completed`);
       }
 
       state.culturalContext = scoutResult.data;
+      console.log(`[${ORCHESTRATOR_NAME}]   🌍 Cultural Context: ${state.culturalContext.country}, Season: ${state.culturalContext.currentSeason}`);
+      console.log(`[${ORCHESTRATOR_NAME}]   🎨 Visual Codes: ${state.culturalContext.visualCodes.slice(0, 3).join(', ')}...`);
 
       // Handle Asset Manager result
       if (!assetResult.success || !assetResult.data) {
@@ -123,11 +137,12 @@ export class NeuralEngineOrchestrator {
       }
 
       state.retrievedAssets = assetResult.data;
+      console.log(`[${ORCHESTRATOR_NAME}]   📊 Assets Retrieved: ${state.retrievedAssets.topAds.length} top ads, ${state.retrievedAssets.blacklistedTerms.length} blacklisted terms`);
 
       // ========================================================================
       // PHASE 2: Strategy Development
       // ========================================================================
-      console.log(`[${ORCHESTRATOR_NAME}] Phase 2: Strategy Development`);
+      console.log(`\n[${ORCHESTRATOR_NAME}] 🎯 PHASE 2: Strategy Development (AngleStrategist using Claude Sonnet)`);
 
       const phase2Start = Date.now();
 
@@ -135,7 +150,7 @@ export class NeuralEngineOrchestrator {
         this.angleStrategist.execute(input, state.culturalContext!, state.retrievedAssets!)
       );
 
-      console.log(`[${ORCHESTRATOR_NAME}] Phase 2 completed in ${Date.now() - phase2Start}ms`);
+      console.log(`[${ORCHESTRATOR_NAME}] ✅ Phase 2 completed in ${Date.now() - phase2Start}ms`);
 
       if (!strategyResult.success || !strategyResult.data) {
         if (strategyResult.error) errors.push(strategyResult.error);
@@ -144,14 +159,21 @@ export class NeuralEngineOrchestrator {
 
       if (strategyResult.fromCache) {
         cacheHits.push('AngleStrategist');
+        console.log(`[${ORCHESTRATOR_NAME}]   📦 AngleStrategist: CACHE HIT`);
+      } else {
+        console.log(`[${ORCHESTRATOR_NAME}]   🔄 AngleStrategist: Fresh strategy developed`);
       }
 
       state.strategyBrief = strategyResult.data;
+      console.log(`[${ORCHESTRATOR_NAME}]   🎯 Primary Angle: ${state.strategyBrief.primaryAngle}`);
+      console.log(`[${ORCHESTRATOR_NAME}]   💡 Key Message: ${state.strategyBrief.keyMessage}`);
+      console.log(`[${ORCHESTRATOR_NAME}]   🖼️  Visual Concept: ${state.strategyBrief.visualConcept}`);
+      console.log(`[${ORCHESTRATOR_NAME}]   🎨 Visual Style: ${state.strategyBrief.visualStyle}`);
 
       // ========================================================================
       // PHASE 3: Visual Prompt Generation
       // ========================================================================
-      console.log(`[${ORCHESTRATOR_NAME}] Phase 3: Visual Prompt Generation`);
+      console.log(`\n[${ORCHESTRATOR_NAME}] 🎨 PHASE 3: Visual Prompt Generation (VisualEngineer using Gemini Flash)`);
 
       const phase3Start = Date.now();
 
@@ -159,7 +181,7 @@ export class NeuralEngineOrchestrator {
         this.visualEngineer.execute(input, state.strategyBrief!, state.culturalContext!)
       );
 
-      console.log(`[${ORCHESTRATOR_NAME}] Phase 3 completed in ${Date.now() - phase3Start}ms`);
+      console.log(`[${ORCHESTRATOR_NAME}] ✅ Phase 3 completed in ${Date.now() - phase3Start}ms`);
 
       if (!visualResult.success || !visualResult.data) {
         if (visualResult.error) errors.push(visualResult.error);
@@ -168,14 +190,22 @@ export class NeuralEngineOrchestrator {
 
       if (visualResult.fromCache) {
         cacheHits.push('VisualEngineer');
+        console.log(`[${ORCHESTRATOR_NAME}]   📦 VisualEngineer: CACHE HIT`);
+      } else {
+        console.log(`[${ORCHESTRATOR_NAME}]   🔄 VisualEngineer: Fresh prompts generated`);
       }
 
       state.visualPrompts = visualResult.data;
+      console.log(`[${ORCHESTRATOR_NAME}]   📝 Generated ${state.visualPrompts.length} image prompts`);
+      state.visualPrompts.forEach((vp, idx) => {
+        const truncatedPrompt = vp.prompt.length > 100 ? vp.prompt.substring(0, 100) + '...' : vp.prompt;
+        console.log(`[${ORCHESTRATOR_NAME}]   📷 Prompt ${idx + 1} (${vp.aspectRatio}): "${truncatedPrompt}"`);
+      });
 
       // ========================================================================
       // PHASE 4: Creative Assembly
       // ========================================================================
-      console.log(`[${ORCHESTRATOR_NAME}] Phase 4: Creative Assembly`);
+      console.log(`\n[${ORCHESTRATOR_NAME}] 🏭 PHASE 4: Creative Assembly (ComplianceAssembler using Imagen 3)`);
 
       const phase4Start = Date.now();
 
@@ -188,7 +218,7 @@ export class NeuralEngineOrchestrator {
         )
       );
 
-      console.log(`[${ORCHESTRATOR_NAME}] Phase 4 completed in ${Date.now() - phase4Start}ms`);
+      console.log(`[${ORCHESTRATOR_NAME}] ✅ Phase 4 completed in ${Date.now() - phase4Start}ms`);
 
       if (!assemblyResult.success || !assemblyResult.data) {
         if (assemblyResult.error) errors.push(assemblyResult.error);
@@ -198,12 +228,15 @@ export class NeuralEngineOrchestrator {
       // Capture any warnings (e.g., quota exceeded)
       if (assemblyResult.warning) {
         warnings.push(assemblyResult.warning);
+        console.log(`[${ORCHESTRATOR_NAME}]   ⚠️ Warning: ${assemblyResult.warning}`);
       }
 
       // Collect model usage
       allModelUsage.push(...assemblyResult.modelUsage);
 
       state.creativePackage = assemblyResult.data;
+      console.log(`[${ORCHESTRATOR_NAME}]   🖼️  Images Generated: ${state.creativePackage?.visuals?.images?.length || 0}`);
+      console.log(`[${ORCHESTRATOR_NAME}]   📏 Assembled Creatives: ${state.creativePackage?.visuals?.assembled?.length || 0}`);
 
       // ========================================================================
       // FINALIZE
@@ -219,12 +252,16 @@ export class NeuralEngineOrchestrator {
         state.creativePackage.metadata.cacheHits = cacheHits;
       }
 
-      console.log(`[${ORCHESTRATOR_NAME}] Pipeline completed successfully in ${state.timing.totalMs}ms`, {
-        cacheHits: cacheHits.length,
-        errors: errors.length,
-        warnings: warnings.length,
-        imagesGenerated: state.creativePackage?.visuals?.images?.length || 0,
-      });
+      console.log(`\n${'='.repeat(70)}`);
+      console.log(`[${ORCHESTRATOR_NAME}] 🎉 NEURAL ENGINE PIPELINE COMPLETED SUCCESSFULLY`);
+      console.log(`${'='.repeat(70)}`);
+      console.log(`[${ORCHESTRATOR_NAME}] 📊 Summary:`);
+      console.log(`[${ORCHESTRATOR_NAME}]   ⏱️  Total Time: ${state.timing.totalMs}ms`);
+      console.log(`[${ORCHESTRATOR_NAME}]   📦 Cache Hits: ${cacheHits.length} (${cacheHits.join(', ') || 'none'})`);
+      console.log(`[${ORCHESTRATOR_NAME}]   🖼️  Images Generated: ${state.creativePackage?.visuals?.images?.length || 0}`);
+      console.log(`[${ORCHESTRATOR_NAME}]   ⚠️  Warnings: ${warnings.length}`);
+      console.log(`[${ORCHESTRATOR_NAME}]   ❌ Errors: ${errors.length}`);
+      console.log(`${'='.repeat(70)}\n`);
 
       return {
         success: true,
@@ -234,7 +271,10 @@ export class NeuralEngineOrchestrator {
         warnings,
       };
     } catch (error: any) {
-      console.error(`[${ORCHESTRATOR_NAME}] Pipeline failed:`, error.message);
+      console.error(`\n${'='.repeat(70)}`);
+      console.error(`[${ORCHESTRATOR_NAME}] ❌ NEURAL ENGINE PIPELINE FAILED`);
+      console.error(`${'='.repeat(70)}`);
+      console.error(`[${ORCHESTRATOR_NAME}] Error: ${error.message}`);
 
       const endTime = new Date();
       state.timing.completedAt = endTime;
