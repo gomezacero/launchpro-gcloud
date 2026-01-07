@@ -1,10 +1,13 @@
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger';
 import { campaignLogger } from '@/lib/campaign-logger';
+import { env } from '@/lib/env';
 import { tonicService } from './tonic.service';
 import { metaService } from './meta.service';
 import { tiktokService } from './tiktok.service';
 import { aiService } from './ai.service';
+import { getNeuralEngineOrchestrator } from './neural-engine';
+import type { NeuralEngineInput, CreativePackage } from './neural-engine/types';
 // NOTE: videoConverterService removed - TikTok requires direct video upload
 import { waitForArticleApproval, formatElapsedTime } from '@/lib/article-polling';
 import { waitForTrackingLink, formatPollingTime } from '@/lib/tracking-link-polling';
@@ -12,6 +15,90 @@ import { CampaignStatus, Platform, CampaignType, MediaType } from '@prisma/clien
 import { Storage } from '@google-cloud/storage';
 import sharp from 'sharp';
 import { getStorageBucket } from '@/lib/gcs';
+
+// ============================================================================
+// NEURAL ENGINE FEATURE FLAG
+// ============================================================================
+
+/**
+ * Check if Neural Engine is enabled
+ * When enabled, uses 5-agent pipeline instead of traditional AI service
+ */
+function isNeuralEngineEnabled(): boolean {
+  return env.ENABLE_NEURAL_ENGINE === 'true';
+}
+
+/**
+ * Generate content using Neural Engine (when feature flag is enabled)
+ * Returns content in a format compatible with the existing flow
+ */
+async function generateWithNeuralEngine(params: {
+  offerId: string;
+  offerName: string;
+  offerVertical: string;
+  offerDescription?: string;
+  country: string;
+  language: string;
+  platform: 'META' | 'TIKTOK';
+}): Promise<{
+  copyMaster: string;
+  headlines: string[];
+  primaryTexts: string[];
+  descriptions: string[];
+  images: Array<{ url: string; gcsPath: string }>;
+} | null> {
+  try {
+    logger.info('ai', '[NeuralEngine] Generating content with Neural Engine...');
+
+    const orchestrator = getNeuralEngineOrchestrator();
+
+    const input: NeuralEngineInput = {
+      offer: {
+        id: params.offerId,
+        name: params.offerName,
+        vertical: params.offerVertical,
+        description: params.offerDescription,
+      },
+      country: params.country,
+      language: params.language,
+      platform: params.platform,
+      useCache: true,
+    };
+
+    const result = await orchestrator.execute(input);
+
+    if (!result.success || !result.data) {
+      logger.warn('ai', '[NeuralEngine] Failed, falling back to traditional AI', {
+        errors: result.errors,
+      });
+      return null;
+    }
+
+    const pkg = result.data;
+
+    logger.success('ai', '[NeuralEngine] Content generated successfully', {
+      imagesCount: pkg.visuals?.images?.length || 0,
+      cacheHits: result.state.cacheHits.length,
+      timeMs: result.state.timing.totalMs,
+    });
+
+    return {
+      copyMaster: pkg.copy.copyMaster,
+      headlines: [pkg.copy.headline],
+      primaryTexts: [pkg.copy.primaryText],
+      descriptions: [pkg.copy.description],
+      images: (pkg.visuals?.images || []).map((img) => ({
+        url: img.url,
+        gcsPath: img.gcsPath,
+      })),
+    };
+  } catch (error: any) {
+    logger.error('ai', '[NeuralEngine] Error, falling back to traditional AI', {
+      error: error.message,
+    });
+    return null;
+  }
+}
 
 
 

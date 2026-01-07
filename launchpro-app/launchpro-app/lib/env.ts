@@ -85,6 +85,11 @@ const envSchema = z.object({
   ENABLE_IMAGE_GENERATION: z.string().default('true'),
   ENABLE_VIDEO_GENERATION: z.string().default('true'),
 
+  // Neural Engine - Multi-agent system for creative generation
+  // When 'true': Uses 5-agent pipeline (Global Scout → Asset Manager → Angle Strategist → Visual Engineer → Compliance Assembler)
+  // When 'false': Uses traditional AI service (current behavior)
+  ENABLE_NEURAL_ENGINE: z.string().default('false'),
+
   // ============================================================================
   // DESIGNFLOW INTEGRATION
   // ============================================================================

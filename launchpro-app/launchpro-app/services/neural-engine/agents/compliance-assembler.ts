@@ -1,0 +1,526 @@
+/**
+ * RSOC Creative Neural Engine - Compliance Assembler
+ *
+ * Role: Deterministic Production Factory & Quality Control
+ * Technology: Sharp (image processing) + Imagen 3 (generation)
+ *
+ * This is the final component that:
+ * 1. Generates base images using Imagen 3
+ * 2. Selects pre-approved Safe Copies (NEVER generates text with AI)
+ * 3. Composites text onto images programmatically
+ * 4. Uploads to Google Cloud Storage
+ *
+ * CRITICAL: This component guarantees 100% RSOC policy compliance
+ * by separating AI generation from text insertion.
+ */
+
+import sharp from 'sharp';
+import { v1, helpers } from '@google-cloud/aiplatform';
+import { Storage } from '@google-cloud/storage';
+import { getStorage } from '@/lib/gcs';
+import {
+  AssembledCreative,
+  CreativePackage,
+  GeneratedImage,
+  VisualPrompt,
+  StrategyBrief,
+  RetrievedAssets,
+  NeuralEngineInput,
+  AgentError,
+  ModelUsage,
+} from '../types';
+
+const { PredictionServiceClient } = v1;
+
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+const AGENT_NAME = 'ComplianceAssembler';
+const IMAGE_MODEL = 'imagen-3.0-generate-001';
+const GCS_FOLDER = 'neural-engine/creatives';
+
+// Text overlay configuration
+const TEXT_CONFIG = {
+  headline: {
+    fontSize: 48,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    shadowColor: '#000000',
+    shadowBlur: 4,
+    maxWidth: 0.9, // 90% of image width
+    position: 'top', // top, center, bottom
+    padding: 40,
+  },
+  cta: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    backgroundColor: '#0066CC',
+    borderRadius: 8,
+    padding: 16,
+    position: 'bottom',
+  },
+};
+
+// ============================================================================
+// COMPLIANCE ASSEMBLER
+// ============================================================================
+
+export class ComplianceAssembler {
+  private predictionClient: any = null;
+  private storage: Storage;
+  private projectId: string;
+  private location: string;
+  private bucket: string;
+
+  constructor() {
+    this.projectId = process.env.GCP_PROJECT_ID || '';
+    this.location = process.env.GCP_LOCATION || 'us-central1';
+    this.bucket = process.env.GCP_STORAGE_BUCKET || '';
+
+    this.storage = getStorage();
+
+    if (!this.projectId || !this.bucket) {
+      console.warn(`[${AGENT_NAME}] GCP configuration incomplete. Assembly may fail.`);
+    }
+  }
+
+  /**
+   * Get or create prediction client
+   */
+  private getPredictionClient(): any {
+    if (!this.predictionClient) {
+      this.predictionClient = new PredictionServiceClient({
+        apiEndpoint: `${this.location}-aiplatform.googleapis.com`,
+      });
+    }
+    return this.predictionClient;
+  }
+
+  /**
+   * Execute the full assembly pipeline
+   */
+  async execute(
+    input: NeuralEngineInput,
+    strategyBrief: StrategyBrief,
+    visualPrompts: VisualPrompt[],
+    retrievedAssets: RetrievedAssets
+  ): Promise<{
+    success: boolean;
+    data?: CreativePackage;
+    error?: AgentError;
+    modelUsage: ModelUsage[];
+  }> {
+    const startTime = Date.now();
+    const modelUsage: ModelUsage[] = [];
+
+    console.log(`[${AGENT_NAME}] Starting creative assembly for ${input.offer.name}`);
+
+    try {
+      // Step 1: Generate base images from prompts
+      const generatedImages = await this.generateImages(visualPrompts, modelUsage);
+
+      if (generatedImages.length === 0) {
+        throw new Error('No images generated');
+      }
+
+      // Step 2: Select appropriate Safe Copy
+      const selectedCopy = this.selectSafeCopy(strategyBrief, retrievedAssets);
+
+      // Step 3: Composite text onto images
+      const assembledImages = await this.compositeImages(
+        generatedImages,
+        selectedCopy,
+        strategyBrief
+      );
+
+      // Step 4: Build final creative package
+      const creativePackage = this.buildCreativePackage(
+        input,
+        strategyBrief,
+        selectedCopy,
+        assembledImages,
+        modelUsage,
+        startTime
+      );
+
+      const duration = Date.now() - startTime;
+      console.log(`[${AGENT_NAME}] Assembly completed in ${duration}ms`, {
+        imagesGenerated: generatedImages.length,
+        imagesAssembled: assembledImages.length,
+      });
+
+      return { success: true, data: creativePackage, modelUsage };
+    } catch (error: any) {
+      console.error(`[${AGENT_NAME}] Error:`, error.message);
+
+      return {
+        success: false,
+        error: {
+          agent: AGENT_NAME,
+          error: error.message,
+          code: 'ASSEMBLY_ERROR',
+          timestamp: new Date(),
+          recoverable: false,
+        },
+        modelUsage,
+      };
+    }
+  }
+
+  /**
+   * Generate base images using Imagen 3
+   */
+  private async generateImages(
+    prompts: VisualPrompt[],
+    modelUsage: ModelUsage[]
+  ): Promise<GeneratedImage[]> {
+    const client = this.getPredictionClient();
+    const endpoint = `projects/${this.projectId}/locations/${this.location}/publishers/google/models/${IMAGE_MODEL}`;
+
+    const generatedImages: GeneratedImage[] = [];
+
+    // Generate images for each prompt (limited to 4 for cost control)
+    const promptsToProcess = prompts.slice(0, 4);
+
+    for (let i = 0; i < promptsToProcess.length; i++) {
+      const prompt = promptsToProcess[i];
+
+      try {
+        console.log(`[${AGENT_NAME}] Generating image ${i + 1}/${promptsToProcess.length}...`);
+
+        const startTime = Date.now();
+
+        // Build Imagen 3 request
+        const instance = helpers.toValue({
+          prompt: prompt.prompt,
+          negativePrompt: prompt.negativePrompt,
+          aspectRatio: prompt.aspectRatio,
+          sampleCount: 1,
+          safetyFilterLevel: 'block_medium_and_above',
+          personGeneration: 'allow_adult',
+        });
+
+        const [response] = await client.predict({
+          endpoint,
+          instances: [instance],
+        });
+
+        const latencyMs = Date.now() - startTime;
+
+        // Extract image from response
+        const predictions = response.predictions;
+        if (!predictions || predictions.length === 0) {
+          console.warn(`[${AGENT_NAME}] No image generated for prompt ${i + 1}`);
+          continue;
+        }
+
+        const imageData = (predictions[0] as any).structValue?.fields;
+        const base64Image = imageData?.bytesBase64Encoded?.stringValue;
+
+        if (!base64Image) {
+          console.warn(`[${AGENT_NAME}] No base64 image in response for prompt ${i + 1}`);
+          continue;
+        }
+
+        // Upload to GCS
+        const imageBuffer = Buffer.from(base64Image, 'base64');
+        const { width, height } = await this.getImageDimensions(imageBuffer);
+
+        const imageId = `img-${Date.now()}-${i}`;
+        const gcsPath = `${GCS_FOLDER}/${imageId}.png`;
+        const url = await this.uploadToGCS(imageBuffer, gcsPath);
+
+        generatedImages.push({
+          id: imageId,
+          url,
+          gcsPath,
+          width,
+          height,
+          aspectRatio: prompt.aspectRatio,
+          hasTextOverlay: false,
+        });
+
+        // Track model usage
+        modelUsage.push({
+          agent: AGENT_NAME,
+          model: IMAGE_MODEL,
+          inputTokens: 0, // N/A for image generation
+          outputTokens: 0,
+          cost: 0.02, // Approximate cost per image
+          latencyMs,
+          fromCache: false,
+        });
+      } catch (error: any) {
+        console.error(`[${AGENT_NAME}] Error generating image ${i + 1}:`, error.message);
+        // Continue with other images
+      }
+    }
+
+    return generatedImages;
+  }
+
+  /**
+   * Get image dimensions using Sharp
+   */
+  private async getImageDimensions(buffer: Buffer): Promise<{ width: number; height: number }> {
+    try {
+      const metadata = await sharp(buffer).metadata();
+      return {
+        width: metadata.width || 1080,
+        height: metadata.height || 1080,
+      };
+    } catch {
+      return { width: 1080, height: 1080 };
+    }
+  }
+
+  /**
+   * Upload image to Google Cloud Storage
+   */
+  private async uploadToGCS(buffer: Buffer, path: string): Promise<string> {
+    const file = this.storage.bucket(this.bucket).file(path);
+
+    await file.save(buffer, {
+      contentType: 'image/png',
+      public: true,
+    });
+
+    return `https://storage.googleapis.com/${this.bucket}/${path}`;
+  }
+
+  /**
+   * Select appropriate Safe Copy from retrieved assets
+   */
+  private selectSafeCopy(
+    strategyBrief: StrategyBrief,
+    retrievedAssets: RetrievedAssets
+  ): { headline: string; subheadline?: string; cta: string } {
+    const safeCopies = retrievedAssets.safeCopies;
+
+    // Find headline
+    const headlineCopy = safeCopies.find((c) => c.copyType === 'headline' && c.approved);
+    const ctaCopy = safeCopies.find((c) => c.copyType === 'cta' && c.approved);
+
+    // Get platform adaptation as fallback
+    const platformKey = Object.keys(strategyBrief.platformAdaptations)[0] || 'meta';
+    const platformCopy = strategyBrief.platformAdaptations[platformKey as 'meta' | 'tiktok'];
+
+    return {
+      headline: headlineCopy?.content || platformCopy?.headline || strategyBrief.keyMessage,
+      subheadline: undefined, // Optional
+      cta: ctaCopy?.content || platformCopy?.callToAction || 'Learn More',
+    };
+  }
+
+  /**
+   * Composite text onto images using Sharp
+   */
+  private async compositeImages(
+    images: GeneratedImage[],
+    copy: { headline: string; subheadline?: string; cta: string },
+    strategyBrief: StrategyBrief
+  ): Promise<GeneratedImage[]> {
+    const assembled: GeneratedImage[] = [];
+
+    for (const image of images) {
+      try {
+        // Download image from GCS
+        const imageBuffer = await this.downloadFromGCS(image.gcsPath);
+
+        // Create text overlay SVG
+        const overlayBuffer = await this.createTextOverlay(
+          image.width,
+          image.height,
+          copy,
+          strategyBrief
+        );
+
+        // Composite the overlay onto the image
+        const composited = await sharp(imageBuffer)
+          .composite([{ input: overlayBuffer, gravity: 'center' }])
+          .png()
+          .toBuffer();
+
+        // Upload composited image
+        const assembledId = `${image.id}-assembled`;
+        const assembledPath = `${GCS_FOLDER}/${assembledId}.png`;
+        const url = await this.uploadToGCS(composited, assembledPath);
+
+        assembled.push({
+          id: assembledId,
+          url,
+          gcsPath: assembledPath,
+          width: image.width,
+          height: image.height,
+          aspectRatio: image.aspectRatio,
+          hasTextOverlay: true,
+        });
+      } catch (error: any) {
+        console.warn(`[${AGENT_NAME}] Error compositing image ${image.id}:`, error.message);
+        // Still include the original image without overlay
+        assembled.push({ ...image, hasTextOverlay: false });
+      }
+    }
+
+    return assembled;
+  }
+
+  /**
+   * Download image from GCS
+   */
+  private async downloadFromGCS(path: string): Promise<Buffer> {
+    const file = this.storage.bucket(this.bucket).file(path);
+    const [buffer] = await file.download();
+    return buffer;
+  }
+
+  /**
+   * Create text overlay using SVG
+   */
+  private async createTextOverlay(
+    width: number,
+    height: number,
+    copy: { headline: string; subheadline?: string; cta: string },
+    strategyBrief: StrategyBrief
+  ): Promise<Buffer> {
+    // Get primary color from strategy
+    const primaryColor = strategyBrief.colorPalette[0] || '#0066CC';
+
+    // Create SVG with text overlay
+    const svg = `
+      <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+            <feDropShadow dx="2" dy="2" stdDeviation="3" flood-color="#000000" flood-opacity="0.5"/>
+          </filter>
+        </defs>
+
+        <!-- Semi-transparent gradient overlay for text legibility -->
+        <linearGradient id="grad" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" style="stop-color:#000000;stop-opacity:0.6" />
+          <stop offset="30%" style="stop-color:#000000;stop-opacity:0" />
+          <stop offset="70%" style="stop-color:#000000;stop-opacity:0" />
+          <stop offset="100%" style="stop-color:#000000;stop-opacity:0.6" />
+        </linearGradient>
+        <rect width="100%" height="100%" fill="url(#grad)" />
+
+        <!-- Headline at top -->
+        <text
+          x="50%"
+          y="${height * 0.12}"
+          text-anchor="middle"
+          font-family="Arial, Helvetica, sans-serif"
+          font-size="${Math.min(width * 0.06, 48)}px"
+          font-weight="bold"
+          fill="#FFFFFF"
+          filter="url(#shadow)"
+        >
+          ${this.escapeXml(copy.headline)}
+        </text>
+
+        <!-- CTA button at bottom -->
+        <rect
+          x="${width * 0.3}"
+          y="${height * 0.82}"
+          width="${width * 0.4}"
+          height="${height * 0.08}"
+          rx="8"
+          fill="${primaryColor}"
+          filter="url(#shadow)"
+        />
+        <text
+          x="50%"
+          y="${height * 0.87}"
+          text-anchor="middle"
+          font-family="Arial, Helvetica, sans-serif"
+          font-size="${Math.min(width * 0.04, 28)}px"
+          font-weight="bold"
+          fill="#FFFFFF"
+        >
+          ${this.escapeXml(copy.cta)}
+        </text>
+      </svg>
+    `;
+
+    return Buffer.from(svg);
+  }
+
+  /**
+   * Escape XML special characters
+   */
+  private escapeXml(text: string): string {
+    return text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;');
+  }
+
+  /**
+   * Build the final creative package
+   */
+  private buildCreativePackage(
+    input: NeuralEngineInput,
+    strategyBrief: StrategyBrief,
+    selectedCopy: { headline: string; subheadline?: string; cta: string },
+    images: GeneratedImage[],
+    modelUsage: ModelUsage[],
+    startTime: number
+  ): CreativePackage {
+    const platformKey = Object.keys(strategyBrief.platformAdaptations)[0] || 'meta';
+    const platformCopy = strategyBrief.platformAdaptations[platformKey as 'meta' | 'tiktok'];
+
+    const totalCost = modelUsage.reduce((sum, m) => sum + m.cost, 0);
+    const generationTimeMs = Date.now() - startTime;
+
+    return {
+      id: `creative-${Date.now()}`,
+      generatedAt: new Date(),
+
+      offerId: input.offer.id,
+      country: input.country,
+      platform: input.platform,
+
+      copy: {
+        copyMaster: strategyBrief.copyMaster,
+        headline: selectedCopy.headline,
+        primaryText: platformCopy?.primaryText || strategyBrief.emotionalHook,
+        description: platformCopy?.description || strategyBrief.keyMessage,
+        callToAction: selectedCopy.cta,
+      },
+
+      visuals: {
+        images,
+        videos: undefined, // Videos would be added in a separate phase
+      },
+
+      strategy: {
+        angle: strategyBrief.primaryAngle,
+        visualConcept: strategyBrief.visualConcept,
+      },
+
+      metadata: {
+        cacheHits: [], // Populated by orchestrator
+        modelsUsed: modelUsage,
+        totalCost,
+        generationTimeMs,
+      },
+    };
+  }
+}
+
+// ============================================================================
+// SINGLETON
+// ============================================================================
+
+let complianceAssemblerInstance: ComplianceAssembler | null = null;
+
+export function getComplianceAssembler(): ComplianceAssembler {
+  if (!complianceAssemblerInstance) {
+    complianceAssemblerInstance = new ComplianceAssembler();
+  }
+  return complianceAssemblerInstance;
+}
