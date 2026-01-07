@@ -917,20 +917,68 @@ class CampaignOrchestratorService {
           language: params.language,
         });
 
-        // Generate UGC-style media with custom prompts and vertical classification
-        const ugcMedia = await aiService.generateUGCMedia({
-          campaignId: campaign.id,
-          platform: platformConfig.platform as 'META' | 'TIKTOK',
-          mediaType: effectiveMediaType as 'IMAGE' | 'VIDEO' | 'BOTH',
-          count: mediaCount,
-          category: offer.vertical || offer.name, // Use vertical as category, fallback to offer name
-          country: params.country,
-          language: params.language,
-          adTitle: adCopy.headline, // Used for image text overlay
-          copyMaster: aiContentResult.copyMaster, // Used for video text overlay
-          offerName: offer.name, // Pass offer name for better vertical classification
-          vertical: offer.vertical, // Pass vertical from Tonic for accurate template selection
-        });
+        // ============================================
+        // NEURAL ENGINE INTEGRATION
+        // ============================================
+        let ugcMedia: { images: any[]; videos: any[] } = { images: [], videos: [] };
+        let usedNeuralEngine = false;
+
+        // Try Neural Engine first if enabled and generating images for META
+        if (isNeuralEngineEnabled() && platformConfig.platform === 'META' && effectiveMediaType !== 'VIDEO') {
+          logger.info('ai', '🧠 Neural Engine ENABLED - Using 5-agent pipeline for image generation');
+
+          const neuralResult = await generateWithNeuralEngine({
+            offerId: offer.id.toString(),
+            offerName: offer.name,
+            offerVertical: offer.vertical,
+            offerDescription: offer.description || undefined,
+            country: params.country,
+            language: params.language,
+            platform: platformConfig.platform as 'META' | 'TIKTOK',
+          });
+
+          if (neuralResult && neuralResult.images.length > 0) {
+            logger.success('ai', `🧠 Neural Engine generated ${neuralResult.images.length} images`);
+            usedNeuralEngine = true;
+            ugcMedia = {
+              images: neuralResult.images.map((img) => ({
+                url: img.url,
+                gcsPath: img.gcsPath,
+                prompt: 'Neural Engine 5-agent pipeline',
+              })),
+              videos: [],
+            };
+
+            // Update copyMaster with Neural Engine's version if available
+            if (neuralResult.copyMaster) {
+              aiContentResult.copyMaster = neuralResult.copyMaster;
+            }
+          } else {
+            logger.warn('ai', '🧠 Neural Engine failed or no images - falling back to traditional AI');
+          }
+        }
+
+        // Fallback to traditional AI service if Neural Engine not used
+        if (!usedNeuralEngine) {
+          if (isNeuralEngineEnabled()) {
+            logger.info('ai', '📷 Using traditional AI service (Neural Engine fallback or VIDEO mode)');
+          }
+
+          // Generate UGC-style media with custom prompts and vertical classification
+          ugcMedia = await aiService.generateUGCMedia({
+            campaignId: campaign.id,
+            platform: platformConfig.platform as 'META' | 'TIKTOK',
+            mediaType: effectiveMediaType as 'IMAGE' | 'VIDEO' | 'BOTH',
+            count: mediaCount,
+            category: offer.vertical || offer.name, // Use vertical as category, fallback to offer name
+            country: params.country,
+            language: params.language,
+            adTitle: adCopy.headline, // Used for image text overlay
+            copyMaster: aiContentResult.copyMaster, // Used for video text overlay
+            offerName: offer.name, // Pass offer name for better vertical classification
+            vertical: offer.vertical, // Pass vertical from Tonic for accurate template selection
+          });
+        }
 
         // Save generated images to database
         for (const image of ugcMedia.images) {
@@ -3895,20 +3943,68 @@ class CampaignOrchestratorService {
       });
 
       try {
-        // Generate UGC-style media with custom prompts and vertical classification
-        const ugcMedia = await aiService.generateUGCMedia({
-          campaignId: campaign.id,
-          platform: platformConfig.platform as 'META' | 'TIKTOK',
-          mediaType: effectiveMediaType as 'IMAGE' | 'VIDEO' | 'BOTH',
-          count: mediaCount,
-          category: campaign.offer.vertical || campaign.offer.name,
-          country: campaign.country,
-          language: campaign.language,
-          adTitle: adCopy.headline,
-          copyMaster: aiContentResult.copyMaster,
-          offerName: campaign.offer.name, // Pass offer name for better vertical classification
-          vertical: campaign.offer.vertical, // Pass vertical from Tonic for accurate template selection
-        });
+        // ============================================
+        // NEURAL ENGINE INTEGRATION (continueCampaign)
+        // ============================================
+        let ugcMedia: { images: any[]; videos: any[] } = { images: [], videos: [] };
+        let usedNeuralEngine = false;
+
+        // Try Neural Engine first if enabled and generating images for META
+        if (isNeuralEngineEnabled() && platformConfig.platform === 'META' && effectiveMediaType !== 'VIDEO') {
+          logger.info('ai', '🧠 Neural Engine ENABLED - Using 5-agent pipeline for image generation');
+
+          const neuralResult = await generateWithNeuralEngine({
+            offerId: campaign.offer.id.toString(),
+            offerName: campaign.offer.name,
+            offerVertical: campaign.offer.vertical,
+            offerDescription: campaign.offer.description || undefined,
+            country: campaign.country,
+            language: campaign.language,
+            platform: platformConfig.platform as 'META' | 'TIKTOK',
+          });
+
+          if (neuralResult && neuralResult.images.length > 0) {
+            logger.success('ai', `🧠 Neural Engine generated ${neuralResult.images.length} images`);
+            usedNeuralEngine = true;
+            ugcMedia = {
+              images: neuralResult.images.map((img) => ({
+                url: img.url,
+                gcsPath: img.gcsPath,
+                prompt: 'Neural Engine 5-agent pipeline',
+              })),
+              videos: [],
+            };
+
+            // Update copyMaster with Neural Engine's version if available
+            if (neuralResult.copyMaster) {
+              aiContentResult.copyMaster = neuralResult.copyMaster;
+            }
+          } else {
+            logger.warn('ai', '🧠 Neural Engine failed or no images - falling back to traditional AI');
+          }
+        }
+
+        // Fallback to traditional AI service if Neural Engine not used
+        if (!usedNeuralEngine) {
+          if (isNeuralEngineEnabled()) {
+            logger.info('ai', '📷 Using traditional AI service (Neural Engine fallback or VIDEO mode)');
+          }
+
+          // Generate UGC-style media with custom prompts and vertical classification
+          ugcMedia = await aiService.generateUGCMedia({
+            campaignId: campaign.id,
+            platform: platformConfig.platform as 'META' | 'TIKTOK',
+            mediaType: effectiveMediaType as 'IMAGE' | 'VIDEO' | 'BOTH',
+            count: mediaCount,
+            category: campaign.offer.vertical || campaign.offer.name,
+            country: campaign.country,
+            language: campaign.language,
+            adTitle: adCopy.headline,
+            copyMaster: aiContentResult.copyMaster,
+            offerName: campaign.offer.name,
+            vertical: campaign.offer.vertical,
+          });
+        }
 
         // Save generated images to database
         for (const image of ugcMedia.images) {
