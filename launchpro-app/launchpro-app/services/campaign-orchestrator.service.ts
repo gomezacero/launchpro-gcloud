@@ -3779,27 +3779,34 @@ class CampaignOrchestratorService {
     let tonicCampaignId: string | number;
 
     // ============================================
-    // STEP 1: Create Tonic campaign
+    // STEP 1: Create Tonic campaign (or use existing)
     // ============================================
-    logger.info('tonic', `Creating ${campaignType.toUpperCase()} campaign in Tonic...`);
 
-    // Generate unique campaign name to avoid collisions in Tonic
-    // Tonic rejects duplicate campaign names even from failed/deleted campaigns
-    const uniqueSuffix = Date.now().toString(36).slice(-4);
-    const tonicCampaignName = `${campaign.name}_${uniqueSuffix}`;
+    // Check if Tonic campaign was already created (e.g., by check-articles cron)
+    if (campaign.tonicCampaignId) {
+      logger.info('tonic', `✅ Tonic campaign already exists: ${campaign.tonicCampaignId}, skipping creation`);
+      tonicCampaignId = campaign.tonicCampaignId;
+    } else {
+      logger.info('tonic', `Creating ${campaignType.toUpperCase()} campaign in Tonic...`);
 
-    const campaignParams = {
-      name: tonicCampaignName,
-      offer: campaign.offer.name,
-      offer_id: campaign.offer.tonicId,
-      country: campaign.country,
-      type: campaignType,
-      return_type: 'id' as const,
-      ...(campaign.tonicArticleId && { headline_id: campaign.tonicArticleId }),
-    };
+      // Generate unique campaign name to avoid collisions in Tonic
+      // Tonic rejects duplicate campaign names even from failed/deleted campaigns
+      const uniqueSuffix = Date.now().toString(36).slice(-4);
+      const tonicCampaignName = `${campaign.name}_${uniqueSuffix}`;
 
-    tonicCampaignId = await tonicService.createCampaign(credentials, campaignParams);
-    logger.success('tonic', `Tonic campaign created: ${tonicCampaignId}`);
+      const campaignParams = {
+        name: tonicCampaignName,
+        offer: campaign.offer.name,
+        offer_id: campaign.offer.tonicId,
+        country: campaign.country,
+        type: campaignType,
+        return_type: 'id' as const,
+        ...(campaign.tonicArticleId && { headline_id: campaign.tonicArticleId }),
+      };
+
+      tonicCampaignId = await tonicService.createCampaign(credentials, campaignParams);
+      logger.success('tonic', `Tonic campaign created: ${tonicCampaignId}`);
+    }
 
     // ============================================
     // STEP 2: Wait for tracking link

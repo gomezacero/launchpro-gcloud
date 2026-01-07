@@ -204,8 +204,14 @@ class TonicService {
 
     // CRITICAL FIX: Tonic API expects parameters as QUERY PARAMETERS, not in the request body!
     // This is how your working Google Sheets code does it.
+
+    // Add unique suffix to campaign name to prevent "name already in use" errors on retries
+    // Format: OriginalName_HHMMSS (e.g., "MyCampaign_143527")
+    const timestamp = new Date().toISOString().replace(/[-:T]/g, '').slice(8, 14); // HHMMSS
+    const uniqueName = `${params.name}_${timestamp}`;
+
     const queryParams: Record<string, string | number> = {
-      name: params.name,
+      name: uniqueName,
       country: params.country,
       type: params.type,
       imprint: imprint,
@@ -228,7 +234,7 @@ class TonicService {
     // DO NOT include domain parameter - your working code doesn't send it!
     // Tonic handles domain automatically for RSOC campaigns
 
-    logger.info('tonic', `Creating ${params.type.toUpperCase()} campaign with query params:`, queryParams);
+    logger.info('tonic', `Creating ${params.type.toUpperCase()} campaign: "${params.name}" → "${uniqueName}" (unique)`, queryParams);
 
     try {
       // Build URL with query parameters (like your Google Sheets code)
