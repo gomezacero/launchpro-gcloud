@@ -321,7 +321,8 @@ export class ComplianceAssembler {
 
     await file.save(buffer, {
       contentType: 'image/png',
-      public: true,
+      // Don't set public: true - bucket uses uniform bucket-level access
+      // Files are accessible via bucket IAM policies
     });
 
     return `https://storage.googleapis.com/${this.bucket}/${path}`;
