@@ -236,7 +236,7 @@ export class NeuralEngineOrchestrator {
 
       state.creativePackage = assemblyResult.data;
       console.log(`[${ORCHESTRATOR_NAME}]   🖼️  Images Generated: ${state.creativePackage?.visuals?.images?.length || 0}`);
-      console.log(`[${ORCHESTRATOR_NAME}]   📏 Assembled Creatives: ${state.creativePackage?.visuals?.assembled?.length || 0}`);
+      console.log(`[${ORCHESTRATOR_NAME}]   🎬 Videos Generated: ${state.creativePackage?.visuals?.videos?.length || 0}`);
 
       // ========================================================================
       // FINALIZE

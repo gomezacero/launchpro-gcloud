@@ -52,7 +52,8 @@
       "Bash(node:*)",
       "Bash(DATABASE_URL=\"postgresql://postgres.ojhflsfnlwnpysvwtvnw:Legolas9OD7A9SX!@aws-0-us-west-2.pooler.supabase.com:5432/postgres\" npx tsx -e:*)",
       "Bash(source .env)",
-      "Bash(lsof:*)"
+      "Bash(lsof:*)",
+      "Bash(git restore:*)"
     ],
     "deny": [],
     "ask": []
