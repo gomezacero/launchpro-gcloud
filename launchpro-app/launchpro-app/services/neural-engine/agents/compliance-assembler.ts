@@ -17,6 +17,7 @@
 import sharp from 'sharp';
 import { v1, helpers } from '@google-cloud/aiplatform';
 import { Storage } from '@google-cloud/storage';
+import { GoogleGenAI } from '@google/genai';
 import { getStorage } from '@/lib/gcs';
 import {
   AssembledCreative,
@@ -38,6 +39,7 @@ const { PredictionServiceClient } = v1;
 
 const AGENT_NAME = 'ComplianceAssembler';
 const IMAGE_MODEL = 'imagen-3.0-generate-001';
+const GEMINI_MODEL = 'gemini-2.0-flash-exp'; // Fallback for when Imagen quota exceeded
 const GCS_FOLDER = 'neural-engine/creatives';
 
 // Text overlay configuration
@@ -69,6 +71,7 @@ const TEXT_CONFIG = {
 
 export class ComplianceAssembler {
   private predictionClient: any = null;
+  private geminiClient: GoogleGenAI | null = null;
   private storage: Storage;
   private projectId: string;
   private location: string;
@@ -92,6 +95,15 @@ export class ComplianceAssembler {
     }
 
     this.storage = getStorage();
+
+    // Initialize Gemini client for fallback image generation
+    const geminiApiKey = process.env.GOOGLE_AI_API_KEY || process.env.GEMINI_API_KEY;
+    if (geminiApiKey) {
+      this.geminiClient = new GoogleGenAI({ apiKey: geminiApiKey });
+      console.log(`[${AGENT_NAME}] Gemini fallback initialized`);
+    } else {
+      console.warn(`[${AGENT_NAME}] No Gemini API key - fallback disabled`);
+    }
 
     if (!this.projectId || !this.bucket) {
       console.warn(`[${AGENT_NAME}] GCP configuration incomplete. Assembly may fail.`);
@@ -140,8 +152,8 @@ export class ComplianceAssembler {
     console.log(`[${AGENT_NAME}] Starting creative assembly for ${input.offer.name}`);
 
     try {
-      // Step 1: Generate base images from prompts
-      const { images: generatedImages, quotaExceeded } = await this.generateImagesWithFallback(visualPrompts, modelUsage);
+      // Step 1: Generate base images from prompts (with Gemini fallback if Imagen quota exceeded)
+      const { images: generatedImages, quotaExceeded, usedFallback } = await this.generateImagesWithFallback(visualPrompts, modelUsage);
 
       // Step 2: Select appropriate Safe Copy
       const selectedCopy = this.selectSafeCopy(strategyBrief, retrievedAssets);
@@ -155,8 +167,14 @@ export class ComplianceAssembler {
           selectedCopy,
           strategyBrief
         );
+
+        // Add warning if we used fallback
+        if (usedFallback) {
+          warning = 'Imagen 3 quota exceeded - used Gemini fallback for image generation';
+          console.log(`[${AGENT_NAME}] ℹ️ ${warning}`);
+        }
       } else if (quotaExceeded) {
-        warning = 'Image generation skipped due to Imagen 3 quota limit (1/minute). Strategy and copy are complete.';
+        warning = 'Image generation failed: Imagen 3 quota exceeded and Gemini fallback unavailable.';
         console.warn(`[${AGENT_NAME}] ${warning}`);
       }
 
@@ -171,10 +189,11 @@ export class ComplianceAssembler {
       );
 
       const duration = Date.now() - startTime;
-      console.log(`[${AGENT_NAME}] Assembly completed in ${duration}ms`, {
+      console.log(`[${AGENT_NAME}] ✅ Assembly completed in ${duration}ms`, {
         imagesGenerated: generatedImages.length,
         imagesAssembled: assembledImages.length,
         quotaExceeded,
+        usedFallback,
       });
 
       return { success: true, data: creativePackage, modelUsage, warning };
@@ -196,15 +215,16 @@ export class ComplianceAssembler {
   }
 
   /**
-   * Generate images with graceful fallback for quota errors
+   * Generate images with graceful fallback to Gemini when Imagen 3 quota exceeded
    */
   private async generateImagesWithFallback(
     prompts: VisualPrompt[],
     modelUsage: ModelUsage[]
-  ): Promise<{ images: GeneratedImage[]; quotaExceeded: boolean }> {
+  ): Promise<{ images: GeneratedImage[]; quotaExceeded: boolean; usedFallback: boolean }> {
     try {
+      console.log(`[${AGENT_NAME}] 🖼️ Attempting image generation with Imagen 3...`);
       const images = await this.generateImages(prompts, modelUsage);
-      return { images, quotaExceeded: false };
+      return { images, quotaExceeded: false, usedFallback: false };
     } catch (error: any) {
       // Check if it's a quota error
       const isQuotaError =
@@ -214,13 +234,126 @@ export class ComplianceAssembler {
         error.details?.includes('quota');
 
       if (isQuotaError) {
-        console.warn(`[${AGENT_NAME}] Quota exceeded for Imagen 3. Continuing without images.`);
-        return { images: [], quotaExceeded: true };
+        console.warn(`[${AGENT_NAME}] ⚠️ Imagen 3 quota exceeded. Trying Gemini fallback...`);
+
+        // Try Gemini fallback if available
+        if (this.geminiClient) {
+          try {
+            const geminiImages = await this.generateImagesWithGemini(prompts, modelUsage);
+            if (geminiImages.length > 0) {
+              console.log(`[${AGENT_NAME}] ✅ Gemini fallback successful: ${geminiImages.length} images`);
+              return { images: geminiImages, quotaExceeded: true, usedFallback: true };
+            }
+          } catch (geminiError: any) {
+            console.error(`[${AGENT_NAME}] ❌ Gemini fallback also failed:`, geminiError.message);
+          }
+        } else {
+          console.warn(`[${AGENT_NAME}] No Gemini client available for fallback`);
+        }
+
+        return { images: [], quotaExceeded: true, usedFallback: false };
       }
 
       // Re-throw non-quota errors
       throw error;
     }
+  }
+
+  /**
+   * Generate images using Gemini (fallback for when Imagen 3 quota exceeded)
+   */
+  private async generateImagesWithGemini(
+    prompts: VisualPrompt[],
+    modelUsage: ModelUsage[]
+  ): Promise<GeneratedImage[]> {
+    if (!this.geminiClient) {
+      throw new Error('Gemini client not initialized');
+    }
+
+    console.log(`[${AGENT_NAME}] 🔄 Generating images with Gemini ${GEMINI_MODEL}...`);
+    const generatedImages: GeneratedImage[] = [];
+
+    // Generate images for each prompt (limited to 4 for cost control)
+    const promptsToProcess = prompts.slice(0, 4);
+
+    for (let i = 0; i < promptsToProcess.length; i++) {
+      const prompt = promptsToProcess[i];
+
+      try {
+        console.log(`[${AGENT_NAME}] Generating image ${i + 1}/${promptsToProcess.length} with Gemini...`);
+        console.log(`[${AGENT_NAME}] Prompt: ${prompt.prompt.substring(0, 100)}...`);
+
+        const startTime = Date.now();
+
+        // Use Gemini API for image generation
+        const response = await this.geminiClient.models.generateContent({
+          model: GEMINI_MODEL,
+          contents: prompt.prompt,
+          config: {
+            responseModalities: ['image', 'text'],
+          },
+        });
+
+        const latencyMs = Date.now() - startTime;
+
+        // Extract image from response
+        let imageBase64: string | undefined;
+        let mimeType = 'image/png';
+
+        if (response.candidates && response.candidates[0]?.content?.parts) {
+          for (const part of response.candidates[0].content.parts) {
+            if (part.inlineData) {
+              imageBase64 = part.inlineData.data;
+              mimeType = part.inlineData.mimeType || 'image/png';
+              break;
+            }
+          }
+        }
+
+        if (!imageBase64) {
+          console.warn(`[${AGENT_NAME}] No image generated from Gemini for prompt ${i + 1}`);
+          continue;
+        }
+
+        // Upload to GCS
+        const imageBuffer = Buffer.from(imageBase64, 'base64');
+        const { width, height } = await this.getImageDimensions(imageBuffer);
+
+        const imageId = `img-gemini-${Date.now()}-${i}`;
+        const extension = mimeType.includes('jpeg') || mimeType.includes('jpg') ? 'jpg' : 'png';
+        const gcsPath = `${GCS_FOLDER}/${imageId}.${extension}`;
+        const url = await this.uploadToGCS(imageBuffer, gcsPath);
+
+        generatedImages.push({
+          id: imageId,
+          url,
+          gcsPath,
+          width,
+          height,
+          aspectRatio: prompt.aspectRatio,
+          hasTextOverlay: false,
+        });
+
+        // Track model usage
+        modelUsage.push({
+          agent: AGENT_NAME,
+          model: GEMINI_MODEL,
+          inputTokens: 0,
+          outputTokens: 0,
+          cost: 0.01, // Approximate cost per Gemini image
+          latencyMs,
+          fromCache: false,
+        });
+
+        console.log(`[${AGENT_NAME}] ✅ Gemini image ${i + 1} generated successfully (${latencyMs}ms)`);
+      } catch (error: any) {
+        console.error(`[${AGENT_NAME}] Error generating Gemini image ${i + 1}:`, error.message);
+        // Continue with other images
+      }
+    }
+
+    console.log(`[${AGENT_NAME}] Gemini generation complete. Generated ${generatedImages.length}/${promptsToProcess.length} images.`);
+    return generatedImages;
   }
 
   /**
