@@ -3872,6 +3872,70 @@ class CampaignOrchestratorService {
     });
 
     // ============================================
+    // STEP 2.5: Refresh offer vertical from Tonic if needed
+    // ============================================
+    // If vertical is "General" or "Unknown", try to get the real vertical from Tonic
+    if (!campaign.offer.vertical || campaign.offer.vertical === 'General' || campaign.offer.vertical === 'Unknown') {
+      logger.info('tonic', `Offer vertical is "${campaign.offer.vertical}", attempting to refresh from Tonic...`);
+
+      try {
+        // Get offers from Tonic to find the real vertical
+        const offers = await tonicService.getOffers(credentials, campaignType);
+
+        // Find our offer in the list
+        const tonicOffer = offers?.find((o: any) =>
+          o.id?.toString() === campaign.offer.tonicId ||
+          o.offer_id?.toString() === campaign.offer.tonicId ||
+          o.name === campaign.offer.name
+        );
+
+        if (tonicOffer) {
+          // Log ALL fields from Tonic offer for debugging
+          logger.info('tonic', '📋 Tonic offer fields (for vertical refresh):', {
+            id: tonicOffer.id,
+            name: tonicOffer.name,
+            vertical: tonicOffer.vertical,
+            offer_vertical: tonicOffer.offer_vertical,
+            category: tonicOffer.category,
+            niche: tonicOffer.niche,
+            type: tonicOffer.type,
+            allFields: Object.keys(tonicOffer),
+            allValues: JSON.stringify(tonicOffer).substring(0, 500),
+          });
+
+          // Try to get vertical from various possible field names
+          const refreshedVertical =
+            tonicOffer.offer_vertical ||
+            tonicOffer.vertical ||
+            tonicOffer.category ||
+            tonicOffer.niche ||
+            tonicOffer.type;
+
+          if (refreshedVertical && refreshedVertical !== 'General' && refreshedVertical !== 'Unknown') {
+            logger.success('tonic', `✅ Found real vertical from Tonic: "${refreshedVertical}"`);
+
+            // Update the offer in the database
+            await prisma.offer.update({
+              where: { id: campaign.offer.id },
+              data: { vertical: refreshedVertical },
+            });
+
+            // Update our local campaign object
+            campaign.offer.vertical = refreshedVertical;
+
+            logger.success('system', `Updated offer vertical in DB: "${refreshedVertical}"`);
+          } else {
+            logger.warn('tonic', `Could not find valid vertical in Tonic offer. Fields available: ${Object.keys(tonicOffer).join(', ')}`);
+          }
+        } else {
+          logger.warn('tonic', `Offer ${campaign.offer.tonicId} not found in Tonic offers list`);
+        }
+      } catch (error: any) {
+        logger.warn('tonic', `Failed to refresh vertical from Tonic: ${error.message}`);
+      }
+    }
+
+    // ============================================
     // STEP 3: Generate AI Content
     // ============================================
     logger.info('ai', 'Generating AI content...');

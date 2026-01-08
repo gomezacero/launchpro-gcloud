@@ -26,10 +26,11 @@ import { getSemanticCacheService } from '../cache/semantic-cache.service';
 const AGENT_NAME = 'GlobalScout';
 
 // Country metadata for timezone and season calculation
-const COUNTRY_METADATA: Record<string, { timezone: string; hemisphere: 'north' | 'south' }> = {
+// 'equatorial' = countries near the equator that don't have traditional seasons
+const COUNTRY_METADATA: Record<string, { timezone: string; hemisphere: 'north' | 'south' | 'equatorial' }> = {
   US: { timezone: 'America/New_York', hemisphere: 'north' },
   MX: { timezone: 'America/Mexico_City', hemisphere: 'north' },
-  CO: { timezone: 'America/Bogota', hemisphere: 'north' },
+  CO: { timezone: 'America/Bogota', hemisphere: 'equatorial' }, // Colombia - near equator
   AR: { timezone: 'America/Buenos_Aires', hemisphere: 'south' },
   BR: { timezone: 'America/Sao_Paulo', hemisphere: 'south' },
   ES: { timezone: 'Europe/Madrid', hemisphere: 'north' },
@@ -43,11 +44,20 @@ const COUNTRY_METADATA: Record<string, { timezone: string; hemisphere: 'north' |
   KR: { timezone: 'Asia/Seoul', hemisphere: 'north' },
   IN: { timezone: 'Asia/Kolkata', hemisphere: 'north' },
   CL: { timezone: 'America/Santiago', hemisphere: 'south' },
-  PE: { timezone: 'America/Lima', hemisphere: 'south' },
-  EC: { timezone: 'America/Guayaquil', hemisphere: 'south' },
-  VE: { timezone: 'America/Caracas', hemisphere: 'north' },
+  PE: { timezone: 'America/Lima', hemisphere: 'equatorial' }, // Peru - near equator
+  EC: { timezone: 'America/Guayaquil', hemisphere: 'equatorial' }, // Ecuador - on the equator
+  VE: { timezone: 'America/Caracas', hemisphere: 'equatorial' }, // Venezuela - near equator
   CA: { timezone: 'America/Toronto', hemisphere: 'north' },
   PT: { timezone: 'Europe/Lisbon', hemisphere: 'north' },
+  PA: { timezone: 'America/Panama', hemisphere: 'equatorial' }, // Panama - near equator
+  CR: { timezone: 'America/Costa_Rica', hemisphere: 'equatorial' }, // Costa Rica - near equator
+  SG: { timezone: 'Asia/Singapore', hemisphere: 'equatorial' }, // Singapore - near equator
+  MY: { timezone: 'Asia/Kuala_Lumpur', hemisphere: 'equatorial' }, // Malaysia - near equator
+  ID: { timezone: 'Asia/Jakarta', hemisphere: 'equatorial' }, // Indonesia - on equator
+  PH: { timezone: 'Asia/Manila', hemisphere: 'equatorial' }, // Philippines - near equator
+  TH: { timezone: 'Asia/Bangkok', hemisphere: 'equatorial' }, // Thailand - near equator
+  KE: { timezone: 'Africa/Nairobi', hemisphere: 'equatorial' }, // Kenya - on equator
+  NG: { timezone: 'Africa/Lagos', hemisphere: 'equatorial' }, // Nigeria - near equator
 };
 
 // ============================================================================
@@ -315,8 +325,17 @@ Respond in JSON format:
   /**
    * Get current season based on hemisphere
    */
-  private getCurrentSeason(hemisphere: 'north' | 'south'): string {
+  private getCurrentSeason(hemisphere: 'north' | 'south' | 'equatorial'): string {
     const month = new Date().getMonth(); // 0-11
+
+    // Equatorial countries don't have traditional seasons
+    // They typically have dry/wet seasons, but for ad purposes we use "tropical year-round"
+    if (hemisphere === 'equatorial') {
+      // Return wet/dry season based on typical patterns
+      // Most equatorial regions have wet season roughly Apr-Oct
+      if (month >= 3 && month <= 9) return 'wet season (tropical)';
+      return 'dry season (tropical)';
+    }
 
     if (hemisphere === 'north') {
       if (month >= 2 && month <= 4) return 'spring';
