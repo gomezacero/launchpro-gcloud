@@ -14,14 +14,13 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk';
-import { env } from '@/lib/env';
-import { 
-  Tool, 
-  ToolResult, 
-  AgentState, 
-  AgentStep, 
+import {
+  Tool,
+  ToolResult,
+  AgentState,
+  AgentStep,
   AgentConfig,
-  AgentMessage 
+  AgentMessage
 } from './types';
 
 export abstract class BaseAgent {
@@ -29,11 +28,17 @@ export abstract class BaseAgent {
   protected config: AgentConfig;
   protected state: AgentState;
   protected toolHandlers: Map<string, (input: any) => Promise<ToolResult>>;
-  
+
   constructor(config: Partial<AgentConfig> = {}) {
+    // Use process.env directly to avoid module caching issues
+    const anthropicKey = process.env.ANTHROPIC_API_KEY || '';
     this.anthropic = new Anthropic({
-      apiKey: env.ANTHROPIC_API_KEY,
+      apiKey: anthropicKey,
     });
+
+    if (!anthropicKey) {
+      console.warn('[BaseAgent] ⚠️ WARNING: ANTHROPIC_API_KEY not found');
+    }
     
     this.config = {
       model: config.model || 'claude-sonnet-4-20250514',

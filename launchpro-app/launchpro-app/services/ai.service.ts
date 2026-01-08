@@ -615,10 +615,17 @@ class AIService {
   private storage: Storage;
 
   constructor() {
-    // Initialize Anthropic
+    // Initialize Anthropic - use process.env directly to avoid module caching issues
+    const anthropicKey = process.env.ANTHROPIC_API_KEY || '';
     this.anthropic = new Anthropic({
-      apiKey: env.ANTHROPIC_API_KEY,
+      apiKey: anthropicKey,
     });
+
+    if (!anthropicKey) {
+      console.warn('[AIService] ⚠️ WARNING: ANTHROPIC_API_KEY not found in environment');
+    } else {
+      console.log('[AIService] ✅ Anthropic initialized with key: ' + anthropicKey.substring(0, 20) + '...');
+    }
 
     // Initialize Gemini client for image generation (Nano Banana Pro)
     this.geminiClient = new GoogleGenAI({

@@ -14,7 +14,6 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk';
-import { env } from '@/lib/env';
 import {
   StrategyBrief,
   CulturalContext,
@@ -42,9 +41,15 @@ export class AngleStrategistAgent {
   private cacheService = getSemanticCacheService();
 
   constructor() {
+    // Use process.env directly to avoid module caching issues
+    const anthropicKey = process.env.ANTHROPIC_API_KEY || '';
     this.anthropic = new Anthropic({
-      apiKey: env.ANTHROPIC_API_KEY,
+      apiKey: anthropicKey,
     });
+
+    if (!anthropicKey) {
+      console.warn('[AngleStrategist] ⚠️ WARNING: ANTHROPIC_API_KEY not found');
+    }
   }
 
   /**
