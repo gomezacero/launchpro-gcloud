@@ -689,8 +689,10 @@ class CampaignOrchestratorService {
 
       // Generate unique campaign name to avoid collisions in Tonic
       // Tonic rejects duplicate campaign names even from failed/deleted campaigns
-      const uniqueSuffix = Date.now().toString(36).slice(-4);
-      const tonicCampaignName = `${params.name}_${uniqueSuffix}`;
+      // Use full timestamp + random chars for guaranteed uniqueness
+      const timestamp = Date.now().toString(36);
+      const randomChars = Math.random().toString(36).substring(2, 6);
+      const tonicCampaignName = `${params.name}_${timestamp}${randomChars}`;
 
       logger.info('tonic', `Creating ${campaignType.toUpperCase()} campaign in Tonic...`, {
         name: tonicCampaignName,
@@ -3816,8 +3818,10 @@ class CampaignOrchestratorService {
 
       // Generate unique campaign name to avoid collisions in Tonic
       // Tonic rejects duplicate campaign names even from failed/deleted campaigns
-      const uniqueSuffix = Date.now().toString(36).slice(-4);
-      const tonicCampaignName = `${campaign.name}_${uniqueSuffix}`;
+      // Use full timestamp + random chars for guaranteed uniqueness
+      const timestamp = Date.now().toString(36);
+      const randomChars = Math.random().toString(36).substring(2, 6);
+      const tonicCampaignName = `${campaign.name}_${timestamp}${randomChars}`;
 
       const campaignParams = {
         name: tonicCampaignName,
