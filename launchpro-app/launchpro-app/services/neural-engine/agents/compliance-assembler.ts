@@ -504,7 +504,7 @@ export class ComplianceAssembler {
   }
 
   /**
-   * Upload image to Google Cloud Storage
+   * Upload image to Google Cloud Storage and return a signed URL
    */
   private async uploadToGCS(buffer: Buffer, path: string): Promise<string> {
     const file = this.storage.bucket(this.bucket).file(path);
@@ -515,7 +515,16 @@ export class ComplianceAssembler {
       // Files are accessible via bucket IAM policies
     });
 
-    return `https://storage.googleapis.com/${this.bucket}/${path}`;
+    // Generate a signed URL that expires in 7 days
+    // This ensures the URL is accessible for campaign processing
+    const [signedUrl] = await file.getSignedUrl({
+      action: 'read',
+      expires: Date.now() + 7 * 24 * 60 * 60 * 1000, // 7 days
+    });
+
+    console.log(`[ComplianceAssembler] ✅ Image uploaded to GCS with signed URL: ${path}`);
+
+    return signedUrl;
   }
 
   /**

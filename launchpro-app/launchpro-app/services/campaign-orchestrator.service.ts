@@ -1929,9 +1929,28 @@ class CampaignOrchestratorService {
 
       for (const image of images) {
         logger.info('meta', `Uploading image: ${image.fileName}`);
+        logger.info('meta', `📥 Downloading image from URL: ${image.url}`);
 
-        const response = await axios.get(image.url, { responseType: 'arraybuffer' });
-        const imageBuffer = Buffer.from(response.data);
+        let imageBuffer: Buffer;
+        try {
+          const response = await axios.get(image.url, { responseType: 'arraybuffer' });
+          imageBuffer = Buffer.from(response.data);
+          logger.info('meta', `✅ Image downloaded successfully: ${imageBuffer.length} bytes`);
+        } catch (downloadError: any) {
+          logger.error('meta', `❌ Failed to download image from GCS`, {
+            url: image.url,
+            fileName: image.fileName,
+            status: downloadError.response?.status,
+            statusText: downloadError.response?.statusText,
+            errorMessage: downloadError.message,
+            responseData: downloadError.response?.data ?
+              (typeof downloadError.response.data === 'string'
+                ? downloadError.response.data.substring(0, 500)
+                : JSON.stringify(downloadError.response.data).substring(0, 500))
+              : 'No response data',
+          });
+          throw new Error(`Failed to download image ${image.fileName} from storage: ${downloadError.response?.status || downloadError.message}`);
+        }
 
         const hash = await metaService.uploadImage(imageBuffer, image.fileName, adAccountId, accessToken);
 
