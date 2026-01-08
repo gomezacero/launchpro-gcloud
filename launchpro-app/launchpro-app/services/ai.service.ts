@@ -609,23 +609,41 @@ IMPORTANTE: El thumbnail debe generar curiosidad y deseo de ver el video. Debe d
 }
 
 class AIService {
-  private anthropic: Anthropic;
+  private _anthropic: Anthropic | null = null;
   private vertexAiClient: any;
   private geminiClient: GoogleGenAI;
   private storage: Storage;
 
-  constructor() {
-    // Initialize Anthropic - use process.env directly to avoid module caching issues
-    const anthropicKey = process.env.ANTHROPIC_API_KEY || '';
-    this.anthropic = new Anthropic({
-      apiKey: anthropicKey,
-    });
+  /**
+   * Lazy initialization of Anthropic client
+   * This ensures the API key is read at request time, not module load time
+   */
+  private getAnthropicClient(): Anthropic {
+    if (!this._anthropic) {
+      const anthropicKey = process.env.ANTHROPIC_API_KEY || '';
+      console.log('[AIService] 🔑 Creating Anthropic client on-demand...');
+      console.log('[AIService] 🔑 Key preview: ' + (anthropicKey ? anthropicKey.substring(0, 25) + '...' : 'MISSING!'));
 
-    if (!anthropicKey) {
-      console.warn('[AIService] ⚠️ WARNING: ANTHROPIC_API_KEY not found in environment');
-    } else {
-      console.log('[AIService] ✅ Anthropic initialized with key: ' + anthropicKey.substring(0, 20) + '...');
+      if (!anthropicKey) {
+        console.error('[AIService] ❌ CRITICAL: ANTHROPIC_API_KEY is empty or missing!');
+        throw new Error('ANTHROPIC_API_KEY not configured');
+      }
+
+      this._anthropic = new Anthropic({
+        apiKey: anthropicKey,
+      });
+      console.log('[AIService] ✅ Anthropic client created successfully');
     }
+    return this._anthropic;
+  }
+
+  // Getter for backward compatibility
+  private get anthropic(): Anthropic {
+    return this.getAnthropicClient();
+  }
+
+  constructor() {
+    console.log('[AIService] Constructor called - Anthropic will be initialized on first use');
 
     // Initialize Gemini client for image generation (Nano Banana Pro)
     this.geminiClient = new GoogleGenAI({
