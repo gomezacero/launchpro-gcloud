@@ -318,10 +318,18 @@ export class VisualEngineerAgent {
     culturalContext: CulturalContext
   ): string {
     const aspects = PLATFORM_ASPECTS[input.platform] || PLATFORM_ASPECTS.META;
-    const verticalReqs = this.getVerticalRequirements(input.offer.vertical);
 
-    console.log(`[${AGENT_NAME}] 📋 Building prompt for vertical: "${input.offer.vertical}"`);
+    // CRITICAL: Try offer name FIRST (more specific), then fall back to vertical
+    // e.g., "Car Loans" is more specific than "Finance"
+    const verticalReqs = this.getVerticalRequirements(input.offer.name, input.offer.vertical);
+
+    console.log(`[${AGENT_NAME}] 📋 Building prompt for offer: "${input.offer.name}" (vertical: "${input.offer.vertical}")`);
     console.log(`[${AGENT_NAME}] 📋 Visual requirements: ${verticalReqs.required}`);
+
+    // Include copyMaster if available - it's critical context from the manager
+    const copyMasterContext = input.copyMaster
+      ? `\n## COPY MASTER (Manager's Ad Message)\n"${input.copyMaster}"\nThis text will be overlaid on the image. The visual should SUPPORT and COMPLEMENT this message.\n`
+      : '';
 
     return `You are an expert prompt engineer for AI image generation (Imagen 3).
 
@@ -331,18 +339,19 @@ Generate image generation prompts for the following advertising campaign.
 ## CAMPAIGN CONTEXT
 - Platform: ${input.platform}
 - Country: ${culturalContext.country}
-- Vertical: ${input.offer.vertical}
+- Offer/Product: ${input.offer.name}
+- Vertical Category: ${input.offer.vertical}
 - Visual Style: ${strategyBrief.visualStyle}
 - Visual Concept: ${strategyBrief.visualConcept}
 - Color Palette: ${strategyBrief.colorPalette.join(', ')}
 - Psychological Angle: ${strategyBrief.primaryAngle}
-
-## ⚠️ CRITICAL VISUAL REQUIREMENT FOR "${input.offer.vertical.toUpperCase()}" ⚠️
+${copyMasterContext}
+## ⚠️ CRITICAL VISUAL REQUIREMENT FOR "${input.offer.name.toUpperCase()}" ⚠️
 ${verticalReqs.required}
 Example scenes: ${verticalReqs.examples}
 
 THIS IS MANDATORY - Every generated prompt MUST include the product/service visual element described above.
-An ad for "${input.offer.vertical}" without the relevant product visual will be rejected.
+An ad for "${input.offer.name}" without the relevant product visual will be rejected.
 
 ## CULTURAL CODES TO INCORPORATE
 ${culturalContext.visualCodes.join(', ') || 'Professional, authentic imagery'}
@@ -381,26 +390,44 @@ IMPORTANT RULES FOR PROMPTS:
   }
 
   /**
-   * Get vertical-specific visual requirements
+   * Get visual requirements - prioritizes offer name over vertical
+   * e.g., "Car Loans" (offer) is more specific than "Finance" (vertical)
    */
-  private getVerticalRequirements(vertical: string): { required: string; examples: string } {
-    // Try exact match first
-    if (VERTICAL_VISUAL_REQUIREMENTS[vertical]) {
-      return VERTICAL_VISUAL_REQUIREMENTS[vertical];
+  private getVerticalRequirements(offerName: string, vertical: string): { required: string; examples: string } {
+    // STEP 1: Try exact match with OFFER NAME first (most specific)
+    if (VERTICAL_VISUAL_REQUIREMENTS[offerName]) {
+      console.log(`[${AGENT_NAME}] ✅ Found visual requirements for offer: "${offerName}"`);
+      return VERTICAL_VISUAL_REQUIREMENTS[offerName];
     }
 
-    // Try case-insensitive match
-    const lowerVertical = vertical.toLowerCase();
+    // STEP 2: Try case-insensitive match with offer name
+    const lowerOfferName = offerName.toLowerCase();
     for (const [key, value] of Object.entries(VERTICAL_VISUAL_REQUIREMENTS)) {
-      if (key.toLowerCase() === lowerVertical || lowerVertical.includes(key.toLowerCase())) {
+      if (key.toLowerCase() === lowerOfferName || lowerOfferName.includes(key.toLowerCase()) || key.toLowerCase().includes(lowerOfferName)) {
+        console.log(`[${AGENT_NAME}] ✅ Found visual requirements for offer (fuzzy match): "${key}"`);
         return value;
       }
     }
 
-    // Default fallback
-    console.warn(`[${AGENT_NAME}] ⚠️ No specific visual requirements for vertical: "${vertical}". Using generic.`);
+    // STEP 3: Try exact match with VERTICAL
+    if (VERTICAL_VISUAL_REQUIREMENTS[vertical]) {
+      console.log(`[${AGENT_NAME}] ✅ Found visual requirements for vertical: "${vertical}"`);
+      return VERTICAL_VISUAL_REQUIREMENTS[vertical];
+    }
+
+    // STEP 4: Try case-insensitive match with vertical
+    const lowerVertical = vertical.toLowerCase();
+    for (const [key, value] of Object.entries(VERTICAL_VISUAL_REQUIREMENTS)) {
+      if (key.toLowerCase() === lowerVertical || lowerVertical.includes(key.toLowerCase())) {
+        console.log(`[${AGENT_NAME}] ✅ Found visual requirements for vertical (fuzzy match): "${key}"`);
+        return value;
+      }
+    }
+
+    // STEP 5: Default fallback - use offer name for more specific context
+    console.warn(`[${AGENT_NAME}] ⚠️ No specific visual requirements for offer: "${offerName}" or vertical: "${vertical}". Using generic.`);
     return {
-      required: `The image must clearly relate to ${vertical} and show relevant context`,
+      required: `The image must clearly relate to ${offerName} and show relevant context for ${vertical}`,
       examples: 'relevant product, service in action, satisfied customer with product',
     };
   }

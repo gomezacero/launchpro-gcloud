@@ -37,6 +37,7 @@ async function generateWithNeuralEngine(params: {
   offerName: string;
   offerVertical: string;
   offerDescription?: string;
+  copyMaster?: string; // Manager's copy master - critical for image context
   country: string;
   language: string;
   platform: 'META' | 'TIKTOK';
@@ -49,6 +50,9 @@ async function generateWithNeuralEngine(params: {
 } | null> {
   try {
     logger.info('ai', '[NeuralEngine] Generating content with Neural Engine...');
+    if (params.copyMaster) {
+      logger.info('ai', `[NeuralEngine] Using copyMaster for context: "${params.copyMaster}"`);
+    }
 
     const orchestrator = getNeuralEngineOrchestrator();
 
@@ -62,6 +66,7 @@ async function generateWithNeuralEngine(params: {
       country: params.country,
       language: params.language,
       platform: params.platform,
+      copyMaster: params.copyMaster, // Pass to Neural Engine for image context
       useCache: true,
     };
 
@@ -932,6 +937,7 @@ class CampaignOrchestratorService {
             offerName: offer.name,
             offerVertical: offer.vertical,
             offerDescription: offer.description || undefined,
+            copyMaster: aiContentResult.copyMaster, // Critical: pass manager's copy for image context
             country: params.country,
             language: params.language,
             platform: platformConfig.platform as 'META' | 'TIKTOK',
@@ -4059,6 +4065,7 @@ class CampaignOrchestratorService {
             offerName: campaign.offer.name,
             offerVertical: campaign.offer.vertical,
             offerDescription: campaign.offer.description || undefined,
+            copyMaster: aiContentResult.copyMaster, // Critical: pass manager's copy for image context
             country: campaign.country,
             language: campaign.language,
             platform: platformConfig.platform as 'META' | 'TIKTOK',
