@@ -808,6 +808,250 @@ class TonicService {
 
     return revenue;
   }
+
+  // ============================================
+  // COMPLIANCE (v4 API)
+  // ============================================
+
+  /**
+   * Get all ad IDs with compliance status
+   * Uses Tonic API v4: GET /compliance/adIds
+   */
+  async getComplianceAdIds(
+    credentials: TonicCredentials,
+    params?: {
+      campaignIds?: string;      // Comma-separated campaign IDs
+      campaignName?: string;     // Filter by campaign name
+      adIds?: string;            // Comma-separated ad IDs
+      networks?: string;         // 'facebook,tiktok,taboola'
+      status?: 'allowed' | 'declined';
+      withCampaignName?: boolean;
+      hasReviewRequest?: boolean;
+      orderField?: string;
+      orderOrientation?: 'asc' | 'desc';
+      limit?: number;
+      offset?: number;
+    }
+  ): Promise<TonicComplianceAdId[]> {
+    const token = await this.authenticate(credentials);
+
+    // v4 API uses different base URL
+    const v4Client = axios.create({
+      baseURL: 'https://api.publisher.tonic.com/v4',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    logger.info('tonic', `Fetching compliance ad IDs`, params);
+
+    try {
+      const response = await v4Client.get('/compliance/adIds', { params });
+
+      const adIds = response.data?.data || [];
+      logger.success('tonic', `Compliance ad IDs fetched`, {
+        count: adIds.length,
+        filters: params,
+      });
+
+      return adIds;
+    } catch (error: any) {
+      logger.error('tonic', `Failed to fetch compliance ad IDs`, {
+        status: error.response?.status,
+        data: error.response?.data,
+        error: error.message,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Get details for a specific ad ID
+   * Uses Tonic API v4: GET /compliance/adIds/{id}
+   */
+  async getComplianceAdIdDetails(
+    credentials: TonicCredentials,
+    adId: string
+  ): Promise<TonicComplianceAdId> {
+    const token = await this.authenticate(credentials);
+
+    const v4Client = axios.create({
+      baseURL: 'https://api.publisher.tonic.com/v4',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    logger.info('tonic', `Fetching compliance details for ad ID: ${adId}`);
+
+    try {
+      const response = await v4Client.get(`/compliance/adIds/${adId}`);
+
+      logger.success('tonic', `Compliance details fetched for ad ID: ${adId}`);
+
+      return response.data?.data || response.data;
+    } catch (error: any) {
+      logger.error('tonic', `Failed to fetch compliance details for ad ID: ${adId}`, {
+        status: error.response?.status,
+        data: error.response?.data,
+        error: error.message,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Get ad ID compliance status change log
+   * Uses Tonic API v4: GET /compliance/adIds/changeLog
+   */
+  async getComplianceChangeLog(
+    credentials: TonicCredentials,
+    params?: {
+      adId?: string;
+      campaignId?: number;
+      campaignName?: string;
+      from?: string;             // Date in YYYY-MM-DD format
+      to?: string;               // Date in YYYY-MM-DD format
+      orderField?: string;
+      orderOrientation?: 'asc' | 'desc';
+      limit?: number;
+      offset?: number;
+    }
+  ): Promise<TonicComplianceChangeLog[]> {
+    const token = await this.authenticate(credentials);
+
+    const v4Client = axios.create({
+      baseURL: 'https://api.publisher.tonic.com/v4',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    logger.info('tonic', `Fetching compliance change log`, params);
+
+    try {
+      const response = await v4Client.get('/compliance/adIds/changeLog', { params });
+
+      const changeLogs = response.data?.data || [];
+      logger.success('tonic', `Compliance change log fetched`, {
+        count: changeLogs.length,
+        filters: params,
+      });
+
+      return changeLogs;
+    } catch (error: any) {
+      logger.error('tonic', `Failed to fetch compliance change log`, {
+        status: error.response?.status,
+        data: error.response?.data,
+        error: error.message,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Send a review request (appeal) for a disallowed ad ID
+   * Uses Tonic API v4: POST /compliance/adIds/reviewRequest
+   *
+   * @param credentials - Tonic API credentials
+   * @param campaignId - The campaign ID associated with the ad ID
+   * @param adId - The ad ID for which to send the review request (max 50 chars)
+   * @param message - Detailed message explaining why status should be reconsidered (10-500 chars)
+   */
+  async sendComplianceReviewRequest(
+    credentials: TonicCredentials,
+    campaignId: number,
+    adId: string,
+    message: string
+  ): Promise<void> {
+    // Validate message length
+    if (message.length < 10 || message.length > 500) {
+      throw new Error(`Review request message must be between 10 and 500 characters (got ${message.length})`);
+    }
+
+    // Validate adId length
+    if (adId.length > 50) {
+      throw new Error(`Ad ID must be max 50 characters (got ${adId.length})`);
+    }
+
+    const token = await this.authenticate(credentials);
+
+    const v4Client = axios.create({
+      baseURL: 'https://api.publisher.tonic.com/v4',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    logger.info('tonic', `Sending compliance review request`, {
+      campaignId,
+      adId,
+      messageLength: message.length,
+    });
+
+    try {
+      await v4Client.post('/compliance/adIds/reviewRequest', {
+        campaignId,
+        adId,
+        message,
+      });
+
+      logger.success('tonic', `Compliance review request sent successfully`, {
+        campaignId,
+        adId,
+      });
+    } catch (error: any) {
+      logger.error('tonic', `Failed to send compliance review request`, {
+        campaignId,
+        adId,
+        status: error.response?.status,
+        data: error.response?.data,
+        error: error.message,
+      });
+      throw error;
+    }
+  }
+}
+
+// ============================================
+// COMPLIANCE INTERFACES (v4 API)
+// ============================================
+
+export interface TonicComplianceAdId {
+  adId: string;
+  network: 'facebook' | 'tiktok' | 'taboola';
+  status: 'allowed' | 'declined';
+  adIdAlignment?: string;        // Rejection reason explanation
+  campaignId: number;
+  campaignName?: string;
+  adLibraryLink?: string;
+  lastCheck: string;
+  reviewRequest?: TonicReviewRequest | null;
+  content?: any;                 // Ad content (text, images, etc.)
+  metadata?: any;                // Additional metadata (e.g., adgroup_id for TikTok)
+  complianceStatusChangeDate?: string;
+}
+
+export interface TonicReviewRequest {
+  status: 'pending' | 'accepted' | 'declined';
+  message: string;
+  date: string;
+}
+
+export interface TonicComplianceChangeLog {
+  adId: string;
+  campaignId: number;
+  campaignName?: string;
+  network: string;
+  changeType: string;           // 'auto' or other
+  prevStatus: string;
+  newStatus: string;
+  checkedAt: string;
+  adLibraryLink?: string;
 }
 
 // Export singleton instance
