@@ -687,12 +687,11 @@ class CampaignOrchestratorService {
       // ============================================
       campaignLogger.startStep(campaign.id, 'tonic_campaign', 'Creando campaña en Tonic...');
 
-      // Generate unique campaign name to avoid collisions in Tonic
-      // Tonic rejects duplicate campaign names even from failed/deleted campaigns
-      // Use full timestamp + random chars for guaranteed uniqueness
-      const timestamp = Date.now().toString(36);
-      const randomChars = Math.random().toString(36).substring(2, 6);
-      const tonicCampaignName = `${params.name}_${timestamp}${randomChars}`;
+      // Use the exact campaign name provided by the user
+      // This preserves Looker tracking compatibility (no suffixes that break tracking)
+      // NOTE: If Tonic rejects the name as duplicate, the error will be thrown and
+      // the user should use a different name or delete the old campaign first
+      const tonicCampaignName = params.name;
 
       logger.info('tonic', `Creating ${campaignType.toUpperCase()} campaign in Tonic...`, {
         name: tonicCampaignName,
