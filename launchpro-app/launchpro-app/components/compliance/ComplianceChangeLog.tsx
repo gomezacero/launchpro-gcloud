@@ -35,7 +35,7 @@ export default function ComplianceChangeLog({
   const formatDate = (dateString: string) => {
     try {
       const date = new Date(dateString);
-      return date.toLocaleDateString('es-ES', {
+      return date.toLocaleDateString('en-US', {
         day: 'numeric',
         month: 'short',
         year: 'numeric',
@@ -51,13 +51,13 @@ export default function ComplianceChangeLog({
     if (status === 'allowed') {
       return (
         <span className="px-2 py-1 rounded-md bg-emerald-100 text-emerald-700 text-xs font-medium">
-          Aprobado
+          Approved
         </span>
       );
     }
     return (
       <span className="px-2 py-1 rounded-md bg-rose-100 text-rose-700 text-xs font-medium">
-        Rechazado
+        Rejected
       </span>
     );
   };
@@ -116,8 +116,8 @@ export default function ComplianceChangeLog({
     return (
       <div className="glass-card p-12 text-center">
         <div className="text-4xl mb-4">📋</div>
-        <h3 className="text-lg font-semibold text-slate-800 mb-2">Sin cambios recientes</h3>
-        <p className="text-slate-500">No hay cambios de estado registrados.</p>
+        <h3 className="text-lg font-semibold text-slate-800 mb-2">No recent changes</h3>
+        <p className="text-slate-500">No status changes recorded.</p>
       </div>
     );
   }
@@ -125,8 +125,8 @@ export default function ComplianceChangeLog({
   return (
     <div className="glass-card overflow-hidden">
       <div className="p-4 border-b border-slate-200/50">
-        <h3 className="font-semibold text-slate-800">Historial de Cambios</h3>
-        <p className="text-sm text-slate-500">Cambios recientes en el estado de compliance</p>
+        <h3 className="font-semibold text-slate-800">Change History</h3>
+        <p className="text-sm text-slate-500">Recent compliance status changes</p>
       </div>
 
       {/* Timeline */}
@@ -173,7 +173,7 @@ export default function ComplianceChangeLog({
                   target="_blank"
                   rel="noopener noreferrer"
                   className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
-                  title="Ver en Ad Library"
+                  title="View in Ad Library"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
@@ -189,7 +189,7 @@ export default function ComplianceChangeLog({
       {totalPages > 1 && (
         <div className="px-4 py-3 border-t border-slate-200/50 flex items-center justify-between">
           <div className="text-sm text-slate-500">
-            Mostrando {pagination.offset + 1} - {Math.min(pagination.offset + pagination.limit, pagination.total)} de {pagination.total}
+            Showing {pagination.offset + 1} - {Math.min(pagination.offset + pagination.limit, pagination.total)} of {pagination.total}
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -197,17 +197,17 @@ export default function ComplianceChangeLog({
               disabled={pagination.offset === 0}
               className="px-3 py-1.5 rounded-lg text-sm font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              Anterior
+              Previous
             </button>
             <span className="text-sm text-slate-600">
-              Pagina {currentPage} de {totalPages}
+              Page {currentPage} of {totalPages}
             </span>
             <button
               onClick={() => onPageChange(pagination.offset + pagination.limit)}
               disabled={!pagination.hasMore}
               className="px-3 py-1.5 rounded-lg text-sm font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              Siguiente
+              Next
             </button>
           </div>
         </div>

@@ -33,7 +33,7 @@ export default function ComplianceAdDetails({ ad, isOpen, onClose, onAppeal }: C
   const formatDate = (dateString: string) => {
     try {
       const date = new Date(dateString);
-      return date.toLocaleDateString('es-ES', {
+      return date.toLocaleDateString('en-US', {
         day: 'numeric',
         month: 'long',
         year: 'numeric',
@@ -65,7 +65,7 @@ export default function ComplianceAdDetails({ ad, isOpen, onClose, onAppeal }: C
           {/* Header */}
           <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between rounded-t-2xl">
             <div>
-              <h2 className="text-lg font-bold text-slate-800">Detalles del Anuncio</h2>
+              <h2 className="text-lg font-bold text-slate-800">Ad Details</h2>
               <p className="text-sm text-slate-500 font-mono">{ad.adId}</p>
             </div>
             <button
@@ -90,11 +90,11 @@ export default function ComplianceAdDetails({ ad, isOpen, onClose, onAppeal }: C
                     </svg>
                   </div>
                   <div>
-                    <h3 className="font-semibold text-rose-800">Anuncio Rechazado</h3>
+                    <h3 className="font-semibold text-rose-800">Ad Rejected</h3>
                     {ad.adIdAlignment ? (
                       <p className="text-sm text-rose-700 mt-1">{ad.adIdAlignment}</p>
                     ) : (
-                      <p className="text-sm text-rose-600 mt-1">No se especifico el motivo del rechazo.</p>
+                      <p className="text-sm text-rose-600 mt-1">No rejection reason specified.</p>
                     )}
                   </div>
                 </div>
@@ -110,8 +110,8 @@ export default function ComplianceAdDetails({ ad, isOpen, onClose, onAppeal }: C
                     </svg>
                   </div>
                   <div>
-                    <h3 className="font-semibold text-emerald-800">Anuncio Aprobado</h3>
-                    <p className="text-sm text-emerald-600 mt-1">Este anuncio cumple con las politicas de compliance.</p>
+                    <h3 className="font-semibold text-emerald-800">Ad Approved</h3>
+                    <p className="text-sm text-emerald-600 mt-1">This ad complies with compliance policies.</p>
                   </div>
                 </div>
               </div>
@@ -126,10 +126,10 @@ export default function ComplianceAdDetails({ ad, isOpen, onClose, onAppeal }: C
                   ? 'bg-emerald-50 border-emerald-200'
                   : 'bg-rose-50 border-rose-200'
               }`}>
-                <h3 className="font-semibold text-slate-800 mb-2">Estado de Apelacion</h3>
+                <h3 className="font-semibold text-slate-800 mb-2">Appeal Status</h3>
                 <div className="space-y-2">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm text-slate-600">Estado:</span>
+                    <span className="text-sm text-slate-600">Status:</span>
                     <span className={`px-2 py-1 rounded-md text-xs font-medium ${
                       ad.reviewRequest.status === 'pending'
                         ? 'bg-amber-100 text-amber-700'
@@ -137,15 +137,15 @@ export default function ComplianceAdDetails({ ad, isOpen, onClose, onAppeal }: C
                         ? 'bg-emerald-100 text-emerald-700'
                         : 'bg-rose-100 text-rose-700'
                     }`}>
-                      {ad.reviewRequest.status === 'pending' ? 'Pendiente' :
-                       ad.reviewRequest.status === 'accepted' ? 'Aceptada' : 'Rechazada'}
+                      {ad.reviewRequest.status === 'pending' ? 'Pending' :
+                       ad.reviewRequest.status === 'accepted' ? 'Accepted' : 'Rejected'}
                     </span>
                   </div>
                   <div className="text-sm text-slate-600">
-                    <span className="font-medium">Fecha:</span> {formatDate(ad.reviewRequest.date)}
+                    <span className="font-medium">Date:</span> {formatDate(ad.reviewRequest.date)}
                   </div>
                   <div className="text-sm text-slate-600">
-                    <span className="font-medium">Mensaje:</span>
+                    <span className="font-medium">Message:</span>
                     <p className="mt-1 p-2 bg-white/50 rounded-lg text-slate-700">{ad.reviewRequest.message}</p>
                   </div>
                 </div>
@@ -155,19 +155,19 @@ export default function ComplianceAdDetails({ ad, isOpen, onClose, onAppeal }: C
             {/* Details Grid */}
             <div className="grid grid-cols-2 gap-4">
               <div className="p-4 rounded-xl bg-slate-50">
-                <div className="text-xs text-slate-500 uppercase font-semibold mb-1">Red</div>
+                <div className="text-xs text-slate-500 uppercase font-semibold mb-1">Network</div>
                 <div className="text-sm text-slate-800 font-medium">{getNetworkName(ad.network)}</div>
               </div>
               <div className="p-4 rounded-xl bg-slate-50">
-                <div className="text-xs text-slate-500 uppercase font-semibold mb-1">Cuenta Tonic</div>
+                <div className="text-xs text-slate-500 uppercase font-semibold mb-1">Tonic Account</div>
                 <div className="text-sm text-slate-800 font-medium">{ad.tonicAccountName}</div>
               </div>
               <div className="p-4 rounded-xl bg-slate-50">
-                <div className="text-xs text-slate-500 uppercase font-semibold mb-1">Campana</div>
+                <div className="text-xs text-slate-500 uppercase font-semibold mb-1">Campaign</div>
                 <div className="text-sm text-slate-800 font-medium">{ad.campaignName || `ID: ${ad.campaignId}`}</div>
               </div>
               <div className="p-4 rounded-xl bg-slate-50">
-                <div className="text-xs text-slate-500 uppercase font-semibold mb-1">Ultima Revision</div>
+                <div className="text-xs text-slate-500 uppercase font-semibold mb-1">Last Check</div>
                 <div className="text-sm text-slate-800 font-medium">{formatDate(ad.lastCheck)}</div>
               </div>
             </div>
@@ -175,7 +175,7 @@ export default function ComplianceAdDetails({ ad, isOpen, onClose, onAppeal }: C
             {/* Ad Content (if available) */}
             {ad.content && (
               <div className="p-4 rounded-xl bg-slate-50">
-                <div className="text-xs text-slate-500 uppercase font-semibold mb-2">Contenido del Anuncio</div>
+                <div className="text-xs text-slate-500 uppercase font-semibold mb-2">Ad Content</div>
                 <pre className="text-sm text-slate-700 whitespace-pre-wrap font-mono bg-white/50 p-3 rounded-lg overflow-auto max-h-40">
                   {typeof ad.content === 'string' ? ad.content : JSON.stringify(ad.content, null, 2)}
                 </pre>
@@ -191,7 +191,7 @@ export default function ComplianceAdDetails({ ad, isOpen, onClose, onAppeal }: C
                   rel="noopener noreferrer"
                   className="flex-1 py-2.5 rounded-xl bg-slate-100 text-slate-700 font-medium text-center hover:bg-slate-200 transition-colors"
                 >
-                  Ver en Ad Library
+                  View in Ad Library
                 </a>
               )}
               {ad.status === 'declined' && !ad.reviewRequest && (
@@ -199,14 +199,14 @@ export default function ComplianceAdDetails({ ad, isOpen, onClose, onAppeal }: C
                   onClick={() => onAppeal(ad)}
                   className="flex-1 py-2.5 rounded-xl bg-amber-500 text-white font-medium hover:bg-amber-600 transition-colors shadow-lg shadow-amber-500/25"
                 >
-                  Enviar Apelacion
+                  Submit Appeal
                 </button>
               )}
               <button
                 onClick={onClose}
                 className="py-2.5 px-6 rounded-xl bg-slate-800 text-white font-medium hover:bg-slate-900 transition-colors"
               >
-                Cerrar
+                Close
               </button>
             </div>
           </div>

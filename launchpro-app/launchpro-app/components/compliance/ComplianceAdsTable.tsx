@@ -1,7 +1,5 @@
 'use client';
 
-import { useState } from 'react';
-
 interface ComplianceAd {
   adId: string;
   network: 'facebook' | 'tiktok' | 'taboola';
@@ -75,7 +73,7 @@ export default function ComplianceAdsTable({
     if (status === 'allowed') {
       return (
         <span className="px-2 py-1 rounded-md bg-emerald-100 text-emerald-700 text-xs font-medium">
-          Aprobado
+          Approved
         </span>
       );
     }
@@ -83,14 +81,14 @@ export default function ComplianceAdsTable({
     if (reviewRequest?.status === 'pending') {
       return (
         <span className="px-2 py-1 rounded-md bg-amber-100 text-amber-700 text-xs font-medium">
-          Apelacion Pendiente
+          Appeal Pending
         </span>
       );
     }
 
     return (
       <span className="px-2 py-1 rounded-md bg-rose-100 text-rose-700 text-xs font-medium">
-        Rechazado
+        Rejected
       </span>
     );
   };
@@ -98,7 +96,7 @@ export default function ComplianceAdsTable({
   const formatDate = (dateString: string) => {
     try {
       const date = new Date(dateString);
-      return date.toLocaleDateString('es-ES', {
+      return date.toLocaleDateString('en-US', {
         day: 'numeric',
         month: 'short',
         year: 'numeric',
@@ -130,8 +128,8 @@ export default function ComplianceAdsTable({
     return (
       <div className="glass-card p-12 text-center">
         <div className="text-4xl mb-4">📭</div>
-        <h3 className="text-lg font-semibold text-slate-800 mb-2">No hay anuncios</h3>
-        <p className="text-slate-500">No se encontraron anuncios con los filtros seleccionados.</p>
+        <h3 className="text-lg font-semibold text-slate-800 mb-2">No ads found</h3>
+        <p className="text-slate-500">No ads found matching the selected filters.</p>
       </div>
     );
   }
@@ -147,19 +145,19 @@ export default function ComplianceAdsTable({
                 Ad ID
               </th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
-                Red
+                Network
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider min-w-[300px]">
+                Campaign
               </th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
-                Campana
+                Status
               </th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
-                Estado
+                Last Check
               </th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
-                Ultima Revision
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
-                Acciones
+                Actions
               </th>
             </tr>
           </thead>
@@ -176,7 +174,7 @@ export default function ComplianceAdsTable({
                 </td>
                 <td className="px-4 py-3">{getNetworkBadge(ad.network)}</td>
                 <td className="px-4 py-3">
-                  <div className="text-sm text-slate-800 max-w-[200px] truncate">
+                  <div className="text-sm text-slate-800" title={ad.campaignName || `Campaign ${ad.campaignId}`}>
                     {ad.campaignName || `Campaign ${ad.campaignId}`}
                   </div>
                   <div className="text-xs text-slate-400">ID: {ad.campaignId}</div>
@@ -193,7 +191,7 @@ export default function ComplianceAdsTable({
                         target="_blank"
                         rel="noopener noreferrer"
                         className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors"
-                        title="Ver en Ad Library"
+                        title="View in Ad Library"
                       >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
@@ -205,11 +203,11 @@ export default function ComplianceAdsTable({
                         onClick={() => onAppealClick(ad)}
                         className="px-3 py-1.5 rounded-lg bg-amber-500 text-white text-xs font-medium hover:bg-amber-600 transition-colors shadow-sm"
                       >
-                        Apelar
+                        Appeal
                       </button>
                     )}
                     {ad.reviewRequest?.status === 'pending' && (
-                      <span className="text-xs text-amber-600 font-medium">Pendiente...</span>
+                      <span className="text-xs text-amber-600 font-medium">Pending...</span>
                     )}
                   </div>
                 </td>
@@ -223,7 +221,7 @@ export default function ComplianceAdsTable({
       {totalPages > 1 && (
         <div className="px-4 py-3 border-t border-slate-200/50 flex items-center justify-between">
           <div className="text-sm text-slate-500">
-            Mostrando {pagination.offset + 1} - {Math.min(pagination.offset + pagination.limit, pagination.total)} de {pagination.total}
+            Showing {pagination.offset + 1} - {Math.min(pagination.offset + pagination.limit, pagination.total)} of {pagination.total}
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -231,17 +229,17 @@ export default function ComplianceAdsTable({
               disabled={pagination.offset === 0}
               className="px-3 py-1.5 rounded-lg text-sm font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              Anterior
+              Previous
             </button>
             <span className="text-sm text-slate-600">
-              Pagina {currentPage} de {totalPages}
+              Page {currentPage} of {totalPages}
             </span>
             <button
               onClick={() => onPageChange(pagination.offset + pagination.limit)}
               disabled={!pagination.hasMore}
               className="px-3 py-1.5 rounded-lg text-sm font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              Siguiente
+              Next
             </button>
           </div>
         </div>

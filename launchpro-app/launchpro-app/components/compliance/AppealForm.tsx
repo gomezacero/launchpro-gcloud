@@ -30,12 +30,12 @@ export default function AppealForm({ ad, isOpen, onClose, onSubmit }: AppealForm
     setError(null);
 
     if (message.length < 10) {
-      setError('El mensaje debe tener al menos 10 caracteres.');
+      setError('Message must be at least 10 characters.');
       return;
     }
 
     if (message.length > 500) {
-      setError('El mensaje no puede exceder 500 caracteres.');
+      setError('Message cannot exceed 500 characters.');
       return;
     }
 
@@ -45,7 +45,7 @@ export default function AppealForm({ ad, isOpen, onClose, onSubmit }: AppealForm
       setMessage('');
       onClose();
     } catch (err: any) {
-      setError(err.message || 'Error al enviar la apelacion.');
+      setError(err.message || 'Error sending appeal.');
     } finally {
       setLoading(false);
     }
@@ -68,7 +68,7 @@ export default function AppealForm({ ad, isOpen, onClose, onSubmit }: AppealForm
           {/* Header */}
           <div className="border-b border-slate-200 px-6 py-4 flex items-center justify-between rounded-t-2xl">
             <div>
-              <h2 className="text-lg font-bold text-slate-800">Enviar Apelacion</h2>
+              <h2 className="text-lg font-bold text-slate-800">Submit Appeal</h2>
               <p className="text-sm text-slate-500">Ad ID: {ad.adId}</p>
             </div>
             <button
@@ -86,7 +86,7 @@ export default function AppealForm({ ad, isOpen, onClose, onSubmit }: AppealForm
             {/* Rejection Reason */}
             {ad.adIdAlignment && (
               <div className="p-4 rounded-xl bg-rose-50 border border-rose-200">
-                <div className="text-xs text-rose-600 uppercase font-semibold mb-1">Motivo del Rechazo</div>
+                <div className="text-xs text-rose-600 uppercase font-semibold mb-1">Rejection Reason</div>
                 <p className="text-sm text-rose-800">{ad.adIdAlignment}</p>
               </div>
             )}
@@ -98,8 +98,8 @@ export default function AppealForm({ ad, isOpen, onClose, onSubmit }: AppealForm
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 <p className="text-sm text-amber-800">
-                  Tu apelacion sera revisada por el equipo de Trust & Safety de Tonic.
-                  Proporciona una explicacion clara de por que crees que el anuncio deberia ser aprobado.
+                  Your appeal will be reviewed by Tonic&apos;s Trust & Safety team.
+                  Provide a clear explanation of why you believe this ad should be approved.
                 </p>
               </div>
             </div>
@@ -107,19 +107,19 @@ export default function AppealForm({ ad, isOpen, onClose, onSubmit }: AppealForm
             {/* Message Input */}
             <div>
               <label htmlFor="appealMessage" className="block text-sm font-medium text-slate-700 mb-2">
-                Mensaje de Apelacion
+                Appeal Message
               </label>
               <textarea
                 id="appealMessage"
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
-                placeholder="Explica por que este anuncio deberia ser reconsiderado..."
+                placeholder="Explain why this ad should be reconsidered..."
                 rows={5}
                 className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 resize-none"
               />
               <div className="flex justify-between mt-2">
                 <span className={`text-xs ${message.length < 10 ? 'text-rose-500' : 'text-slate-400'}`}>
-                  Minimo 10 caracteres
+                  Minimum 10 characters
                 </span>
                 <span className={`text-xs ${message.length > 500 ? 'text-rose-500' : 'text-slate-400'}`}>
                   {message.length}/500
@@ -141,7 +141,7 @@ export default function AppealForm({ ad, isOpen, onClose, onSubmit }: AppealForm
                 onClick={handleClose}
                 className="flex-1 py-2.5 rounded-xl bg-slate-100 text-slate-700 font-medium hover:bg-slate-200 transition-colors"
               >
-                Cancelar
+                Cancel
               </button>
               <button
                 type="submit"
@@ -154,10 +154,10 @@ export default function AppealForm({ ad, isOpen, onClose, onSubmit }: AppealForm
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
-                    Enviando...
+                    Sending...
                   </span>
                 ) : (
-                  'Enviar Apelacion'
+                  'Submit Appeal'
                 )}
               </button>
             </div>

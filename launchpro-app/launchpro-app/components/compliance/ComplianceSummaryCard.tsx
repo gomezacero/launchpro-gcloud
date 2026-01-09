@@ -48,7 +48,7 @@ export default function ComplianceSummaryCard({ summary, loading }: ComplianceSu
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-green-600 flex items-center justify-center shadow-lg shadow-emerald-500/25">
             <span className="text-lg">✅</span>
           </div>
-          <h3 className="text-lg font-bold text-slate-800">Resumen de Compliance</h3>
+          <h3 className="text-lg font-bold text-slate-800">Compliance Summary</h3>
         </div>
 
         {/* Main Stats */}
@@ -56,32 +56,32 @@ export default function ComplianceSummaryCard({ summary, loading }: ComplianceSu
           {/* Total Ads */}
           <div className="p-4 rounded-xl bg-gradient-to-r from-slate-50 to-slate-100 border border-white/50">
             <div className="text-2xl font-bold text-slate-800">{summary.totalAds}</div>
-            <div className="text-sm text-slate-500">Total Anuncios</div>
+            <div className="text-sm text-slate-500">Total Ads</div>
           </div>
 
           {/* Allowed */}
           <div className="p-4 rounded-xl bg-gradient-to-r from-emerald-50 to-green-50 border border-white/50">
             <div className="text-2xl font-bold text-emerald-600">{summary.allowedAds}</div>
-            <div className="text-sm text-emerald-500">Aprobados</div>
+            <div className="text-sm text-emerald-500">Approved</div>
           </div>
 
           {/* Declined */}
           <div className="p-4 rounded-xl bg-gradient-to-r from-rose-50 to-red-50 border border-white/50">
             <div className="text-2xl font-bold text-rose-600">{summary.declinedAds}</div>
-            <div className="text-sm text-rose-500">Rechazados</div>
+            <div className="text-sm text-rose-500">Rejected</div>
           </div>
 
           {/* Pending Reviews */}
           <div className="p-4 rounded-xl bg-gradient-to-r from-amber-50 to-yellow-50 border border-white/50">
             <div className="text-2xl font-bold text-amber-600">{summary.pendingReviews}</div>
-            <div className="text-sm text-amber-500">Apelaciones Pendientes</div>
+            <div className="text-sm text-amber-500">Pending Appeals</div>
           </div>
         </div>
 
         {/* Approval Rate Progress */}
         <div className={`p-4 rounded-xl bg-gradient-to-r ${statusColor.bg} border border-white/50 mb-6`}>
           <div className="flex justify-between items-center mb-3">
-            <span className="text-sm font-semibold text-slate-700">Tasa de Aprobacion</span>
+            <span className="text-sm font-semibold text-slate-700">Approval Rate</span>
             <div className={`px-3 py-1.5 rounded-full bg-white/80 shadow-sm ${statusColor.text} font-bold text-sm`}>
               {summary.allowedPercentage}%
             </div>

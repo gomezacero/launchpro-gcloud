@@ -42,6 +42,7 @@ export async function GET(request: NextRequest) {
       to,
       limit,
       offset,
+      userEmail: user!.email,
     };
 
     logger.info('api', `GET /api/compliance/changelog - User: ${user!.email}`, { params });

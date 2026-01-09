@@ -70,7 +70,8 @@ export async function POST(
     const result = await complianceService.sendAppeal(
       adId,
       parseInt(campaignId, 10),
-      message
+      message,
+      user!.email
     );
 
     if (!result.success) {

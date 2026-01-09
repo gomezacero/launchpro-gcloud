@@ -21,7 +21,7 @@ export async function GET(
 
     logger.info('api', `GET /api/compliance/ads/${adId} - User: ${user!.email}`);
 
-    const ad = await complianceService.getAdDetails(adId);
+    const ad = await complianceService.getAdDetails(adId, user!.email);
 
     if (!ad) {
       return NextResponse.json(

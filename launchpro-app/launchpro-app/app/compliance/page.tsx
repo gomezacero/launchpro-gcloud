@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import {
@@ -69,6 +69,7 @@ interface Filters {
 export default function CompliancePage() {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const initialLoadDone = useRef(false);
 
   // State
   const [activeTab, setActiveTab] = useState<'ads' | 'changelog'>('ads');
@@ -80,7 +81,7 @@ export default function CompliancePage() {
   const [changeLogsLoading, setChangeLogsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Filters
+  // Filters - these are the "applied" filters
   const [filters, setFilters] = useState<Filters>({
     networks: [],
     status: 'all',
@@ -121,19 +122,19 @@ export default function CompliancePage() {
     }
   }, []);
 
-  // Fetch ads
-  const fetchAds = useCallback(async (offset = 0) => {
+  // Fetch ads with specific filters
+  const fetchAdsWithFilters = useCallback(async (filtersToUse: Filters, offset = 0) => {
     setAdsLoading(true);
     try {
       const params = new URLSearchParams();
-      if (filters.networks.length > 0) {
-        params.set('networks', filters.networks.join(','));
+      if (filtersToUse.networks.length > 0) {
+        params.set('networks', filtersToUse.networks.join(','));
       }
-      if (filters.status !== 'all') {
-        params.set('status', filters.status);
+      if (filtersToUse.status !== 'all') {
+        params.set('status', filtersToUse.status);
       }
-      if (filters.campaignName) {
-        params.set('campaignName', filters.campaignName);
+      if (filtersToUse.campaignName) {
+        params.set('campaignName', filtersToUse.campaignName);
       }
       params.set('limit', String(adsPagination.limit));
       params.set('offset', String(offset));
@@ -152,7 +153,7 @@ export default function CompliancePage() {
     } finally {
       setAdsLoading(false);
     }
-  }, [filters, adsPagination.limit]);
+  }, [adsPagination.limit]);
 
   // Fetch change logs
   const fetchChangeLogs = useCallback(async (offset = 0) => {
@@ -189,11 +190,11 @@ export default function CompliancePage() {
     const data = await res.json();
 
     if (!data.success) {
-      throw new Error(data.error || 'Error al enviar la apelacion');
+      throw new Error(data.error || 'Error sending appeal');
     }
 
     // Refresh data
-    await Promise.all([fetchSummary(), fetchAds(adsPagination.offset)]);
+    await Promise.all([fetchSummary(), fetchAdsWithFilters(filters, adsPagination.offset)]);
   };
 
   // Initial load
@@ -204,21 +205,17 @@ export default function CompliancePage() {
       return;
     }
 
+    if (initialLoadDone.current) return;
+    initialLoadDone.current = true;
+
     const loadInitialData = async () => {
       setLoading(true);
-      await Promise.all([fetchSummary(), fetchAds(0)]);
+      await Promise.all([fetchSummary(), fetchAdsWithFilters(filters, 0)]);
       setLoading(false);
     };
 
     loadInitialData();
-  }, [session, status, router, fetchSummary, fetchAds]);
-
-  // Fetch ads when filters change
-  useEffect(() => {
-    if (!loading && session) {
-      fetchAds(0);
-    }
-  }, [filters]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [session, status, router, fetchSummary, fetchAdsWithFilters, filters]);
 
   // Fetch change logs when tab changes
   useEffect(() => {
@@ -227,14 +224,19 @@ export default function CompliancePage() {
     }
   }, [activeTab, changeLogs.length, session, fetchChangeLogs]);
 
-  // Handle filter change
+  // Handle filter change - just updates state, doesn't trigger search
   const handleFilterChange = (newFilters: Filters) => {
     setFilters(newFilters);
   };
 
+  // Handle explicit search - triggers the fetch
+  const handleSearch = () => {
+    fetchAdsWithFilters(filters, 0);
+  };
+
   // Handle page change
   const handleAdsPageChange = (offset: number) => {
-    fetchAds(offset);
+    fetchAdsWithFilters(filters, offset);
   };
 
   const handleChangeLogsPageChange = (offset: number) => {
@@ -264,13 +266,13 @@ export default function CompliancePage() {
         <div className="max-w-7xl mx-auto">
           <div className="glass-card p-12 text-center">
             <div className="text-4xl mb-4">⚠️</div>
-            <h2 className="text-xl font-bold text-slate-800 mb-2">Error al cargar datos</h2>
+            <h2 className="text-xl font-bold text-slate-800 mb-2">Error loading data</h2>
             <p className="text-slate-500 mb-4">{error}</p>
             <button
               onClick={() => window.location.reload()}
               className="px-4 py-2 rounded-lg bg-slate-800 text-white hover:bg-slate-900 transition-colors"
             >
-              Reintentar
+              Retry
             </button>
           </div>
         </div>
@@ -286,13 +288,13 @@ export default function CompliancePage() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-bold text-slate-800">Compliance</h1>
-              <p className="text-sm text-slate-500">Monitorea el estado de aprobacion de tus anuncios</p>
+              <p className="text-sm text-slate-500">Monitor the approval status of your ads</p>
             </div>
             <button
               onClick={() => {
                 fetchSummary();
                 if (activeTab === 'ads') {
-                  fetchAds(adsPagination.offset);
+                  fetchAdsWithFilters(filters, adsPagination.offset);
                 } else {
                   fetchChangeLogs(changeLogsPagination.offset);
                 }
@@ -302,7 +304,7 @@ export default function CompliancePage() {
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
-              Actualizar
+              Refresh
             </button>
           </div>
         </div>
@@ -323,7 +325,7 @@ export default function CompliancePage() {
                 : 'text-slate-500 border-transparent hover:text-slate-700'
             }`}
           >
-            Anuncios
+            Ads
           </button>
           <button
             onClick={() => setActiveTab('changelog')}
@@ -333,14 +335,18 @@ export default function CompliancePage() {
                 : 'text-slate-500 border-transparent hover:text-slate-700'
             }`}
           >
-            Historial de Cambios
+            Change History
           </button>
         </div>
 
         {/* Ads Tab */}
         {activeTab === 'ads' && (
           <>
-            <ComplianceFilters filters={filters} onFilterChange={handleFilterChange} />
+            <ComplianceFilters
+              filters={filters}
+              onFilterChange={handleFilterChange}
+              onSearch={handleSearch}
+            />
             <ComplianceAdsTable
               ads={ads}
               loading={adsLoading}

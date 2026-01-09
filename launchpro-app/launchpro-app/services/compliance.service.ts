@@ -13,6 +13,12 @@ import {
  */
 
 // ============================================
+// CONSTANTS
+// ============================================
+
+const SUPERADMIN_EMAIL = 'jesusmonterogrowth@gmail.com';
+
+// ============================================
 // INTERFACES
 // ============================================
 
@@ -47,6 +53,7 @@ export interface ComplianceFilters {
   hasReviewRequest?: boolean;
   limit?: number;
   offset?: number;
+  userEmail?: string;           // Filter by manager (superadmin sees all)
 }
 
 // ============================================
@@ -54,6 +61,59 @@ export interface ComplianceFilters {
 // ============================================
 
 class ComplianceService {
+  /**
+   * Check if user is superadmin
+   */
+  private isSuperAdmin(userEmail?: string): boolean {
+    return userEmail?.toLowerCase() === SUPERADMIN_EMAIL.toLowerCase();
+  }
+
+  /**
+   * Get allowed Tonic campaign IDs for a user
+   * Returns null if user is superadmin (no filtering needed)
+   */
+  private async getAllowedTonicCampaignIds(userEmail?: string): Promise<Set<number> | null> {
+    // Superadmin sees all
+    if (!userEmail || this.isSuperAdmin(userEmail)) {
+      return null;
+    }
+
+    // Get manager by email
+    const manager = await prisma.manager.findFirst({
+      where: { email: userEmail.toLowerCase() },
+      select: { id: true },
+    });
+
+    if (!manager) {
+      logger.warn('compliance', `Manager not found for email: ${userEmail}`);
+      return new Set(); // Return empty set - no campaigns allowed
+    }
+
+    // Get campaigns created by this manager that have a tonicCampaignId
+    const campaigns = await prisma.campaign.findMany({
+      where: {
+        createdById: manager.id,
+        tonicCampaignId: { not: null },
+      },
+      select: {
+        tonicCampaignId: true,
+      },
+    });
+
+    const allowedIds = new Set<number>();
+    for (const campaign of campaigns) {
+      if (campaign.tonicCampaignId) {
+        const id = parseInt(campaign.tonicCampaignId, 10);
+        if (!isNaN(id)) {
+          allowedIds.add(id);
+        }
+      }
+    }
+
+    logger.info('compliance', `User ${userEmail} has access to ${allowedIds.size} campaigns`);
+    return allowedIds;
+  }
+
   /**
    * Get all active Tonic accounts
    * Note: Accounts are company-level resources, not per-manager
@@ -93,8 +153,9 @@ class ComplianceService {
   /**
    * Get compliance summary across all accounts
    */
-  async getComplianceSummary(): Promise<ComplianceSummary> {
+  async getComplianceSummary(userEmail?: string): Promise<ComplianceSummary> {
     const accounts = await this.getTonicAccounts();
+    const allowedCampaignIds = await this.getAllowedTonicCampaignIds(userEmail);
 
     if (accounts.length === 0) {
       return {
@@ -146,6 +207,11 @@ class ComplianceService {
     for (const result of results) {
       if (result.status === 'fulfilled') {
         for (const ad of result.value.adIds) {
+          // Filter by allowed campaign IDs if not superadmin
+          if (allowedCampaignIds !== null && !allowedCampaignIds.has(ad.campaignId)) {
+            continue;
+          }
+
           summary.totalAds++;
 
           if (ad.status === 'allowed') {
@@ -191,8 +257,14 @@ class ComplianceService {
     hasMore: boolean;
   }> {
     const accounts = await this.getTonicAccounts();
+    const allowedCampaignIds = await this.getAllowedTonicCampaignIds(filters.userEmail);
 
     if (accounts.length === 0) {
+      return { ads: [], total: 0, hasMore: false };
+    }
+
+    // If non-superadmin has no campaigns, return empty
+    if (allowedCampaignIds !== null && allowedCampaignIds.size === 0) {
       return { ads: [], total: 0, hasMore: false };
     }
 
@@ -247,6 +319,11 @@ class ComplianceService {
     for (const result of results) {
       if (result.status === 'fulfilled') {
         for (const ad of result.value.adIds) {
+          // Filter by allowed campaign IDs if not superadmin
+          if (allowedCampaignIds !== null && !allowedCampaignIds.has(ad.campaignId)) {
+            continue;
+          }
+
           allAds.push({
             ...ad,
             tonicAccountId: result.value.accountId,
@@ -279,15 +356,22 @@ class ComplianceService {
    * Get ad details by ad ID
    */
   async getAdDetails(
-    adId: string
+    adId: string,
+    userEmail?: string
   ): Promise<ComplianceAdWithAccount | null> {
     const accounts = await this.getTonicAccounts();
+    const allowedCampaignIds = await this.getAllowedTonicCampaignIds(userEmail);
 
     // Try each account until we find the ad
     for (const account of accounts) {
       try {
         const ad = await tonicService.getComplianceAdIdDetails(account.credentials, adId);
         if (ad) {
+          // Check if user has access to this campaign
+          if (allowedCampaignIds !== null && !allowedCampaignIds.has(ad.campaignId)) {
+            return null; // User doesn't have access
+          }
+
           return {
             ...ad,
             tonicAccountId: account.id,
@@ -319,6 +403,7 @@ class ComplianceService {
       to?: string;
       limit?: number;
       offset?: number;
+      userEmail?: string;
     }
   ): Promise<{
     logs: ComplianceChangeLogWithAccount[];
@@ -326,8 +411,14 @@ class ComplianceService {
     hasMore: boolean;
   }> {
     const accounts = await this.getTonicAccounts();
+    const allowedCampaignIds = await this.getAllowedTonicCampaignIds(params.userEmail);
 
     if (accounts.length === 0) {
+      return { logs: [], total: 0, hasMore: false };
+    }
+
+    // If non-superadmin has no campaigns, return empty
+    if (allowedCampaignIds !== null && allowedCampaignIds.size === 0) {
       return { logs: [], total: 0, hasMore: false };
     }
 
@@ -363,6 +454,11 @@ class ComplianceService {
     for (const result of results) {
       if (result.status === 'fulfilled') {
         for (const log of result.value.logs) {
+          // Filter by allowed campaign IDs if not superadmin
+          if (allowedCampaignIds !== null && !allowedCampaignIds.has(log.campaignId)) {
+            continue;
+          }
+
           allLogs.push({
             ...log,
             tonicAccountId: result.value.accountId,
@@ -397,7 +493,8 @@ class ComplianceService {
   async sendAppeal(
     adId: string,
     campaignId: number,
-    message: string
+    message: string,
+    userEmail?: string
   ): Promise<{ success: boolean; error?: string }> {
     // Validate message length
     if (message.length < 10) {
@@ -405,6 +502,12 @@ class ComplianceService {
     }
     if (message.length > 500) {
       return { success: false, error: 'Message must be at most 500 characters' };
+    }
+
+    // Check if user has access to this campaign
+    const allowedCampaignIds = await this.getAllowedTonicCampaignIds(userEmail);
+    if (allowedCampaignIds !== null && !allowedCampaignIds.has(campaignId)) {
+      return { success: false, error: 'You do not have access to this campaign' };
     }
 
     const accounts = await this.getTonicAccounts();

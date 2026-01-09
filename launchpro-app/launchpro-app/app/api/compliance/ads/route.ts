@@ -42,6 +42,7 @@ export async function GET(request: NextRequest) {
       hasReviewRequest: hasReviewRequest === 'true' ? true : hasReviewRequest === 'false' ? false : undefined,
       limit,
       offset,
+      userEmail: user!.email,
     };
 
     logger.info('api', `GET /api/compliance/ads - User: ${user!.email}`, { filters });

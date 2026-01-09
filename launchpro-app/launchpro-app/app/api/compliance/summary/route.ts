@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
 
     logger.info('api', `GET /api/compliance/summary - User: ${user!.email}`);
 
-    const summary = await complianceService.getComplianceSummary();
+    const summary = await complianceService.getComplianceSummary(user!.email);
 
     return NextResponse.json({
       success: true,
