@@ -642,6 +642,56 @@ class AIService {
     return this.getAnthropicClient();
   }
 
+  /**
+   * Enhanced wrapper for Anthropic API calls with detailed error logging
+   * Helps debug issues like the "invalid x-api-key" error
+   */
+  private async callAnthropicWithDiagnostics<T>(
+    operation: string,
+    apiCall: () => Promise<T>
+  ): Promise<T> {
+    const startTime = Date.now();
+    const apiKey = process.env.ANTHROPIC_API_KEY || '';
+
+    // Log pre-call diagnostics
+    logger.info('ai', `[Anthropic] Starting ${operation}`, {
+      keyPreview: apiKey ? `${apiKey.substring(0, 10)}...${apiKey.substring(apiKey.length - 4)}` : 'MISSING',
+      keyLength: apiKey.length,
+      clientExists: !!this._anthropic,
+    });
+
+    try {
+      const result = await apiCall();
+      const duration = Date.now() - startTime;
+      logger.info('ai', `[Anthropic] ${operation} completed successfully`, { durationMs: duration });
+      return result;
+    } catch (error: any) {
+      const duration = Date.now() - startTime;
+
+      // Enhanced error logging
+      logger.error('ai', `[Anthropic] ${operation} FAILED`, {
+        durationMs: duration,
+        errorType: error.constructor?.name,
+        errorMessage: error.message,
+        statusCode: error.status || error.statusCode || 'N/A',
+        errorBody: error.error || error.body || 'N/A',
+        keyPreview: apiKey ? `${apiKey.substring(0, 10)}...${apiKey.substring(apiKey.length - 4)}` : 'MISSING',
+        keyLength: apiKey.length,
+        clientExists: !!this._anthropic,
+      });
+
+      // Check if this is an authentication error
+      if (error.status === 401 || error.message?.includes('authentication') || error.message?.includes('api-key')) {
+        logger.error('ai', `[Anthropic] AUTHENTICATION ERROR - This indicates the API key may be invalid, expired, or corrupted`, {
+          suggestion: 'Please verify ANTHROPIC_API_KEY in environment variables',
+          currentKeyStart: apiKey.substring(0, 15),
+        });
+      }
+
+      throw error;
+    }
+  }
+
   constructor() {
     console.log('[AIService] Constructor called - Anthropic will be initialized on first use');
 
@@ -1181,18 +1231,21 @@ Return JSON:
   "callToAction": "CTA text (one of: ${guidelines.ctas.join(', ')})"
 }`;
 
-    const message = await this.anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 800,
-      temperature: 0.8,
-      system: systemPrompt,
-      messages: [
-        {
-          role: 'user',
-          content: userPrompt,
-        },
-      ],
-    });
+    const message = await this.callAnthropicWithDiagnostics(
+      `generateAdCopy(${params.platform}, ${params.country})`,
+      () => this.anthropic.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 800,
+        temperature: 0.8,
+        system: systemPrompt,
+        messages: [
+          {
+            role: 'user',
+            content: userPrompt,
+          },
+        ],
+      })
+    );
 
     const responseText = message.content[0].type === 'text' ? message.content[0].text : '{}';
     const cleanedResponse = this.cleanJsonResponse(responseText);
@@ -1840,18 +1893,21 @@ Return JSON:
   "demographics": "detailed description of ideal audience"
 }`;
 
-    const message = await this.anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1000,
-      temperature: 0.7,
-      system: systemPrompt,
-      messages: [
-        {
-          role: 'user',
-          content: userPrompt,
-        },
-      ],
-    });
+    const message = await this.callAnthropicWithDiagnostics(
+      `generateTargetingSuggestions(${params.platform})`,
+      () => this.anthropic.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1000,
+        temperature: 0.7,
+        system: systemPrompt,
+        messages: [
+          {
+            role: 'user',
+            content: userPrompt,
+          },
+        ],
+      })
+    );
 
     const responseText = message.content[0].type === 'text' ? message.content[0].text : '{}';
     const cleanedResponse = this.cleanJsonResponse(responseText);
