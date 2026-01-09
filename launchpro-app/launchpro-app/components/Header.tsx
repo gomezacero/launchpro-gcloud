@@ -13,12 +13,11 @@ const baseNavigation = [
   { name: 'New Campaign', href: '/campaigns/new', icon: '🚀' },
   { name: 'Reglas', href: '/rules', icon: '⚡' },
   { name: 'Logs', href: '/logs', icon: '📝' },
+  { name: 'Compliance', href: '/compliance', icon: '✅' },
 ];
 
 // Admin-only navigation items (only visible to SUPERADMIN)
 const adminNavigation = [
-  { name: 'Media Debug', href: '/media-debug', icon: '🎨' },
-  { name: 'Tonic Debug', href: '/tonic-debug', icon: '🔍' },
   { name: 'Settings', href: '/settings', icon: '⚙️' },
 ];
 
