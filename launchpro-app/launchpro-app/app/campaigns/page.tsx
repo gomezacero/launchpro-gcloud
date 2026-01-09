@@ -66,6 +66,7 @@ export default function CampaignsPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('all');
   const [managerFilter, setManagerFilter] = useState<string>('all');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
   const handleDuplicate = (e: React.MouseEvent, campaignId: string) => {
     e.preventDefault();
@@ -136,15 +137,47 @@ export default function CampaignsPage() {
               <p className="text-sm text-slate-500">Manage and monitor your campaigns</p>
             </div>
           </div>
-          <Link
-            href="/campaigns/new"
-            className="btn-aurora inline-flex items-center gap-2 px-6 py-3"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            New Campaign
-          </Link>
+          <div className="flex items-center gap-3">
+            {/* View Toggle */}
+            <div className="flex items-center bg-white/80 border border-slate-200/50 rounded-xl p-1">
+              <button
+                onClick={() => setViewMode('grid')}
+                className={`p-2 rounded-lg transition-all duration-200 ${
+                  viewMode === 'grid'
+                    ? 'bg-gradient-to-r from-violet-500 to-purple-600 text-white shadow-md'
+                    : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
+                }`}
+                title="Grid View"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                </svg>
+              </button>
+              <button
+                onClick={() => setViewMode('list')}
+                className={`p-2 rounded-lg transition-all duration-200 ${
+                  viewMode === 'list'
+                    ? 'bg-gradient-to-r from-violet-500 to-purple-600 text-white shadow-md'
+                    : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
+                }`}
+                title="List View"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                </svg>
+              </button>
+            </div>
+
+            <Link
+              href="/campaigns/new"
+              className="btn-aurora inline-flex items-center gap-2 px-6 py-3"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              New Campaign
+            </Link>
+          </div>
         </div>
 
         {/* Filters */}
@@ -239,147 +272,282 @@ export default function CampaignsPage() {
           </div>
         )}
 
-        {/* Campaigns Grid */}
+        {/* Campaigns Display */}
         {!loading && campaigns.length > 0 && (
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {campaigns.map((campaign) => {
-              const status = statusConfig[campaign.status] || statusConfig.DRAFT;
-              return (
-                <Link
-                  key={campaign.id}
-                  href={`/campaigns/${campaign.id}`}
-                  className="glass-card overflow-hidden hover:shadow-xl hover:scale-[1.02] transition-all duration-300 group"
-                >
-                  {/* Campaign Header */}
-                  <div className="p-6">
-                    <div className="flex items-start justify-between gap-3 mb-4">
-                      <div className="flex-1 min-w-0">
-                        <h3 className="text-lg font-bold text-slate-800 truncate group-hover:text-violet-700 transition-colors">
-                          {campaign.name}
-                        </h3>
-                        <p className="text-sm text-slate-500 truncate">
-                          {campaign.offer.name}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <button
-                          onClick={(e) => handleDuplicate(e, campaign.id)}
-                          className="p-2 text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded-xl transition-all duration-200"
-                          title="Duplicar campana"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                          </svg>
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Status Badge */}
-                    <div className="mb-4">
-                      <span
-                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-gradient-to-r ${status.bg} ${status.text} border border-white/50`}
-                      >
-                        <span>{status.icon}</span>
-                        {campaign.status.replace(/_/g, ' ')}
-                      </span>
-                    </div>
-
-                    {/* Campaign Info */}
-                    <div className="space-y-2.5 mb-4">
-                      <div className="flex items-center gap-2.5 text-sm text-slate-600">
-                        <div className="w-6 h-6 rounded-lg bg-slate-100 flex items-center justify-center">
-                          <span className="text-xs">📊</span>
-                        </div>
-                        <span className="font-medium">{campaign.campaignType}</span>
-                      </div>
-                      <div className="flex items-center gap-2.5 text-sm text-slate-600">
-                        <div className="w-6 h-6 rounded-lg bg-slate-100 flex items-center justify-center">
-                          <span className="text-xs">🌍</span>
-                        </div>
-                        <span className="font-medium">{campaign.country}</span>
-                      </div>
-                      <div className="flex items-center gap-2.5 text-sm text-slate-600">
-                        <div className="w-6 h-6 rounded-lg bg-slate-100 flex items-center justify-center">
-                          <span className="text-xs">📅</span>
-                        </div>
-                        <span className="font-medium">
-                          {new Date(campaign.createdAt).toLocaleDateString()}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Platforms */}
-                    <div className="flex gap-2 mb-4">
-                      {campaign.platforms.map((platform, index) => {
-                        const config = platformConfig[platform.platform] || platformConfig.META;
-                        return (
-                          <div
-                            key={index}
-                            className={`px-3 py-1.5 rounded-full text-xs font-semibold text-white bg-gradient-to-r ${config.gradient} shadow-sm`}
-                          >
-                            {config.icon} {platform.platform}
+          <>
+            {/* Grid View */}
+            {viewMode === 'grid' && (
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {campaigns.map((campaign) => {
+                  const status = statusConfig[campaign.status] || statusConfig.DRAFT;
+                  return (
+                    <Link
+                      key={campaign.id}
+                      href={`/campaigns/${campaign.id}`}
+                      className="glass-card overflow-hidden hover:shadow-xl hover:scale-[1.02] transition-all duration-300 group"
+                    >
+                      {/* Campaign Header */}
+                      <div className="p-6">
+                        <div className="flex items-start justify-between gap-3 mb-4">
+                          <div className="flex-1 min-w-0">
+                            <h3 className="text-lg font-bold text-slate-800 truncate group-hover:text-violet-700 transition-colors">
+                              {campaign.name}
+                            </h3>
+                            <p className="text-sm text-slate-500 truncate">
+                              {campaign.offer.name}
+                            </p>
                           </div>
-                        );
-                      })}
-                    </div>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <button
+                              onClick={(e) => handleDuplicate(e, campaign.id)}
+                              className="p-2 text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded-xl transition-all duration-200"
+                              title="Duplicate campaign"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                              </svg>
+                            </button>
+                          </div>
+                        </div>
 
-                    {/* Media Preview */}
-                    {campaign.media.length > 0 && (
-                      <div className="flex gap-2">
-                        {campaign.media.slice(0, 3).map((media, index) => (
-                          <div
-                            key={index}
-                            className="w-14 h-14 bg-slate-100 rounded-xl overflow-hidden border-2 border-white shadow-sm"
+                        {/* Status Badge */}
+                        <div className="mb-4">
+                          <span
+                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-gradient-to-r ${status.bg} ${status.text} border border-white/50`}
                           >
-                            {media.type === 'IMAGE' ? (
-                              <img
-                                src={media.url}
-                                alt="Campaign media"
-                                className="w-full h-full object-cover"
-                              />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-violet-100 to-purple-100">
-                                <span className="text-xl">🎥</span>
+                            <span>{status.icon}</span>
+                            {campaign.status.replace(/_/g, ' ')}
+                          </span>
+                        </div>
+
+                        {/* Campaign Info */}
+                        <div className="space-y-2.5 mb-4">
+                          <div className="flex items-center gap-2.5 text-sm text-slate-600">
+                            <div className="w-6 h-6 rounded-lg bg-slate-100 flex items-center justify-center">
+                              <span className="text-xs">📊</span>
+                            </div>
+                            <span className="font-medium">{campaign.campaignType}</span>
+                          </div>
+                          <div className="flex items-center gap-2.5 text-sm text-slate-600">
+                            <div className="w-6 h-6 rounded-lg bg-slate-100 flex items-center justify-center">
+                              <span className="text-xs">🌍</span>
+                            </div>
+                            <span className="font-medium">{campaign.country}</span>
+                          </div>
+                          <div className="flex items-center gap-2.5 text-sm text-slate-600">
+                            <div className="w-6 h-6 rounded-lg bg-slate-100 flex items-center justify-center">
+                              <span className="text-xs">📅</span>
+                            </div>
+                            <span className="font-medium">
+                              {new Date(campaign.createdAt).toLocaleDateString()}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Platforms */}
+                        <div className="flex gap-2 mb-4">
+                          {campaign.platforms.map((platform, index) => {
+                            const config = platformConfig[platform.platform] || platformConfig.META;
+                            return (
+                              <div
+                                key={index}
+                                className={`px-3 py-1.5 rounded-full text-xs font-semibold text-white bg-gradient-to-r ${config.gradient} shadow-sm`}
+                              >
+                                {config.icon} {platform.platform}
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* Media Preview */}
+                        {campaign.media.length > 0 && (
+                          <div className="flex gap-2">
+                            {campaign.media.slice(0, 3).map((media, index) => (
+                              <div
+                                key={index}
+                                className="w-14 h-14 bg-slate-100 rounded-xl overflow-hidden border-2 border-white shadow-sm"
+                              >
+                                {media.type === 'IMAGE' ? (
+                                  <img
+                                    src={media.url}
+                                    alt="Campaign media"
+                                    className="w-full h-full object-cover"
+                                  />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-violet-100 to-purple-100">
+                                    <span className="text-xl">🎥</span>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                            {campaign.media.length > 3 && (
+                              <div className="w-14 h-14 bg-gradient-to-br from-slate-100 to-slate-200 rounded-xl flex items-center justify-center border-2 border-white shadow-sm">
+                                <span className="text-xs font-bold text-slate-600">
+                                  +{campaign.media.length - 3}
+                                </span>
                               </div>
                             )}
                           </div>
-                        ))}
-                        {campaign.media.length > 3 && (
-                          <div className="w-14 h-14 bg-gradient-to-br from-slate-100 to-slate-200 rounded-xl flex items-center justify-center border-2 border-white shadow-sm">
-                            <span className="text-xs font-bold text-slate-600">
-                              +{campaign.media.length - 3}
-                            </span>
+                        )}
+
+                        {/* Creator info - SUPERADMIN only */}
+                        {isSuperAdmin && campaign.createdBy && (
+                          <div className="flex items-center gap-2 text-sm text-slate-500 mt-4 pt-4 border-t border-slate-100">
+                            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-violet-400 to-purple-500 flex items-center justify-center">
+                              <span className="text-white text-xs font-bold">{campaign.createdBy.name.charAt(0)}</span>
+                            </div>
+                            <span>Created by: <span className="font-medium text-slate-700">{campaign.createdBy.name}</span></span>
                           </div>
                         )}
                       </div>
-                    )}
 
-                    {/* Creator info - SUPERADMIN only */}
-                    {isSuperAdmin && campaign.createdBy && (
-                      <div className="flex items-center gap-2 text-sm text-slate-500 mt-4 pt-4 border-t border-slate-100">
-                        <div className="w-6 h-6 rounded-full bg-gradient-to-br from-violet-400 to-purple-500 flex items-center justify-center">
-                          <span className="text-white text-xs font-bold">{campaign.createdBy.name.charAt(0)}</span>
+                      {/* Campaign Footer */}
+                      <div className="bg-gradient-to-r from-slate-50 to-violet-50/50 px-6 py-3 border-t border-slate-100">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-slate-500 font-medium">View Details</span>
+                          <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-violet-500 to-purple-600 flex items-center justify-center shadow-sm group-hover:shadow-md transition-all">
+                            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
+                          </div>
                         </div>
-                        <span>Creado por: <span className="font-medium text-slate-700">{campaign.createdBy.name}</span></span>
                       </div>
-                    )}
-                  </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
 
-                  {/* Campaign Footer */}
-                  <div className="bg-gradient-to-r from-slate-50 to-violet-50/50 px-6 py-3 border-t border-slate-100">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-slate-500 font-medium">View Details</span>
-                      <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-violet-500 to-purple-600 flex items-center justify-center shadow-sm group-hover:shadow-md transition-all">
-                        <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                        </svg>
-                      </div>
-                    </div>
-                  </div>
-                </Link>
-              );
-            })}
-          </div>
+            {/* List View */}
+            {viewMode === 'list' && (
+              <div className="glass-card overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gradient-to-r from-slate-50 to-violet-50/30 border-b border-slate-200/50">
+                      <tr>
+                        <th className="text-left px-6 py-4 text-xs font-semibold text-slate-600 uppercase tracking-wider">Campaign</th>
+                        <th className="text-left px-4 py-4 text-xs font-semibold text-slate-600 uppercase tracking-wider">Status</th>
+                        <th className="text-left px-4 py-4 text-xs font-semibold text-slate-600 uppercase tracking-wider">Type</th>
+                        <th className="text-left px-4 py-4 text-xs font-semibold text-slate-600 uppercase tracking-wider">Country</th>
+                        <th className="text-left px-4 py-4 text-xs font-semibold text-slate-600 uppercase tracking-wider">Platforms</th>
+                        <th className="text-left px-4 py-4 text-xs font-semibold text-slate-600 uppercase tracking-wider">Created</th>
+                        {isSuperAdmin && <th className="text-left px-4 py-4 text-xs font-semibold text-slate-600 uppercase tracking-wider">Owner</th>}
+                        <th className="text-right px-6 py-4 text-xs font-semibold text-slate-600 uppercase tracking-wider">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {campaigns.map((campaign) => {
+                        const status = statusConfig[campaign.status] || statusConfig.DRAFT;
+                        return (
+                          <tr
+                            key={campaign.id}
+                            className="hover:bg-violet-50/30 transition-colors cursor-pointer group"
+                            onClick={() => router.push(`/campaigns/${campaign.id}`)}
+                          >
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-3">
+                                {campaign.media.length > 0 ? (
+                                  <div className="w-10 h-10 bg-slate-100 rounded-lg overflow-hidden flex-shrink-0 border border-slate-200">
+                                    {campaign.media[0].type === 'IMAGE' ? (
+                                      <img
+                                        src={campaign.media[0].url}
+                                        alt="Campaign"
+                                        className="w-full h-full object-cover"
+                                      />
+                                    ) : (
+                                      <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-violet-100 to-purple-100">
+                                        <span className="text-sm">🎥</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div className="w-10 h-10 bg-gradient-to-br from-slate-100 to-slate-200 rounded-lg flex items-center justify-center flex-shrink-0">
+                                    <span className="text-sm">📁</span>
+                                  </div>
+                                )}
+                                <div className="min-w-0">
+                                  <div className="font-semibold text-slate-800 truncate max-w-[200px] group-hover:text-violet-700 transition-colors">
+                                    {campaign.name}
+                                  </div>
+                                  <div className="text-xs text-slate-500 truncate max-w-[200px]">
+                                    {campaign.offer.name}
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-4 py-4">
+                              <span
+                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-gradient-to-r ${status.bg} ${status.text} border border-white/50`}
+                              >
+                                <span className="text-[10px]">{status.icon}</span>
+                                {campaign.status.replace(/_/g, ' ')}
+                              </span>
+                            </td>
+                            <td className="px-4 py-4">
+                              <span className="text-sm text-slate-600 font-medium">{campaign.campaignType}</span>
+                            </td>
+                            <td className="px-4 py-4">
+                              <span className="text-sm text-slate-600 font-medium">{campaign.country}</span>
+                            </td>
+                            <td className="px-4 py-4">
+                              <div className="flex gap-1.5 flex-wrap">
+                                {campaign.platforms.map((platform, index) => {
+                                  const config = platformConfig[platform.platform] || platformConfig.META;
+                                  return (
+                                    <span
+                                      key={index}
+                                      className={`px-2 py-0.5 rounded-full text-[10px] font-semibold text-white bg-gradient-to-r ${config.gradient}`}
+                                    >
+                                      {platform.platform}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            </td>
+                            <td className="px-4 py-4">
+                              <span className="text-sm text-slate-600">
+                                {new Date(campaign.createdAt).toLocaleDateString()}
+                              </span>
+                            </td>
+                            {isSuperAdmin && (
+                              <td className="px-4 py-4">
+                                {campaign.createdBy && (
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-6 h-6 rounded-full bg-gradient-to-br from-violet-400 to-purple-500 flex items-center justify-center">
+                                      <span className="text-white text-[10px] font-bold">{campaign.createdBy.name.charAt(0)}</span>
+                                    </div>
+                                    <span className="text-sm text-slate-600">{campaign.createdBy.name}</span>
+                                  </div>
+                                )}
+                              </td>
+                            )}
+                            <td className="px-6 py-4 text-right">
+                              <div className="flex items-center justify-end gap-2">
+                                <button
+                                  onClick={(e) => handleDuplicate(e, campaign.id)}
+                                  className="p-2 text-slate-400 hover:text-violet-600 hover:bg-violet-100 rounded-lg transition-all duration-200"
+                                  title="Duplicate campaign"
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                  </svg>
+                                </button>
+                                <div className="w-7 h-7 rounded-lg bg-gradient-to-r from-violet-500 to-purple-600 flex items-center justify-center shadow-sm group-hover:shadow-md transition-all">
+                                  <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                  </svg>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </main>
     </div>
