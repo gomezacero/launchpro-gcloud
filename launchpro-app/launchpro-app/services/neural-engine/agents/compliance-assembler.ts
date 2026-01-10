@@ -682,8 +682,8 @@ export class ComplianceAssembler {
   }
 
   /**
-   * Create text overlay using SVG
-   * Returns a PNG buffer for reliable compositing with Sharp
+   * Create text overlay using Sharp's text input feature
+   * This approach uses Sharp's built-in text rendering which works in serverless
    */
   private async createTextOverlay(
     width: number,
@@ -695,50 +695,137 @@ export class ComplianceAssembler {
     const primaryColor = strategyBrief.colorPalette[0] || '#0066CC';
 
     // Truncate headline if too long to prevent overflow
-    const maxHeadlineLength = 60;
+    const maxHeadlineLength = 45;
     const headline = copy.headline.length > maxHeadlineLength
       ? copy.headline.substring(0, maxHeadlineLength - 3) + '...'
       : copy.headline;
 
-    // Calculate responsive font sizes
-    const headlineFontSize = Math.min(Math.max(width * 0.05, 28), 56);
-    const ctaFontSize = Math.min(Math.max(width * 0.035, 18), 32);
-    const ctaButtonWidth = Math.min(width * 0.5, 300);
-    const ctaButtonHeight = Math.min(height * 0.08, 60);
+    // Calculate responsive sizes
+    const padding = Math.floor(width * 0.05);
+    const ctaButtonWidth = Math.min(Math.floor(width * 0.45), 280);
+    const ctaButtonHeight = Math.min(Math.floor(height * 0.07), 55);
 
-    // Create SVG with text overlay
-    const svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="2" dy="2" stdDeviation="3" flood-color="#000000" flood-opacity="0.5"/>
-    </filter>
-    <linearGradient id="grad" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" style="stop-color:#000000;stop-opacity:0.7" />
-      <stop offset="25%" style="stop-color:#000000;stop-opacity:0.1" />
-      <stop offset="75%" style="stop-color:#000000;stop-opacity:0.1" />
-      <stop offset="100%" style="stop-color:#000000;stop-opacity:0.7" />
-    </linearGradient>
-  </defs>
-  <rect width="100%" height="100%" fill="url(#grad)" />
-  <text x="50%" y="${Math.floor(height * 0.12)}" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="${headlineFontSize}px" font-weight="bold" fill="#FFFFFF" filter="url(#shadow)">${this.escapeXml(headline)}</text>
-  <rect x="${Math.floor((width - ctaButtonWidth) / 2)}" y="${Math.floor(height * 0.82)}" width="${ctaButtonWidth}" height="${ctaButtonHeight}" rx="8" fill="${primaryColor}" filter="url(#shadow)"/>
-  <text x="50%" y="${Math.floor(height * 0.82 + ctaButtonHeight * 0.65)}" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="${ctaFontSize}px" font-weight="bold" fill="#FFFFFF">${this.escapeXml(copy.cta)}</text>
-</svg>`;
+    console.log(`[${AGENT_NAME}]   Creating text overlay: ${width}x${height}, headline: "${headline.substring(0, 30)}..."`);
 
-    console.log(`[${AGENT_NAME}]   SVG dimensions: ${width}x${height}, headline font: ${headlineFontSize}px`);
-
-    // Convert SVG to PNG buffer for reliable compositing
-    // Sharp handles SVG input and rasterizes it to PNG
     try {
-      const pngBuffer = await sharp(Buffer.from(svg))
+      // Create gradient overlay for text readability (darker at top and bottom)
+      // This doesn't require fonts - just shapes
+      const gradientSvg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="topGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" style="stop-color:#000000;stop-opacity:0.8" />
+            <stop offset="100%" style="stop-color:#000000;stop-opacity:0" />
+          </linearGradient>
+          <linearGradient id="bottomGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" style="stop-color:#000000;stop-opacity:0" />
+            <stop offset="100%" style="stop-color:#000000;stop-opacity:0.8" />
+          </linearGradient>
+        </defs>
+        <rect width="100%" height="25%" fill="url(#topGrad)" />
+        <rect y="75%" width="100%" height="25%" fill="url(#bottomGrad)" />
+      </svg>`;
+
+      // Create CTA button background (just the colored rectangle, no text)
+      const ctaButtonSvg = `<svg width="${ctaButtonWidth}" height="${ctaButtonHeight}" xmlns="http://www.w3.org/2000/svg">
+        <rect width="100%" height="100%" rx="8" fill="${primaryColor}" />
+      </svg>`;
+
+      // Use Sharp's text input feature for headline
+      // This uses Pango/Cairo which handles fonts better
+      const headlineBuffer = await sharp({
+        text: {
+          text: `<span foreground="white" font_weight="bold">${this.escapeXml(headline)}</span>`,
+          font: 'sans-serif',
+          fontfile: undefined, // Use system font
+          width: width - padding * 2,
+          height: Math.floor(height * 0.15),
+          align: 'center',
+          rgba: true,
+        },
+      })
         .png()
         .toBuffer();
-      console.log(`[${AGENT_NAME}]   ✅ SVG converted to PNG (${pngBuffer.length} bytes)`);
-      return pngBuffer;
-    } catch (svgError: any) {
-      console.error(`[${AGENT_NAME}]   ❌ SVG to PNG conversion failed: ${svgError.message}`);
-      // Return raw SVG buffer as fallback (Sharp might still handle it)
-      return Buffer.from(svg);
+
+      // Create CTA text
+      const ctaTextBuffer = await sharp({
+        text: {
+          text: `<span foreground="white" font_weight="bold">${this.escapeXml(copy.cta)}</span>`,
+          font: 'sans-serif',
+          width: ctaButtonWidth - 20,
+          height: ctaButtonHeight - 10,
+          align: 'center',
+          rgba: true,
+        },
+      })
+        .png()
+        .toBuffer();
+
+      // Get dimensions of text buffers
+      const headlineMeta = await sharp(headlineBuffer).metadata();
+      const ctaTextMeta = await sharp(ctaTextBuffer).metadata();
+
+      // Convert gradient and button SVGs to buffers
+      const [gradientBuffer, ctaButtonBuffer] = await Promise.all([
+        sharp(Buffer.from(gradientSvg)).png().toBuffer(),
+        sharp(Buffer.from(ctaButtonSvg)).png().toBuffer(),
+      ]);
+
+      // Calculate positions
+      const headlineTop = padding;
+      const headlineLeft = Math.floor((width - (headlineMeta.width || width)) / 2);
+      const ctaTop = height - ctaButtonHeight - padding;
+      const ctaLeft = Math.floor((width - ctaButtonWidth) / 2);
+      const ctaTextTop = ctaTop + Math.floor((ctaButtonHeight - (ctaTextMeta.height || 20)) / 2);
+      const ctaTextLeft = ctaLeft + Math.floor((ctaButtonWidth - (ctaTextMeta.width || 100)) / 2);
+
+      // Create transparent base and composite all layers
+      const overlay = await sharp({
+        create: {
+          width,
+          height,
+          channels: 4,
+          background: { r: 0, g: 0, b: 0, alpha: 0 },
+        },
+      })
+        .composite([
+          // Gradient overlay for readability
+          { input: gradientBuffer, top: 0, left: 0 },
+          // Headline at top
+          { input: headlineBuffer, top: headlineTop, left: Math.max(0, headlineLeft) },
+          // CTA button background
+          { input: ctaButtonBuffer, top: ctaTop, left: ctaLeft },
+          // CTA text
+          { input: ctaTextBuffer, top: ctaTextTop, left: Math.max(ctaLeft, ctaTextLeft) },
+        ])
+        .png()
+        .toBuffer();
+
+      console.log(`[${AGENT_NAME}]   ✅ Text overlay created with Sharp text (${overlay.length} bytes)`);
+      return overlay;
+    } catch (error: any) {
+      console.error(`[${AGENT_NAME}]   ❌ Text overlay creation failed: ${error.message}`);
+      console.error(`[${AGENT_NAME}]   Error stack: ${error.stack?.substring(0, 300)}`);
+
+      // Fallback: Create a simple gradient overlay without text
+      // The user will at least see the image with darkened areas
+      const fallbackSvg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="topGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" style="stop-color:#000000;stop-opacity:0.7" />
+            <stop offset="100%" style="stop-color:#000000;stop-opacity:0" />
+          </linearGradient>
+          <linearGradient id="bottomGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" style="stop-color:#000000;stop-opacity:0" />
+            <stop offset="100%" style="stop-color:#000000;stop-opacity:0.7" />
+          </linearGradient>
+        </defs>
+        <rect width="100%" height="30%" fill="url(#topGrad)" />
+        <rect y="70%" width="100%" height="30%" fill="url(#bottomGrad)" />
+        <rect x="${Math.floor((width - ctaButtonWidth) / 2)}" y="${height - ctaButtonHeight - padding}"
+              width="${ctaButtonWidth}" height="${ctaButtonHeight}" rx="8" fill="${primaryColor}" opacity="0.9"/>
+      </svg>`;
+
+      return sharp(Buffer.from(fallbackSvg)).png().toBuffer();
     }
   }
 
