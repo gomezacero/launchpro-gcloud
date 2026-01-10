@@ -742,16 +742,17 @@ export class ComplianceAssembler {
     // Get primary color from strategy
     const primaryColor = strategyBrief.colorPalette[0] || '#0066CC';
 
-    // Truncate headline if too long to prevent overflow
-    const maxHeadlineLength = 60;
-    const headline = copy.headline.length > maxHeadlineLength
-      ? copy.headline.substring(0, maxHeadlineLength - 3) + '...'
-      : copy.headline;
+    // Use full headline - no truncation
+    const headline = copy.headline;
 
-    // Calculate responsive sizes based on image dimensions
-    const headlineFontSize = Math.max(28, Math.min(56, Math.floor(width / 18)));
+    // Calculate responsive font size based on text length and image dimensions
+    // Longer text = smaller font to ensure it fits
+    const baseHeadlineFontSize = Math.floor(width / 18);
+    const textLengthFactor = Math.max(0.6, Math.min(1, 50 / headline.length)); // Scale down for longer text
+    const headlineFontSize = Math.max(24, Math.min(52, Math.floor(baseHeadlineFontSize * textLengthFactor)));
+
     const ctaFontSize = Math.max(16, Math.min(28, Math.floor(width / 35)));
-    const padding = Math.floor(width * 0.06);
+    const padding = Math.floor(width * 0.05);
 
     console.log(`[${AGENT_NAME}]   Creating text overlay with Satori: ${width}x${height}`);
     console.log(`[${AGENT_NAME}]   Headline: "${headline.substring(0, 40)}..."`);
