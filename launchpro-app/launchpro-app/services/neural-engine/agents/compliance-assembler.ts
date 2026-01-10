@@ -292,15 +292,20 @@ export class ComplianceAssembler {
       const prompt = promptsToProcess[i];
 
       try {
+        // Build enhanced prompt with strong style enforcement
+        const styleInstruction = this.getStyleInstruction(prompt.style);
+        const enhancedPrompt = `${styleInstruction}\n\n${prompt.prompt}\n\nIMPORTANT: Do NOT include any text, words, letters, logos, or watermarks in the image. The image should be clean for text overlay to be added later.`;
+
         console.log(`[${AGENT_NAME}] Generating image ${i + 1}/${promptsToProcess.length} with Gemini...`);
-        console.log(`[${AGENT_NAME}] Prompt: ${prompt.prompt.substring(0, 100)}...`);
+        console.log(`[${AGENT_NAME}] Style: ${prompt.style}`);
+        console.log(`[${AGENT_NAME}] Prompt: ${enhancedPrompt.substring(0, 150)}...`);
 
         const startTime = Date.now();
 
         // Use Gemini API for image generation
         const response = await this.geminiClient.models.generateContent({
           model: GEMINI_MODEL,
-          contents: prompt.prompt,
+          contents: enhancedPrompt,
           config: {
             responseModalities: ['image', 'text'],
           },
@@ -398,14 +403,19 @@ export class ComplianceAssembler {
       const prompt = promptsToProcess[i];
 
       try {
+        // Enhance prompt with style instruction for better adherence
+        const styleInstruction = this.getStyleInstruction(prompt.style);
+        const enhancedPrompt = `${styleInstruction} ${prompt.prompt}`;
+
         console.log(`[${AGENT_NAME}] Generating image ${i + 1}/${promptsToProcess.length}...`);
-        console.log(`[${AGENT_NAME}] Prompt: ${prompt.prompt.substring(0, 100)}...`);
+        console.log(`[${AGENT_NAME}] Style: ${prompt.style}`);
+        console.log(`[${AGENT_NAME}] Prompt: ${enhancedPrompt.substring(0, 150)}...`);
 
         const startTime = Date.now();
 
         // Build Imagen 3 request
         const instance = helpers.toValue({
-          prompt: prompt.prompt,
+          prompt: enhancedPrompt,
           negativePrompt: prompt.negativePrompt,
           aspectRatio: prompt.aspectRatio,
           sampleCount: 1,
@@ -585,29 +595,45 @@ export class ComplianceAssembler {
   ): Promise<GeneratedImage[]> {
     const assembled: GeneratedImage[] = [];
 
+    console.log(`[${AGENT_NAME}] 🎨 Starting text composite for ${images.length} images`);
+    console.log(`[${AGENT_NAME}] 📝 Headline: "${copy.headline}"`);
+    console.log(`[${AGENT_NAME}] 📝 CTA: "${copy.cta}"`);
+
     for (const image of images) {
       try {
+        console.log(`[${AGENT_NAME}] Processing image: ${image.id}`);
+        console.log(`[${AGENT_NAME}]   GCS Path: ${image.gcsPath}`);
+        console.log(`[${AGENT_NAME}]   Dimensions: ${image.width}x${image.height}`);
+
         // Download image from GCS
+        console.log(`[${AGENT_NAME}]   Downloading from GCS...`);
         const imageBuffer = await this.downloadFromGCS(image.gcsPath);
+        console.log(`[${AGENT_NAME}]   ✅ Downloaded (${imageBuffer.length} bytes)`);
 
         // Create text overlay SVG
+        console.log(`[${AGENT_NAME}]   Creating text overlay SVG...`);
         const overlayBuffer = await this.createTextOverlay(
           image.width,
           image.height,
           copy,
           strategyBrief
         );
+        console.log(`[${AGENT_NAME}]   ✅ Overlay created (${overlayBuffer.length} bytes)`);
 
         // Composite the overlay onto the image
+        console.log(`[${AGENT_NAME}]   Compositing with Sharp...`);
         const composited = await sharp(imageBuffer)
           .composite([{ input: overlayBuffer, gravity: 'center' }])
           .png()
           .toBuffer();
+        console.log(`[${AGENT_NAME}]   ✅ Composite created (${composited.length} bytes)`);
 
         // Upload composited image
         const assembledId = `${image.id}-assembled`;
         const assembledPath = `${GCS_FOLDER}/${assembledId}.png`;
+        console.log(`[${AGENT_NAME}]   Uploading to GCS: ${assembledPath}`);
         const url = await this.uploadToGCS(composited, assembledPath);
+        console.log(`[${AGENT_NAME}]   ✅ Uploaded successfully`);
 
         assembled.push({
           id: assembledId,
@@ -618,12 +644,18 @@ export class ComplianceAssembler {
           aspectRatio: image.aspectRatio,
           hasTextOverlay: true,
         });
+
+        console.log(`[${AGENT_NAME}] ✅ Image ${image.id} composited successfully with text overlay`);
       } catch (error: any) {
-        console.warn(`[${AGENT_NAME}] Error compositing image ${image.id}:`, error.message);
+        console.error(`[${AGENT_NAME}] ❌ Error compositing image ${image.id}:`);
+        console.error(`[${AGENT_NAME}]   Error message: ${error.message}`);
+        console.error(`[${AGENT_NAME}]   Error stack: ${error.stack?.substring(0, 500)}`);
         // Still include the original image without overlay
         assembled.push({ ...image, hasTextOverlay: false });
       }
     }
+
+    console.log(`[${AGENT_NAME}] 🏁 Composite complete: ${assembled.filter(i => i.hasTextOverlay).length}/${assembled.length} images have text overlay`);
 
     return assembled;
   }
@@ -639,6 +671,7 @@ export class ComplianceAssembler {
 
   /**
    * Create text overlay using SVG
+   * Returns a PNG buffer for reliable compositing with Sharp
    */
   private async createTextOverlay(
     width: number,
@@ -649,63 +682,52 @@ export class ComplianceAssembler {
     // Get primary color from strategy
     const primaryColor = strategyBrief.colorPalette[0] || '#0066CC';
 
+    // Truncate headline if too long to prevent overflow
+    const maxHeadlineLength = 60;
+    const headline = copy.headline.length > maxHeadlineLength
+      ? copy.headline.substring(0, maxHeadlineLength - 3) + '...'
+      : copy.headline;
+
+    // Calculate responsive font sizes
+    const headlineFontSize = Math.min(Math.max(width * 0.05, 28), 56);
+    const ctaFontSize = Math.min(Math.max(width * 0.035, 18), 32);
+    const ctaButtonWidth = Math.min(width * 0.5, 300);
+    const ctaButtonHeight = Math.min(height * 0.08, 60);
+
     // Create SVG with text overlay
-    const svg = `
-      <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-          <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-            <feDropShadow dx="2" dy="2" stdDeviation="3" flood-color="#000000" flood-opacity="0.5"/>
-          </filter>
-        </defs>
+    const svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="2" dy="2" stdDeviation="3" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#000000;stop-opacity:0.7" />
+      <stop offset="25%" style="stop-color:#000000;stop-opacity:0.1" />
+      <stop offset="75%" style="stop-color:#000000;stop-opacity:0.1" />
+      <stop offset="100%" style="stop-color:#000000;stop-opacity:0.7" />
+    </linearGradient>
+  </defs>
+  <rect width="100%" height="100%" fill="url(#grad)" />
+  <text x="50%" y="${Math.floor(height * 0.12)}" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="${headlineFontSize}px" font-weight="bold" fill="#FFFFFF" filter="url(#shadow)">${this.escapeXml(headline)}</text>
+  <rect x="${Math.floor((width - ctaButtonWidth) / 2)}" y="${Math.floor(height * 0.82)}" width="${ctaButtonWidth}" height="${ctaButtonHeight}" rx="8" fill="${primaryColor}" filter="url(#shadow)"/>
+  <text x="50%" y="${Math.floor(height * 0.82 + ctaButtonHeight * 0.65)}" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="${ctaFontSize}px" font-weight="bold" fill="#FFFFFF">${this.escapeXml(copy.cta)}</text>
+</svg>`;
 
-        <!-- Semi-transparent gradient overlay for text legibility -->
-        <linearGradient id="grad" x1="0%" y1="0%" x2="0%" y2="100%">
-          <stop offset="0%" style="stop-color:#000000;stop-opacity:0.6" />
-          <stop offset="30%" style="stop-color:#000000;stop-opacity:0" />
-          <stop offset="70%" style="stop-color:#000000;stop-opacity:0" />
-          <stop offset="100%" style="stop-color:#000000;stop-opacity:0.6" />
-        </linearGradient>
-        <rect width="100%" height="100%" fill="url(#grad)" />
+    console.log(`[${AGENT_NAME}]   SVG dimensions: ${width}x${height}, headline font: ${headlineFontSize}px`);
 
-        <!-- Headline at top -->
-        <text
-          x="50%"
-          y="${height * 0.12}"
-          text-anchor="middle"
-          font-family="Arial, Helvetica, sans-serif"
-          font-size="${Math.min(width * 0.06, 48)}px"
-          font-weight="bold"
-          fill="#FFFFFF"
-          filter="url(#shadow)"
-        >
-          ${this.escapeXml(copy.headline)}
-        </text>
-
-        <!-- CTA button at bottom -->
-        <rect
-          x="${width * 0.3}"
-          y="${height * 0.82}"
-          width="${width * 0.4}"
-          height="${height * 0.08}"
-          rx="8"
-          fill="${primaryColor}"
-          filter="url(#shadow)"
-        />
-        <text
-          x="50%"
-          y="${height * 0.87}"
-          text-anchor="middle"
-          font-family="Arial, Helvetica, sans-serif"
-          font-size="${Math.min(width * 0.04, 28)}px"
-          font-weight="bold"
-          fill="#FFFFFF"
-        >
-          ${this.escapeXml(copy.cta)}
-        </text>
-      </svg>
-    `;
-
-    return Buffer.from(svg);
+    // Convert SVG to PNG buffer for reliable compositing
+    // Sharp handles SVG input and rasterizes it to PNG
+    try {
+      const pngBuffer = await sharp(Buffer.from(svg))
+        .png()
+        .toBuffer();
+      console.log(`[${AGENT_NAME}]   ✅ SVG converted to PNG (${pngBuffer.length} bytes)`);
+      return pngBuffer;
+    } catch (svgError: any) {
+      console.error(`[${AGENT_NAME}]   ❌ SVG to PNG conversion failed: ${svgError.message}`);
+      // Return raw SVG buffer as fallback (Sharp might still handle it)
+      return Buffer.from(svg);
+    }
   }
 
   /**
@@ -718,6 +740,30 @@ export class ComplianceAssembler {
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&apos;');
+  }
+
+  /**
+   * Get style-specific instruction to prepend to image generation prompts
+   * This ensures Gemini strongly adheres to the selected visual style
+   */
+  private getStyleInstruction(style: string): string {
+    const styleInstructions: Record<string, string> = {
+      'photorealistic': 'Generate a HIGH-QUALITY PHOTOREALISTIC image. The image should look like a real photograph taken with a professional camera. Use realistic lighting, authentic textures, and natural color tones.',
+
+      'ugc': 'Generate a USER-GENERATED CONTENT style image. The image should look like it was taken on a smartphone by a real person - slightly imperfect framing, natural lighting, candid feel. NOT polished or professional looking.',
+
+      'graphic_design': 'Generate a GRAPHIC DESIGN style image. Create a modern, eye-catching design with bold colors, geometric shapes, clean lines, and flat design elements. This should look like digital art or illustration, NOT a photograph.',
+
+      'text_centric': 'Generate a MINIMALIST BACKGROUND image optimized for TEXT OVERLAY. Create a clean, simple background with solid colors, subtle gradients, or abstract patterns. LOTS of negative space. The background should SUPPORT text, not compete with it. DO NOT include people or complex scenes - just clean abstract or minimal design.',
+
+      'editorial': 'Generate an EDITORIAL/MAGAZINE style photograph. High production value, polished but authentic lifestyle feel. Well-composed, professionally lit, but not stock-photo-like.',
+
+      'minimalist': 'Generate a MINIMALIST style image. Clean, simple composition with one clear focal point. Lots of negative space. Elegant simplicity. Scandinavian design influence.',
+
+      'illustration': 'Generate an ILLUSTRATION style image. Hand-drawn or digital illustration aesthetic, NOT a photograph. Artistic, stylized, with clear graphic elements.',
+    };
+
+    return styleInstructions[style] || styleInstructions['photorealistic'];
   }
 
   /**
