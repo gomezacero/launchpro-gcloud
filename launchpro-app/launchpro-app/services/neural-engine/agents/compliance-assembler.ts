@@ -47,13 +47,12 @@ const GEMINI_MODEL = 'gemini-2.0-flash-exp'; // Fallback for when Imagen quota e
 const GCS_FOLDER = 'neural-engine/creatives';
 
 // Load fonts for Satori text rendering
-// These are embedded in the build so they work in Vercel serverless
-let interBoldFont: ArrayBuffer | null = null;
-let interRegularFont: ArrayBuffer | null = null;
+// Using Inter Variable font (single TTF file supports all weights)
+let interFont: ArrayBuffer | null = null;
 
-function loadFonts(): { interBold: ArrayBuffer; interRegular: ArrayBuffer } {
-  if (!interBoldFont || !interRegularFont) {
-    // Satori requires OTF/TTF fonts, not WOFF
+function loadFont(): ArrayBuffer {
+  if (!interFont) {
+    // Satori requires TTF fonts - using Inter Variable which supports all weights
     const fontPaths = [
       join(process.cwd(), 'lib', 'fonts'),
       join(process.cwd(), 'launchpro-app', 'lib', 'fonts'),
@@ -61,21 +60,22 @@ function loadFonts(): { interBold: ArrayBuffer; interRegular: ArrayBuffer } {
 
     for (const fontsDir of fontPaths) {
       try {
-        interBoldFont = readFileSync(join(fontsDir, 'Inter-Bold.otf')).buffer as ArrayBuffer;
-        interRegularFont = readFileSync(join(fontsDir, 'Inter-Regular.otf')).buffer as ArrayBuffer;
-        console.log(`[${AGENT_NAME}] ✅ Fonts loaded successfully from ${fontsDir}`);
+        const fontPath = join(fontsDir, 'Inter-Variable.ttf');
+        const fontBuffer = readFileSync(fontPath);
+        interFont = fontBuffer.buffer.slice(fontBuffer.byteOffset, fontBuffer.byteOffset + fontBuffer.byteLength);
+        console.log(`[${AGENT_NAME}] ✅ Font loaded successfully from ${fontPath} (${fontBuffer.length} bytes)`);
         break;
       } catch (error: any) {
-        console.warn(`[${AGENT_NAME}] ⚠️ Could not load fonts from ${fontsDir}:`, error.message);
+        console.warn(`[${AGENT_NAME}] ⚠️ Could not load font from ${fontsDir}:`, error.message);
       }
     }
 
-    if (!interBoldFont || !interRegularFont) {
-      console.error(`[${AGENT_NAME}] ❌ Failed to load fonts from any location`);
-      throw new Error('Could not load fonts for text rendering');
+    if (!interFont) {
+      console.error(`[${AGENT_NAME}] ❌ Failed to load font from any location`);
+      throw new Error('Could not load font for text rendering');
     }
   }
-  return { interBold: interBoldFont!, interRegular: interRegularFont! };
+  return interFont;
 }
 
 // Text overlay configuration
@@ -750,8 +750,8 @@ export class ComplianceAssembler {
     console.log(`[${AGENT_NAME}]   Font sizes - Headline: ${headlineFontSize}px, CTA: ${ctaFontSize}px`);
 
     try {
-      // Load embedded fonts
-      const { interBold, interRegular } = loadFonts();
+      // Load embedded font (Inter Variable supports all weights)
+      const fontData = loadFont();
 
       // Create the overlay layout using Satori's React-like elements
       // Satori uses a subset of CSS flexbox for layout
@@ -842,19 +842,20 @@ export class ComplianceAssembler {
       };
 
       // Render with Satori to SVG
+      // Using Inter Variable font which supports multiple weights in one file
       const svg = await satori(overlayElement as any, {
         width,
         height,
         fonts: [
           {
             name: 'Inter',
-            data: interBold,
+            data: fontData,
             weight: 700,
             style: 'normal',
           },
           {
             name: 'Inter',
-            data: interRegular,
+            data: fontData,
             weight: 400,
             style: 'normal',
           },
