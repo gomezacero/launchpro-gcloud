@@ -53,24 +53,26 @@ let interRegularFont: ArrayBuffer | null = null;
 
 function loadFonts(): { interBold: ArrayBuffer; interRegular: ArrayBuffer } {
   if (!interBoldFont || !interRegularFont) {
-    try {
-      // Try to load from lib/fonts directory
-      const fontsDir = join(process.cwd(), 'lib', 'fonts');
-      interBoldFont = readFileSync(join(fontsDir, 'Inter-Bold.woff')).buffer as ArrayBuffer;
-      interRegularFont = readFileSync(join(fontsDir, 'Inter-Regular.woff')).buffer as ArrayBuffer;
-      console.log(`[${AGENT_NAME}] ✅ Fonts loaded successfully from lib/fonts`);
-    } catch (error: any) {
-      console.warn(`[${AGENT_NAME}] ⚠️ Could not load fonts from lib/fonts:`, error.message);
-      // Fallback: try node_modules location for development
+    // Satori requires OTF/TTF fonts, not WOFF
+    const fontPaths = [
+      join(process.cwd(), 'lib', 'fonts'),
+      join(process.cwd(), 'launchpro-app', 'lib', 'fonts'),
+    ];
+
+    for (const fontsDir of fontPaths) {
       try {
-        const altFontsDir = join(process.cwd(), 'launchpro-app', 'lib', 'fonts');
-        interBoldFont = readFileSync(join(altFontsDir, 'Inter-Bold.woff')).buffer as ArrayBuffer;
-        interRegularFont = readFileSync(join(altFontsDir, 'Inter-Regular.woff')).buffer as ArrayBuffer;
-        console.log(`[${AGENT_NAME}] ✅ Fonts loaded successfully from launchpro-app/lib/fonts`);
-      } catch (err: any) {
-        console.error(`[${AGENT_NAME}] ❌ Failed to load fonts:`, err.message);
-        throw new Error('Could not load fonts for text rendering');
+        interBoldFont = readFileSync(join(fontsDir, 'Inter-Bold.otf')).buffer as ArrayBuffer;
+        interRegularFont = readFileSync(join(fontsDir, 'Inter-Regular.otf')).buffer as ArrayBuffer;
+        console.log(`[${AGENT_NAME}] ✅ Fonts loaded successfully from ${fontsDir}`);
+        break;
+      } catch (error: any) {
+        console.warn(`[${AGENT_NAME}] ⚠️ Could not load fonts from ${fontsDir}:`, error.message);
       }
+    }
+
+    if (!interBoldFont || !interRegularFont) {
+      console.error(`[${AGENT_NAME}] ❌ Failed to load fonts from any location`);
+      throw new Error('Could not load fonts for text rendering');
     }
   }
   return { interBold: interBoldFont!, interRegular: interRegularFont! };

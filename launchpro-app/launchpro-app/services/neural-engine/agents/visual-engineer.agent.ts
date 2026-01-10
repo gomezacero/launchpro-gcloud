@@ -50,12 +50,12 @@ const PLATFORM_ASPECTS: Record<string, { ratio: '1:1' | '16:9' | '9:16' | '4:3';
 // ============================================================================
 const VERTICAL_VISUAL_REQUIREMENTS: Record<string, { required: string; examples: string }> = {
   'Car Loans': {
-    required: 'A CAR OR VEHICLE must be prominently featured in the image',
-    examples: 'car dealership, person with new car, car keys handover, family in car, driving scene',
+    required: 'A CAR (sedan, SUV, or truck) must be prominently featured. NO motorcycles, NO bikes, NO scooters - ONLY cars/automobiles.',
+    examples: 'car dealership with sedan/SUV, person with new car (4 wheels), car keys handover next to sedan, family in car, driving a car',
   },
   'Auto Loans': {
-    required: 'A CAR OR VEHICLE must be prominently featured in the image',
-    examples: 'car dealership, person with new car, car keys handover, family in car, driving scene',
+    required: 'A CAR (sedan, SUV, or truck) must be prominently featured. NO motorcycles, NO bikes, NO scooters - ONLY cars/automobiles.',
+    examples: 'car dealership with sedan/SUV, person with new car (4 wheels), car keys handover next to sedan, family in car, driving a car',
   },
   'Personal Loans': {
     required: 'FINANCIAL or MONEY-RELATED elements should be visible',
@@ -527,7 +527,7 @@ ${isBackgroundFocusedStyle ? `1. Create ABSTRACT/MINIMALIST backgrounds - NO peo
     // Transform parsed prompts to VisualPrompt format
     const visualPrompts: VisualPrompt[] = (parsed.prompts || []).map((p: any, i: number) => ({
       prompt: p.prompt || this.getDefaultPrompt(input, strategyBrief),
-      negativePrompt: this.buildNegativePrompt(strategyBrief),
+      negativePrompt: this.buildNegativePrompt(strategyBrief, input.offer.name),
       aspectRatio: this.validateAspectRatio(p.aspectRatio),
       style: visualStyle,
       safetyLevel: 'strict' as const,
@@ -543,7 +543,7 @@ ${isBackgroundFocusedStyle ? `1. Create ABSTRACT/MINIMALIST backgrounds - NO peo
       if (!hasAspect) {
         visualPrompts.push({
           prompt: this.getDefaultPrompt(input, strategyBrief),
-          negativePrompt: this.buildNegativePrompt(strategyBrief),
+          negativePrompt: this.buildNegativePrompt(strategyBrief, input.offer.name),
           aspectRatio: aspect.ratio,
           style: visualStyle,
           safetyLevel: 'strict',
@@ -586,7 +586,7 @@ ${isBackgroundFocusedStyle ? `1. Create ABSTRACT/MINIMALIST backgrounds - NO peo
   /**
    * Build negative prompt for brand safety
    */
-  private buildNegativePrompt(strategyBrief: StrategyBrief): string {
+  private buildNegativePrompt(strategyBrief: StrategyBrief, offerName?: string): string {
     const baseNegatives = [...STANDARD_NEGATIVE_PROMPTS];
 
     // Add style-specific negatives
@@ -594,6 +594,13 @@ ${isBackgroundFocusedStyle ? `1. Create ABSTRACT/MINIMALIST backgrounds - NO peo
       baseNegatives.push('studio lighting', 'professional backdrop', 'posed');
     } else if (strategyBrief.visualStyle === 'professional') {
       baseNegatives.push('messy', 'amateur', 'shaky');
+    }
+
+    // Add offer-specific negatives
+    const lowerOffer = (offerName || '').toLowerCase();
+    if (lowerOffer.includes('car') || lowerOffer.includes('auto')) {
+      // For car/auto loans, explicitly exclude motorcycles
+      baseNegatives.push('motorcycle', 'motorbike', 'scooter', 'bike', 'bicycle', 'moped');
     }
 
     return baseNegatives.join(', ');
@@ -650,7 +657,7 @@ ${isBackgroundFocusedStyle ? `1. Create ABSTRACT/MINIMALIST backgrounds - NO peo
     const aspects = PLATFORM_ASPECTS[input.platform] || PLATFORM_ASPECTS.META;
 
     const basePrompt = this.getDefaultPrompt(input, strategyBrief);
-    const negativePrompt = this.buildNegativePrompt(strategyBrief);
+    const negativePrompt = this.buildNegativePrompt(strategyBrief, input.offer.name);
 
     // Use user-selected visual style or fall back to strategy brief
     const visualStyle = this.mapToVisualPromptStyle(input.visualStyle || strategyBrief.visualStyle);
