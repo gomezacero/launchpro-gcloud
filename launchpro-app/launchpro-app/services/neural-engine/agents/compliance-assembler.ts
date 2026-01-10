@@ -552,6 +552,7 @@ export class ComplianceAssembler {
   /**
    * Select appropriate Safe Copy from retrieved assets
    * Supports custom text overlay when provided
+   * Priority: customTextOverlay > strategyBrief.keyMessage > platformCopy > safeCopies
    */
   private selectSafeCopy(
     strategyBrief: StrategyBrief,
@@ -568,20 +569,31 @@ export class ComplianceAssembler {
       };
     }
 
-    const safeCopies = retrievedAssets.safeCopies;
-
-    // Find headline
-    const headlineCopy = safeCopies.find((c) => c.copyType === 'headline' && c.approved);
-    const ctaCopy = safeCopies.find((c) => c.copyType === 'cta' && c.approved);
-
-    // Get platform adaptation as fallback
+    // Get platform adaptation
     const platformKey = Object.keys(strategyBrief.platformAdaptations)[0] || 'meta';
     const platformCopy = strategyBrief.platformAdaptations[platformKey as 'meta' | 'tiktok'];
 
+    // Find CTA from safeCopies (these are usually fine)
+    const safeCopies = retrievedAssets.safeCopies;
+    const ctaCopy = safeCopies.find((c) => c.copyType === 'cta' && c.approved);
+
+    // PRIORITY for headline:
+    // 1. strategyBrief.keyMessage (AI-generated, campaign-specific)
+    // 2. platformCopy.headline (platform-specific adaptation)
+    // 3. safeCopies headline (generic templates)
+    const headlineCopy = safeCopies.find((c) => c.copyType === 'headline' && c.approved);
+
+    // Use keyMessage first as it's more relevant and personalized
+    const selectedHeadline = strategyBrief.keyMessage || platformCopy?.headline || headlineCopy?.content || 'Discover More';
+    const selectedCta = platformCopy?.callToAction || ctaCopy?.content || 'Learn More';
+
+    console.log(`[${AGENT_NAME}] 📝 Selected headline: "${selectedHeadline}"`);
+    console.log(`[${AGENT_NAME}] 📝 Selected CTA: "${selectedCta}"`);
+
     return {
-      headline: headlineCopy?.content || platformCopy?.headline || strategyBrief.keyMessage,
+      headline: selectedHeadline,
       subheadline: undefined, // Optional
-      cta: ctaCopy?.content || platformCopy?.callToAction || 'Learn More',
+      cta: selectedCta,
     };
   }
 

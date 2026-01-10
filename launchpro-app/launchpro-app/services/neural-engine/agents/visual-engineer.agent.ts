@@ -338,6 +338,47 @@ export class VisualEngineerAgent {
     // Build style-specific instructions
     const styleInstructions = this.getStyleDescription(visualStyle);
 
+    // Check if this is a text-centric or minimalist style that prioritizes clean backgrounds
+    const isBackgroundFocusedStyle = ['text_centric', 'minimalist', 'graphic_design'].includes(visualStyle);
+
+    // For text_centric/minimalist styles, modify the visual requirements
+    const visualRequirementsSection = isBackgroundFocusedStyle
+      ? `## VISUAL STYLE TAKES PRIORITY - "${visualStyle.toUpperCase()}"
+⚠️ IMPORTANT: For this style, create CLEAN, MINIMALIST backgrounds that are optimized for text overlay.
+
+The product context is "${input.offer.name}", but DO NOT show literal products, people, or complex scenes.
+Instead, create abstract or minimal designs that EVOKE the theme through:
+- Color schemes associated with ${input.offer.name} (e.g., automotive blues/grays for car loans)
+- Subtle abstract shapes or gradients
+- Clean geometric patterns
+- Solid colors with depth
+- Negative space for text placement
+
+The background should SUPPORT text overlay, not compete with it.`
+      : `## ⚠️ CRITICAL VISUAL REQUIREMENT FOR "${input.offer.name.toUpperCase()}" ⚠️
+${verticalReqs.required}
+Example scenes: ${verticalReqs.examples}
+
+THIS IS MANDATORY - Every generated prompt MUST include the product/service visual element described above.
+An ad for "${input.offer.name}" without the relevant product visual will be rejected.`;
+
+    // Adjust style requirements based on whether it's background-focused
+    const styleRequirementsSection = isBackgroundFocusedStyle
+      ? `## STYLE REQUIREMENTS (USER SELECTED: "${visualStyle.toUpperCase()}")
+- Style: ${styleInstructions}
+- CRITICAL: Create ABSTRACT or MINIMALIST backgrounds, NOT realistic photos
+- CRITICAL: NO people, products, cars, or complex scenes
+- CRITICAL: NO text, logos, or watermarks in the image
+- Focus on: solid colors, gradients, geometric shapes, abstract patterns
+- Leave plenty of NEGATIVE SPACE for text overlay
+- Use colors that relate to ${input.offer.name} thematically`
+      : `## STYLE REQUIREMENTS (USER SELECTED: "${visualStyle.toUpperCase()}")
+- Style: ${styleInstructions}
+- CRITICAL: The image must look NATIVE to ${input.platform}. It should NOT look like a stock photo.
+- CRITICAL: NO text, logos, or watermarks in the image. Text will be added programmatically later.
+- Use natural, authentic settings and real-looking people
+- Lighting should be natural, slightly imperfect (like a real photo)`;
+
     return `You are an expert prompt engineer for AI image generation (Imagen 3).
 
 ## TASK
@@ -353,22 +394,12 @@ Generate image generation prompts for the following advertising campaign.
 - Color Palette: ${strategyBrief.colorPalette.join(', ')}
 - Psychological Angle: ${strategyBrief.primaryAngle}
 ${copyMasterContext}
-## ⚠️ CRITICAL VISUAL REQUIREMENT FOR "${input.offer.name.toUpperCase()}" ⚠️
-${verticalReqs.required}
-Example scenes: ${verticalReqs.examples}
-
-THIS IS MANDATORY - Every generated prompt MUST include the product/service visual element described above.
-An ad for "${input.offer.name}" without the relevant product visual will be rejected.
+${visualRequirementsSection}
 
 ## CULTURAL CODES TO INCORPORATE
-${culturalContext.visualCodes.join(', ') || 'Professional, authentic imagery'}
+${isBackgroundFocusedStyle ? 'Use colors and subtle design elements that resonate with ' + culturalContext.country : culturalContext.visualCodes.join(', ') || 'Professional, authentic imagery'}
 
-## STYLE REQUIREMENTS (USER SELECTED: "${visualStyle.toUpperCase()}")
-- Style: ${styleInstructions}
-- CRITICAL: The image must look NATIVE to ${input.platform}. It should NOT look like a stock photo.
-- CRITICAL: NO text, logos, or watermarks in the image. Text will be added programmatically later.
-- Use natural, authentic settings and real-looking people
-- Lighting should be natural, slightly imperfect (like a real photo)
+${styleRequirementsSection}
 
 ## ASPECT RATIOS NEEDED
 ${aspects.map((a) => `- ${a.ratio} (${a.width}x${a.height})`).join('\n')}
@@ -379,21 +410,26 @@ Generate ${VARIATIONS_PER_CONCEPT} variations for each aspect ratio. Respond in 
 {
   "prompts": [
     {
-      "prompt": "Detailed image generation prompt that INCLUDES the required visual element...",
+      "prompt": "${isBackgroundFocusedStyle ? 'Minimalist abstract background with...' : 'Detailed image generation prompt that INCLUDES the required visual element...'}",
       "aspectRatio": "1:1",
-      "style": "photorealistic|ugc",
+      "style": "${isBackgroundFocusedStyle ? 'minimalist' : 'photorealistic|ugc'}",
       "variation": 1
     }
   ]
 }
 
 IMPORTANT RULES FOR PROMPTS:
-1. ALWAYS include the required product/visual element for the vertical (${verticalReqs.required})
+${isBackgroundFocusedStyle ? `1. Create ABSTRACT/MINIMALIST backgrounds - NO people, products, or complex scenes
+2. Use colors that evoke ${input.offer.name} thematically
+3. Include plenty of negative space for text overlay
+4. Focus on gradients, shapes, and clean design
+5. Never include text, logos, or watermarks
+6. Keep it simple and elegant` : `1. ALWAYS include the required product/visual element for the vertical (${verticalReqs.required})
 2. Be specific about camera angle, lighting, and composition
 3. Include the person's apparent demographics when relevant
 4. Describe the setting authentically for ${culturalContext.country}
 5. Never mention text, logos, or overlays
-6. Focus on emotion and action, not static poses`;
+6. Focus on emotion and action, not static poses`}`;
   }
 
   /**
