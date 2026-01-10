@@ -205,11 +205,14 @@ class TonicService {
     // CRITICAL FIX: Tonic API expects parameters as QUERY PARAMETERS, not in the request body!
     // This is how your working Google Sheets code does it.
 
-    // NOTE: The campaign name is used as-is. The orchestrator already handles uniqueness
-    // if needed. We don't add suffixes here to preserve Looker tracking compatibility.
+    // Add timestamp suffix to ensure uniqueness in Tonic
+    // Format: DDMMHHMM (day, month, hour, minute) - predictable for Looker tracking
+    const now = new Date();
+    const timestamp = `${String(now.getDate()).padStart(2, '0')}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
+    const uniqueName = `${params.name}_${timestamp}`;
 
     const queryParams: Record<string, string | number> = {
-      name: params.name,
+      name: uniqueName,
       country: params.country,
       type: params.type,
       imprint: imprint,
@@ -232,7 +235,7 @@ class TonicService {
     // DO NOT include domain parameter - your working code doesn't send it!
     // Tonic handles domain automatically for RSOC campaigns
 
-    logger.info('tonic', `Creating ${params.type.toUpperCase()} campaign: "${params.name}"`, queryParams);
+    logger.info('tonic', `Creating ${params.type.toUpperCase()} campaign: "${uniqueName}" (original: "${params.name}")`, queryParams);
 
     try {
       // Build URL with query parameters (like your Google Sheets code)
