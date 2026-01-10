@@ -19,6 +19,10 @@ import { v1, helpers } from '@google-cloud/aiplatform';
 import { Storage } from '@google-cloud/storage';
 import { GoogleGenAI } from '@google/genai';
 import { getStorage } from '@/lib/gcs';
+import satori from 'satori';
+import { Resvg } from '@resvg/resvg-js';
+import { join } from 'path';
+import { readFileSync } from 'fs';
 import {
   AssembledCreative,
   CreativePackage,
@@ -41,6 +45,36 @@ const AGENT_NAME = 'ComplianceAssembler';
 const IMAGE_MODEL = 'imagen-3.0-generate-001';
 const GEMINI_MODEL = 'gemini-2.0-flash-exp'; // Fallback for when Imagen quota exceeded
 const GCS_FOLDER = 'neural-engine/creatives';
+
+// Load fonts for Satori text rendering
+// These are embedded in the build so they work in Vercel serverless
+let interBoldFont: ArrayBuffer | null = null;
+let interRegularFont: ArrayBuffer | null = null;
+
+function loadFonts(): { interBold: ArrayBuffer; interRegular: ArrayBuffer } {
+  if (!interBoldFont || !interRegularFont) {
+    try {
+      // Try to load from lib/fonts directory
+      const fontsDir = join(process.cwd(), 'lib', 'fonts');
+      interBoldFont = readFileSync(join(fontsDir, 'Inter-Bold.woff')).buffer as ArrayBuffer;
+      interRegularFont = readFileSync(join(fontsDir, 'Inter-Regular.woff')).buffer as ArrayBuffer;
+      console.log(`[${AGENT_NAME}] ✅ Fonts loaded successfully from lib/fonts`);
+    } catch (error: any) {
+      console.warn(`[${AGENT_NAME}] ⚠️ Could not load fonts from lib/fonts:`, error.message);
+      // Fallback: try node_modules location for development
+      try {
+        const altFontsDir = join(process.cwd(), 'launchpro-app', 'lib', 'fonts');
+        interBoldFont = readFileSync(join(altFontsDir, 'Inter-Bold.woff')).buffer as ArrayBuffer;
+        interRegularFont = readFileSync(join(altFontsDir, 'Inter-Regular.woff')).buffer as ArrayBuffer;
+        console.log(`[${AGENT_NAME}] ✅ Fonts loaded successfully from launchpro-app/lib/fonts`);
+      } catch (err: any) {
+        console.error(`[${AGENT_NAME}] ❌ Failed to load fonts:`, err.message);
+        throw new Error('Could not load fonts for text rendering');
+      }
+    }
+  }
+  return { interBold: interBoldFont!, interRegular: interRegularFont! };
+}
 
 // Text overlay configuration
 const TEXT_CONFIG = {
@@ -682,8 +716,11 @@ export class ComplianceAssembler {
   }
 
   /**
-   * Create text overlay using Sharp's text input feature
-   * This approach uses Sharp's built-in text rendering which works in serverless
+   * Create text overlay using Satori + Resvg
+   * This approach embeds fonts directly and works in Vercel serverless
+   *
+   * Uses React-like JSX elements that Satori converts to SVG,
+   * then Resvg renders to PNG with embedded fonts
    */
   private async createTextOverlay(
     width: number,
@@ -695,119 +732,157 @@ export class ComplianceAssembler {
     const primaryColor = strategyBrief.colorPalette[0] || '#0066CC';
 
     // Truncate headline if too long to prevent overflow
-    const maxHeadlineLength = 45;
+    const maxHeadlineLength = 60;
     const headline = copy.headline.length > maxHeadlineLength
       ? copy.headline.substring(0, maxHeadlineLength - 3) + '...'
       : copy.headline;
 
-    // Calculate responsive sizes
-    const padding = Math.floor(width * 0.05);
-    const ctaButtonWidth = Math.min(Math.floor(width * 0.45), 280);
-    const ctaButtonHeight = Math.min(Math.floor(height * 0.07), 55);
+    // Calculate responsive sizes based on image dimensions
+    const headlineFontSize = Math.max(28, Math.min(56, Math.floor(width / 18)));
+    const ctaFontSize = Math.max(16, Math.min(28, Math.floor(width / 35)));
+    const padding = Math.floor(width * 0.06);
 
-    console.log(`[${AGENT_NAME}]   Creating text overlay: ${width}x${height}, headline: "${headline.substring(0, 30)}..."`);
+    console.log(`[${AGENT_NAME}]   Creating text overlay with Satori: ${width}x${height}`);
+    console.log(`[${AGENT_NAME}]   Headline: "${headline.substring(0, 40)}..."`);
+    console.log(`[${AGENT_NAME}]   CTA: "${copy.cta}"`);
+    console.log(`[${AGENT_NAME}]   Font sizes - Headline: ${headlineFontSize}px, CTA: ${ctaFontSize}px`);
 
     try {
-      // Create gradient overlay for text readability (darker at top and bottom)
-      // This doesn't require fonts - just shapes
-      const gradientSvg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-          <linearGradient id="topGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" style="stop-color:#000000;stop-opacity:0.8" />
-            <stop offset="100%" style="stop-color:#000000;stop-opacity:0" />
-          </linearGradient>
-          <linearGradient id="bottomGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" style="stop-color:#000000;stop-opacity:0" />
-            <stop offset="100%" style="stop-color:#000000;stop-opacity:0.8" />
-          </linearGradient>
-        </defs>
-        <rect width="100%" height="25%" fill="url(#topGrad)" />
-        <rect y="75%" width="100%" height="25%" fill="url(#bottomGrad)" />
-      </svg>`;
+      // Load embedded fonts
+      const { interBold, interRegular } = loadFonts();
 
-      // Create CTA button background (just the colored rectangle, no text)
-      const ctaButtonSvg = `<svg width="${ctaButtonWidth}" height="${ctaButtonHeight}" xmlns="http://www.w3.org/2000/svg">
-        <rect width="100%" height="100%" rx="8" fill="${primaryColor}" />
-      </svg>`;
-
-      // Use Sharp's text input feature for headline
-      // This uses Pango/Cairo which handles fonts better
-      const headlineBuffer = await sharp({
-        text: {
-          text: `<span foreground="white" font_weight="bold">${this.escapeXml(headline)}</span>`,
-          font: 'sans-serif',
-          fontfile: undefined, // Use system font
-          width: width - padding * 2,
-          height: Math.floor(height * 0.15),
-          align: 'center',
-          rgba: true,
+      // Create the overlay layout using Satori's React-like elements
+      // Satori uses a subset of CSS flexbox for layout
+      const overlayElement = {
+        type: 'div',
+        props: {
+          style: {
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between',
+            width: '100%',
+            height: '100%',
+            padding: `${padding}px`,
+          },
+          children: [
+            // Top gradient + headline section
+            {
+              type: 'div',
+              props: {
+                style: {
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  background: 'linear-gradient(to bottom, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0) 100%)',
+                  padding: `${padding}px`,
+                  borderRadius: '12px',
+                },
+                children: [
+                  {
+                    type: 'div',
+                    props: {
+                      style: {
+                        color: 'white',
+                        fontSize: `${headlineFontSize}px`,
+                        fontWeight: 700,
+                        fontFamily: 'Inter',
+                        textAlign: 'center',
+                        textShadow: '2px 2px 8px rgba(0,0,0,0.8)',
+                        lineHeight: 1.2,
+                        maxWidth: '90%',
+                      },
+                      children: headline,
+                    },
+                  },
+                ],
+              },
+            },
+            // Spacer
+            { type: 'div', props: { style: { flex: 1 } } },
+            // Bottom gradient + CTA section
+            {
+              type: 'div',
+              props: {
+                style: {
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  background: 'linear-gradient(to top, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0) 100%)',
+                  padding: `${padding}px`,
+                  borderRadius: '12px',
+                },
+                children: [
+                  // CTA Button
+                  {
+                    type: 'div',
+                    props: {
+                      style: {
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        backgroundColor: primaryColor,
+                        color: 'white',
+                        fontSize: `${ctaFontSize}px`,
+                        fontWeight: 700,
+                        fontFamily: 'Inter',
+                        padding: `${Math.floor(ctaFontSize * 0.6)}px ${Math.floor(ctaFontSize * 1.5)}px`,
+                        borderRadius: '8px',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+                      },
+                      children: copy.cta,
+                    },
+                  },
+                ],
+              },
+            },
+          ],
         },
-      })
-        .png()
-        .toBuffer();
+      };
 
-      // Create CTA text
-      const ctaTextBuffer = await sharp({
-        text: {
-          text: `<span foreground="white" font_weight="bold">${this.escapeXml(copy.cta)}</span>`,
-          font: 'sans-serif',
-          width: ctaButtonWidth - 20,
-          height: ctaButtonHeight - 10,
-          align: 'center',
-          rgba: true,
+      // Render with Satori to SVG
+      const svg = await satori(overlayElement as any, {
+        width,
+        height,
+        fonts: [
+          {
+            name: 'Inter',
+            data: interBold,
+            weight: 700,
+            style: 'normal',
+          },
+          {
+            name: 'Inter',
+            data: interRegular,
+            weight: 400,
+            style: 'normal',
+          },
+        ],
+      });
+
+      console.log(`[${AGENT_NAME}]   ✅ Satori SVG generated (${svg.length} chars)`);
+
+      // Convert SVG to PNG using Resvg
+      const resvg = new Resvg(svg, {
+        fitTo: {
+          mode: 'width',
+          value: width,
         },
-      })
-        .png()
-        .toBuffer();
+      });
 
-      // Get dimensions of text buffers
-      const headlineMeta = await sharp(headlineBuffer).metadata();
-      const ctaTextMeta = await sharp(ctaTextBuffer).metadata();
+      const pngData = resvg.render();
+      const pngBuffer = pngData.asPng();
 
-      // Convert gradient and button SVGs to buffers
-      const [gradientBuffer, ctaButtonBuffer] = await Promise.all([
-        sharp(Buffer.from(gradientSvg)).png().toBuffer(),
-        sharp(Buffer.from(ctaButtonSvg)).png().toBuffer(),
-      ]);
-
-      // Calculate positions
-      const headlineTop = padding;
-      const headlineLeft = Math.floor((width - (headlineMeta.width || width)) / 2);
-      const ctaTop = height - ctaButtonHeight - padding;
-      const ctaLeft = Math.floor((width - ctaButtonWidth) / 2);
-      const ctaTextTop = ctaTop + Math.floor((ctaButtonHeight - (ctaTextMeta.height || 20)) / 2);
-      const ctaTextLeft = ctaLeft + Math.floor((ctaButtonWidth - (ctaTextMeta.width || 100)) / 2);
-
-      // Create transparent base and composite all layers
-      const overlay = await sharp({
-        create: {
-          width,
-          height,
-          channels: 4,
-          background: { r: 0, g: 0, b: 0, alpha: 0 },
-        },
-      })
-        .composite([
-          // Gradient overlay for readability
-          { input: gradientBuffer, top: 0, left: 0 },
-          // Headline at top
-          { input: headlineBuffer, top: headlineTop, left: Math.max(0, headlineLeft) },
-          // CTA button background
-          { input: ctaButtonBuffer, top: ctaTop, left: ctaLeft },
-          // CTA text
-          { input: ctaTextBuffer, top: ctaTextTop, left: Math.max(ctaLeft, ctaTextLeft) },
-        ])
-        .png()
-        .toBuffer();
-
-      console.log(`[${AGENT_NAME}]   ✅ Text overlay created with Sharp text (${overlay.length} bytes)`);
-      return overlay;
+      console.log(`[${AGENT_NAME}]   ✅ Text overlay created with Satori+Resvg (${pngBuffer.length} bytes)`);
+      return Buffer.from(pngBuffer);
     } catch (error: any) {
-      console.error(`[${AGENT_NAME}]   ❌ Text overlay creation failed: ${error.message}`);
-      console.error(`[${AGENT_NAME}]   Error stack: ${error.stack?.substring(0, 300)}`);
+      console.error(`[${AGENT_NAME}]   ❌ Satori text overlay creation failed: ${error.message}`);
+      console.error(`[${AGENT_NAME}]   Error stack: ${error.stack?.substring(0, 500)}`);
 
-      // Fallback: Create a simple gradient overlay without text
-      // The user will at least see the image with darkened areas
+      // Fallback: Create a simple gradient overlay without text using SVG
+      // This is guaranteed to work as it doesn't need fonts
+      const ctaButtonWidth = Math.min(Math.floor(width * 0.45), 280);
+      const ctaButtonHeight = Math.min(Math.floor(height * 0.07), 55);
+
       const fallbackSvg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <linearGradient id="topGrad" x1="0%" y1="0%" x2="0%" y2="100%">
@@ -827,18 +902,6 @@ export class ComplianceAssembler {
 
       return sharp(Buffer.from(fallbackSvg)).png().toBuffer();
     }
-  }
-
-  /**
-   * Escape XML special characters
-   */
-  private escapeXml(text: string): string {
-    return text
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&apos;');
   }
 
   /**
