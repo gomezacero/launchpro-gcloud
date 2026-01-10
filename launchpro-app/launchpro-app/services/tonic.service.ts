@@ -205,14 +205,10 @@ class TonicService {
     // CRITICAL FIX: Tonic API expects parameters as QUERY PARAMETERS, not in the request body!
     // This is how your working Google Sheets code does it.
 
-    // Add timestamp suffix to ensure uniqueness in Tonic
-    // Format: DDMMHHMM (day, month, hour, minute) - predictable for Looker tracking
-    const now = new Date();
-    const timestamp = `${String(now.getDate()).padStart(2, '0')}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
-    const uniqueName = `${params.name}_${timestamp}`;
+    // IMPORTANT: Use the campaign name EXACTLY as provided to preserve Looker tracking
+    // Only add suffix as fallback if Tonic returns "name already in use" error
 
-    const queryParams: Record<string, string | number> = {
-      name: uniqueName,
+    const baseQueryParams: Record<string, string | number> = {
       country: params.country,
       type: params.type,
       imprint: imprint,
@@ -221,102 +217,108 @@ class TonicService {
 
     // Add offer (name or ID)
     if (params.offer_id) {
-      queryParams.offer_id = params.offer_id;
+      baseQueryParams.offer_id = params.offer_id;
     }
     if (params.offer) {
-      queryParams.offer = params.offer;
+      baseQueryParams.offer = params.offer;
     }
 
     // Add headline_id for RSOC campaigns
     if (params.headline_id) {
-      queryParams.headline_id = params.headline_id;
+      baseQueryParams.headline_id = params.headline_id;
     }
 
     // DO NOT include domain parameter - your working code doesn't send it!
     // Tonic handles domain automatically for RSOC campaigns
 
-    logger.info('tonic', `Creating ${params.type.toUpperCase()} campaign: "${uniqueName}" (original: "${params.name}")`, queryParams);
+    // Helper function to attempt campaign creation
+    const attemptCreate = async (campaignName: string): Promise<{ success: boolean; campaignId?: number; error?: string }> => {
+      const queryParams = { ...baseQueryParams, name: campaignName };
 
-    try {
-      // Build URL with query parameters (like your Google Sheets code)
-      const urlParams = Object.entries(queryParams)
-        .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
-        .join('&');
+      logger.info('tonic', `Creating ${params.type.toUpperCase()} campaign: "${campaignName}"`, queryParams);
 
-      const fullUrl = `/privileged/v3/campaign/create?${urlParams}`;
+      try {
+        const urlParams = Object.entries(queryParams)
+          .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+          .join('&');
 
-      logger.info('tonic', `Full URL: ${fullUrl}`);
+        const fullUrl = `/privileged/v3/campaign/create?${urlParams}`;
+        const response = await client.post(fullUrl);
+        const campaignId = response.data;
 
-      // POST with empty body (like your Google Sheets code)
-      const response = await client.post(fullUrl);
-
-      // DEBUG: Log the complete raw response from Tonic
-      logger.info('tonic', '🔍 RAW TONIC RESPONSE:', {
-        status: response.status,
-        statusText: response.statusText,
-        headers: response.headers,
-        data: response.data,
-        dataType: typeof response.data,
-        dataIsArray: Array.isArray(response.data),
-      });
-
-      // Check if response is a valid campaign ID (should be a number)
-      const campaignId = response.data;
-
-      // Tonic API has a weird behavior: it returns HTTP 200 even on errors
-      // The error message is in the response body as a string
-      // Valid campaign IDs are numbers or numeric strings
-      // Error messages are strings like "You're not allowed to create a campaign"
-
-      if (typeof campaignId === 'string') {
-        // Check if it's a numeric string (valid campaign ID)
-        const numericId = Number(campaignId);
-        if (isNaN(numericId)) {
-          // This is an error message from Tonic (non-numeric string)
-          logger.error('tonic', `❌ Tonic returned error message: ${campaignId}`, {
-            request: queryParams,
-            response: response.data,
-            responseType: typeof response.data,
-          });
-          throw new Error(`Tonic API error: ${campaignId}`);
+        // Check if response is valid
+        if (typeof campaignId === 'string') {
+          const numericId = Number(campaignId);
+          if (isNaN(numericId)) {
+            // This is an error message from Tonic
+            return { success: false, error: campaignId };
+          }
+          return { success: true, campaignId: numericId };
+        } else if (typeof campaignId === 'number') {
+          return { success: true, campaignId };
+        } else {
+          return { success: false, error: `Unexpected response: ${JSON.stringify(campaignId)}` };
         }
-        // It's a numeric string, that's OK - convert to number
-        logger.success('tonic', `✅ Campaign created successfully with ID: ${numericId}`);
-        return numericId;
-      } else if (typeof campaignId === 'number') {
-        // Already a number, perfect
-        logger.success('tonic', `✅ Campaign created successfully with ID: ${campaignId}`);
-        return campaignId;
-      } else {
-        // Unexpected response type
-        logger.error('tonic', `❌ Unexpected response type from Tonic`, {
-          request: queryParams,
-          response: response.data,
-          responseType: typeof response.data,
-        });
-        throw new Error(`Unexpected response from Tonic API: ${JSON.stringify(campaignId)}`);
+      } catch (error: any) {
+        return { success: false, error: error.message };
       }
-    } catch (error: any) {
-      // DEBUG: Log COMPLETE error details
-      logger.error('tonic', `❌ CAMPAIGN CREATION AXIOS ERROR - Full Details:`, {
-        message: error.message,
-        request: {
-          method: 'POST',
-          url: '/privileged/v3/campaign/create',
-          params: queryParams,
-        },
-        response: error.response ? {
-          status: error.response.status,
-          statusText: error.response.statusText,
-          headers: error.response.headers,
-          data: error.response.data,
-          dataType: typeof error.response.data,
-        } : 'NO RESPONSE OBJECT',
-        isAxiosError: error.isAxiosError,
-        code: error.code,
-      });
-      throw error;
+    };
+
+    // ATTEMPT 1: Try with the exact name provided (preserves Looker tracking)
+    const firstAttempt = await attemptCreate(params.name);
+
+    if (firstAttempt.success) {
+      logger.success('tonic', `✅ Campaign created successfully with ID: ${firstAttempt.campaignId}`);
+      return firstAttempt.campaignId!;
     }
+
+    // Check if error is specifically about duplicate name
+    const isDuplicateError = firstAttempt.error?.toLowerCase().includes('name is already in use') ||
+                            firstAttempt.error?.toLowerCase().includes('already exists') ||
+                            firstAttempt.error?.toLowerCase().includes('choose another');
+
+    if (!isDuplicateError) {
+      // Not a duplicate error - throw immediately
+      logger.error('tonic', `❌ Tonic API error: ${firstAttempt.error}`);
+      throw new Error(`Tonic API error: ${firstAttempt.error}`);
+    }
+
+    // ATTEMPT 2: Duplicate name - try with minimal timestamp suffix
+    // Format: _HHMM (just hour and minute to minimize impact on Looker)
+    const now = new Date();
+    const minimalSuffix = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
+    const fallbackName = `${params.name}_${minimalSuffix}`;
+
+    logger.warn('tonic', `⚠️ Campaign name "${params.name}" already exists in Tonic. Retrying with fallback name: "${fallbackName}"`);
+
+    const secondAttempt = await attemptCreate(fallbackName);
+
+    if (secondAttempt.success) {
+      logger.success('tonic', `✅ Campaign created with fallback name. ID: ${secondAttempt.campaignId}`);
+      return secondAttempt.campaignId!;
+    }
+
+    // ATTEMPT 3: If still failing, add seconds for more uniqueness
+    const fullSuffix = `${minimalSuffix}${String(now.getSeconds()).padStart(2, '0')}`;
+    const lastResortName = `${params.name}_${fullSuffix}`;
+
+    logger.warn('tonic', `⚠️ Fallback name also exists. Last resort: "${lastResortName}"`);
+
+    const thirdAttempt = await attemptCreate(lastResortName);
+
+    if (thirdAttempt.success) {
+      logger.success('tonic', `✅ Campaign created with last-resort name. ID: ${thirdAttempt.campaignId}`);
+      return thirdAttempt.campaignId!;
+    }
+
+    // All attempts failed
+    logger.error('tonic', `❌ All attempts to create campaign failed`, {
+      originalName: params.name,
+      fallbackName,
+      lastResortName,
+      lastError: thirdAttempt.error,
+    });
+    throw new Error(`Tonic API error: ${thirdAttempt.error}`);
   }
 
   /**
