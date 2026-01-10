@@ -37,6 +37,9 @@ interface Account {
   isActive: boolean;
 }
 
+// Visual style types for Neural Engine image generation
+type VisualStyleType = 'photography' | 'ugc' | 'graphic_design' | 'text_centric' | 'editorial' | 'minimalist';
+
 interface PlatformConfig {
   platform: 'META' | 'TIKTOK' | 'TABOOLA';
   accountId?: string;
@@ -46,6 +49,9 @@ interface PlatformConfig {
   generateWithAI: boolean;
   aiMediaType?: 'IMAGE' | 'VIDEO' | 'BOTH';  // What type of media to generate with AI
   aiMediaCount?: number;  // How many images/videos to generate (1-5)
+  aiVisualStyle?: VisualStyleType;  // Visual style for AI image generation
+  aiIncludeTextOverlay?: boolean;  // Whether to include text overlay on generated images
+  aiUseNeuralEngine?: boolean;  // Use Neural Engine Pipeline instead of basic generation
   adsPerAdSet?: number;  // For ABO: How many ads to put in each ad set (1-5)
   uploadedImages?: UploadedFile[];
   uploadedVideos?: UploadedFile[];
@@ -1418,6 +1424,7 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
 
   /**
    * Generate AI images for preview in the wizard
+   * Supports both basic generation and Neural Engine Pipeline
    */
   const generateAIImages = async (platformIndex: number) => {
     const platform = formData.platforms[platformIndex];
@@ -1438,29 +1445,74 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
 
     const count = platform.aiMediaCount || 1;
     const selectedOffer = offers.find(o => o.id === formData.offerId);
+    const useNeuralEngine = platform.aiUseNeuralEngine !== false; // Default to Neural Engine
 
     setGeneratingImages(prev => ({ ...prev, [platformIndex]: true }));
     setGenerateImagesError(prev => ({ ...prev, [platformIndex]: null }));
 
     try {
-      const response = await fetch('/api/ai/generate-images', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          count,
-          category: selectedOffer?.vertical || selectedOffer?.category || selectedOffer?.niche || selectedOffer?.name || 'General',
-          country: formData.country,
-          language: formData.language,
-          adTitle,
-          copyMaster: formData.copyMaster,
-          platform: platform.platform,
-        }),
-      });
+      let result;
 
-      const result = await response.json();
+      if (useNeuralEngine) {
+        // Use Neural Engine Pipeline (5-agent system)
+        console.log('[Wizard] Using Neural Engine Pipeline for image generation');
+        const response = await fetch('/api/ai/generate-images-neural', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            offerId: selectedOffer?.id || formData.offerId,
+            offerName: selectedOffer?.name || 'Campaign',
+            vertical: selectedOffer?.vertical || selectedOffer?.category || selectedOffer?.niche || 'General',
+            country: formData.country,
+            language: formData.language,
+            platform: platform.platform,
+            copyMaster: formData.copyMaster,
+            visualStyle: platform.aiVisualStyle || 'photography',
+            includeTextOverlay: platform.aiIncludeTextOverlay !== false, // Default true
+            previewMode: true,
+          }),
+        });
 
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to generate images');
+        result = await response.json();
+
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to generate images with Neural Engine');
+        }
+
+        // Log strategy info from Neural Engine
+        if (result.data.strategy) {
+          console.log('[Wizard] Neural Engine Strategy:', {
+            angle: result.data.strategy.angle,
+            concept: result.data.strategy.visualConcept,
+          });
+        }
+
+        // Log any warnings
+        if (result.data.warnings && result.data.warnings.length > 0) {
+          console.warn('[Wizard] Neural Engine Warnings:', result.data.warnings);
+        }
+      } else {
+        // Use basic generation (original behavior)
+        console.log('[Wizard] Using basic image generation');
+        const response = await fetch('/api/ai/generate-images', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            count,
+            category: selectedOffer?.vertical || selectedOffer?.category || selectedOffer?.niche || selectedOffer?.name || 'General',
+            country: formData.country,
+            language: formData.language,
+            adTitle,
+            copyMaster: formData.copyMaster,
+            platform: platform.platform,
+          }),
+        });
+
+        result = await response.json();
+
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to generate images');
+        }
       }
 
       // Add new images to existing ones (allows mixing)
@@ -3774,6 +3826,78 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
                           </div>
 
                         </div>
+
+                        {/* Neural Engine Advanced Options - Only for Images */}
+                        {platform.platform === 'META' && (platform.aiMediaType === 'IMAGE' || platform.aiMediaType === 'BOTH' || !platform.aiMediaType) && (
+                          <div className="mt-4 p-3 bg-gradient-to-r from-purple-100 to-pink-100 rounded-lg border border-purple-200">
+                            <div className="flex items-center justify-between mb-3">
+                              <h5 className="text-sm font-semibold text-purple-900 flex items-center gap-2">
+                                <span>🧠</span> Neural Engine Options
+                              </h5>
+                              <span className="px-2 py-0.5 bg-purple-600 text-white text-xs font-semibold rounded-full">
+                                Powered by AI Agents
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                              {/* Visual Style Selector */}
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                  Visual Style
+                                </label>
+                                <select
+                                  value={platform.aiVisualStyle || 'photography'}
+                                  onChange={(e) => updatePlatform(index, 'aiVisualStyle', e.target.value)}
+                                  className="w-full px-3 py-2 border border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 bg-white text-sm"
+                                >
+                                  <option value="photography">📸 Photography (Realistic)</option>
+                                  <option value="ugc">📱 UGC (User-Generated)</option>
+                                  <option value="graphic_design">🎨 Graphic Design</option>
+                                  <option value="text_centric">📝 Text-Focused</option>
+                                  <option value="editorial">📰 Editorial (Magazine)</option>
+                                  <option value="minimalist">✨ Minimalist</option>
+                                </select>
+                                <p className="text-xs text-purple-600 mt-1">
+                                  {platform.aiVisualStyle === 'ugc' && 'Looks like smartphone content'}
+                                  {platform.aiVisualStyle === 'graphic_design' && 'Bold colors & graphics'}
+                                  {platform.aiVisualStyle === 'text_centric' && 'Optimized for text overlay'}
+                                  {platform.aiVisualStyle === 'editorial' && 'Magazine-quality style'}
+                                  {platform.aiVisualStyle === 'minimalist' && 'Clean & simple design'}
+                                  {(!platform.aiVisualStyle || platform.aiVisualStyle === 'photography') && 'Professional realistic photos'}
+                                </p>
+                              </div>
+
+                              {/* Text Overlay Toggle */}
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                  Text Overlay
+                                </label>
+                                <div
+                                  className="flex items-center justify-between p-2 border border-purple-300 rounded-lg bg-white cursor-pointer hover:border-purple-400"
+                                  onClick={() => updatePlatform(index, 'aiIncludeTextOverlay', !platform.aiIncludeTextOverlay)}
+                                >
+                                  <span className="text-sm text-gray-700">
+                                    {platform.aiIncludeTextOverlay !== false ? '📝 With Text' : '🖼️ Clean Image'}
+                                  </span>
+                                  <div className={`
+                                    relative w-10 h-5 rounded-full transition-colors duration-200
+                                    ${platform.aiIncludeTextOverlay !== false ? 'bg-purple-500' : 'bg-gray-300'}
+                                  `}>
+                                    <div className={`
+                                      absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200
+                                      ${platform.aiIncludeTextOverlay !== false ? 'translate-x-5' : 'translate-x-0.5'}
+                                    `} />
+                                  </div>
+                                </div>
+                                <p className="text-xs text-purple-600 mt-1">
+                                  {platform.aiIncludeTextOverlay !== false
+                                    ? 'Headline & CTA will be added'
+                                    : 'Image without text overlay'}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
 
                         {/* Generate Images Button - Only for Meta with IMAGE or BOTH */}
                         {platform.platform === 'META' && (platform.aiMediaType === 'IMAGE' || platform.aiMediaType === 'BOTH' || !platform.aiMediaType) && (

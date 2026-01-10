@@ -149,24 +149,36 @@ export class ComplianceAssembler {
     const modelUsage: ModelUsage[] = [];
     let warning: string | undefined;
 
+    // Check if text overlay should be included (default: true for backwards compatibility)
+    const includeTextOverlay = input.includeTextOverlay !== false;
+
     console.log(`[${AGENT_NAME}] Starting creative assembly for ${input.offer.name}`);
+    console.log(`[${AGENT_NAME}] 📝 Text overlay: ${includeTextOverlay ? 'ENABLED' : 'DISABLED'}`);
+    console.log(`[${AGENT_NAME}] 🎨 Visual style: ${input.visualStyle || 'photography'}`);
 
     try {
       // Step 1: Generate base images from prompts (with Gemini fallback if Imagen quota exceeded)
       const { images: generatedImages, quotaExceeded, usedFallback } = await this.generateImagesWithFallback(visualPrompts, modelUsage);
 
       // Step 2: Select appropriate Safe Copy
-      const selectedCopy = this.selectSafeCopy(strategyBrief, retrievedAssets);
+      const selectedCopy = this.selectSafeCopy(strategyBrief, retrievedAssets, input.customTextOverlay);
 
       let assembledImages: GeneratedImage[] = [];
 
       if (generatedImages.length > 0) {
-        // Step 3: Composite text onto images (only if we have images)
-        assembledImages = await this.compositeImages(
-          generatedImages,
-          selectedCopy,
-          strategyBrief
-        );
+        // Step 3: Composite text onto images ONLY if includeTextOverlay is true
+        if (includeTextOverlay) {
+          assembledImages = await this.compositeImages(
+            generatedImages,
+            selectedCopy,
+            strategyBrief
+          );
+          console.log(`[${AGENT_NAME}] ✅ Text overlay applied to ${assembledImages.length} images`);
+        } else {
+          // No text overlay - return base images as-is
+          assembledImages = generatedImages;
+          console.log(`[${AGENT_NAME}] ✅ Returning ${assembledImages.length} images WITHOUT text overlay`);
+        }
 
         // Add warning if we used fallback
         if (usedFallback) {
@@ -529,11 +541,23 @@ export class ComplianceAssembler {
 
   /**
    * Select appropriate Safe Copy from retrieved assets
+   * Supports custom text overlay when provided
    */
   private selectSafeCopy(
     strategyBrief: StrategyBrief,
-    retrievedAssets: RetrievedAssets
+    retrievedAssets: RetrievedAssets,
+    customTextOverlay?: string
   ): { headline: string; subheadline?: string; cta: string } {
+    // If custom text overlay is provided, use it as the headline
+    if (customTextOverlay) {
+      console.log(`[${AGENT_NAME}] Using custom text overlay: "${customTextOverlay.substring(0, 50)}..."`);
+      return {
+        headline: customTextOverlay,
+        subheadline: undefined,
+        cta: 'Learn More',
+      };
+    }
+
     const safeCopies = retrievedAssets.safeCopies;
 
     // Find headline

@@ -323,13 +323,20 @@ export class VisualEngineerAgent {
     // e.g., "Car Loans" is more specific than "Finance"
     const verticalReqs = this.getVerticalRequirements(input.offer.name, input.offer.vertical);
 
+    // Use user-selected visual style if provided, otherwise use strategy brief
+    const visualStyle = input.visualStyle || strategyBrief.visualStyle;
+
     console.log(`[${AGENT_NAME}] 📋 Building prompt for offer: "${input.offer.name}" (vertical: "${input.offer.vertical}")`);
     console.log(`[${AGENT_NAME}] 📋 Visual requirements: ${verticalReqs.required}`);
+    console.log(`[${AGENT_NAME}] 🎨 Visual style: ${visualStyle} (user-selected: ${!!input.visualStyle})`);
 
     // Include copyMaster if available - it's critical context from the manager
     const copyMasterContext = input.copyMaster
       ? `\n## COPY MASTER (Manager's Ad Message)\n"${input.copyMaster}"\nThis text will be overlaid on the image. The visual should SUPPORT and COMPLEMENT this message.\n`
       : '';
+
+    // Build style-specific instructions
+    const styleInstructions = this.getStyleDescription(visualStyle);
 
     return `You are an expert prompt engineer for AI image generation (Imagen 3).
 
@@ -341,7 +348,7 @@ Generate image generation prompts for the following advertising campaign.
 - Country: ${culturalContext.country}
 - Offer/Product: ${input.offer.name}
 - Vertical Category: ${input.offer.vertical}
-- Visual Style: ${strategyBrief.visualStyle}
+- Visual Style: ${visualStyle}
 - Visual Concept: ${strategyBrief.visualConcept}
 - Color Palette: ${strategyBrief.colorPalette.join(', ')}
 - Psychological Angle: ${strategyBrief.primaryAngle}
@@ -356,8 +363,8 @@ An ad for "${input.offer.name}" without the relevant product visual will be reje
 ## CULTURAL CODES TO INCORPORATE
 ${culturalContext.visualCodes.join(', ') || 'Professional, authentic imagery'}
 
-## STYLE REQUIREMENTS
-- Style: ${this.getStyleDescription(strategyBrief.visualStyle)}
+## STYLE REQUIREMENTS (USER SELECTED: "${visualStyle.toUpperCase()}")
+- Style: ${styleInstructions}
 - CRITICAL: The image must look NATIVE to ${input.platform}. It should NOT look like a stock photo.
 - CRITICAL: NO text, logos, or watermarks in the image. Text will be added programmatically later.
 - Use natural, authentic settings and real-looking people
@@ -434,16 +441,24 @@ IMPORTANT RULES FOR PROMPTS:
 
   /**
    * Get style description for prompt
+   * Supports multiple visual styles for creative variety
    */
   private getStyleDescription(style: string): string {
     const descriptions: Record<string, string> = {
-      ugc: 'User-generated content style. Looks like it was shot on a smartphone by a real person. Slightly imperfect framing, natural lighting, casual setting.',
-      professional: 'Clean, professional photography. Well-lit, properly composed, but still authentic and relatable.',
+      // Original styles
+      ugc: 'User-generated content style. Looks like it was shot on a smartphone by a real person. Slightly imperfect framing, natural lighting, casual setting. Amateur aesthetic.',
+      professional: 'Clean, professional photography. Well-lit, properly composed, but still authentic and relatable. Studio quality.',
       native: 'Platform-native style. Looks like organic content that would appear in feeds. Authentic, engaging, scroll-stopping.',
-      editorial: 'Magazine-quality photography. Polished but not overly staged. Lifestyle editorial feel.',
+      editorial: 'Magazine-quality photography. Polished but not overly staged. Lifestyle editorial feel. High production value.',
+
+      // NEW styles for creative variety
+      photography: 'High-quality realistic photography. Natural lighting, authentic setting, real-looking subjects. Professional but not stock-photo-like.',
+      graphic_design: 'Clean graphic design aesthetic. Bold colors, geometric shapes, modern illustrations. Flat design elements with depth. Digital art style that feels contemporary and eye-catching.',
+      text_centric: 'Minimalist background design optimized for text overlay. Solid colors, subtle gradients, or abstract patterns. Clean space for headline placement. Background should support, not compete with, text.',
+      minimalist: 'Clean, simple, minimal elements. Lots of negative space. One clear focal point. Scandinavian design influence. Elegant simplicity.',
     };
 
-    return descriptions[style] || descriptions.native;
+    return descriptions[style] || descriptions.photography;
   }
 
   /**
@@ -470,15 +485,20 @@ IMPORTANT RULES FOR PROMPTS:
 
     const aspects = PLATFORM_ASPECTS[input.platform] || PLATFORM_ASPECTS.META;
 
+    // Map input visual style to VisualPrompt style
+    const visualStyle = this.mapToVisualPromptStyle(input.visualStyle || strategyBrief.visualStyle);
+
     // Transform parsed prompts to VisualPrompt format
     const visualPrompts: VisualPrompt[] = (parsed.prompts || []).map((p: any, i: number) => ({
       prompt: p.prompt || this.getDefaultPrompt(input, strategyBrief),
       negativePrompt: this.buildNegativePrompt(strategyBrief),
       aspectRatio: this.validateAspectRatio(p.aspectRatio),
-      style: p.style === 'ugc' ? 'ugc' : 'photorealistic',
+      style: visualStyle,
       safetyLevel: 'strict' as const,
       conceptId: `concept-${strategyBrief.primaryAngle}`,
       variation: p.variation || i + 1,
+      includeTextOverlay: input.includeTextOverlay,
+      textOverlayContent: input.customTextOverlay,
     }));
 
     // Ensure we have at least one prompt per aspect ratio
@@ -489,15 +509,34 @@ IMPORTANT RULES FOR PROMPTS:
           prompt: this.getDefaultPrompt(input, strategyBrief),
           negativePrompt: this.buildNegativePrompt(strategyBrief),
           aspectRatio: aspect.ratio,
-          style: strategyBrief.visualStyle === 'ugc' ? 'ugc' : 'photorealistic',
+          style: visualStyle,
           safetyLevel: 'strict',
           conceptId: `concept-${strategyBrief.primaryAngle}`,
           variation: 1,
+          includeTextOverlay: input.includeTextOverlay,
+          textOverlayContent: input.customTextOverlay,
         });
       }
     }
 
     return visualPrompts;
+  }
+
+  /**
+   * Map visual style to VisualPrompt style type
+   */
+  private mapToVisualPromptStyle(style: string): 'photorealistic' | 'illustration' | 'ugc' | 'graphic_design' | 'text_centric' | 'editorial' | 'minimalist' {
+    const styleMap: Record<string, 'photorealistic' | 'illustration' | 'ugc' | 'graphic_design' | 'text_centric' | 'editorial' | 'minimalist'> = {
+      'photography': 'photorealistic',
+      'professional': 'photorealistic',
+      'native': 'photorealistic',
+      'ugc': 'ugc',
+      'graphic_design': 'graphic_design',
+      'text_centric': 'text_centric',
+      'editorial': 'editorial',
+      'minimalist': 'minimalist',
+    };
+    return styleMap[style] || 'photorealistic';
   }
 
   /**
@@ -577,6 +616,9 @@ IMPORTANT RULES FOR PROMPTS:
     const basePrompt = this.getDefaultPrompt(input, strategyBrief);
     const negativePrompt = this.buildNegativePrompt(strategyBrief);
 
+    // Use user-selected visual style or fall back to strategy brief
+    const visualStyle = this.mapToVisualPromptStyle(input.visualStyle || strategyBrief.visualStyle);
+
     const prompts: VisualPrompt[] = [];
 
     for (const aspect of aspects) {
@@ -585,10 +627,12 @@ IMPORTANT RULES FOR PROMPTS:
           prompt: basePrompt,
           negativePrompt,
           aspectRatio: aspect.ratio,
-          style: strategyBrief.visualStyle === 'ugc' ? 'ugc' : 'photorealistic',
+          style: visualStyle,
           safetyLevel: 'strict',
           conceptId: `fallback-${strategyBrief.primaryAngle}`,
           variation: v,
+          includeTextOverlay: input.includeTextOverlay,
+          textOverlayContent: input.customTextOverlay,
         });
       }
     }

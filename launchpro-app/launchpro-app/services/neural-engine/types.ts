@@ -20,10 +20,28 @@ export interface NeuralEngineInput {
   communicationAngle?: CommunicationAngle;
   copyMaster?: string;
 
+  // Visual customization (NEW)
+  visualStyle?: VisualStyleType;
+  includeTextOverlay?: boolean;
+  customTextOverlay?: string; // If provided, use this instead of safe copy
+
   // Feature flags
   useCache?: boolean;
   useFallbackModels?: boolean;
+  previewMode?: boolean; // If true, skip some optimizations for faster preview
 }
+
+/**
+ * Visual Style Types for Image Generation
+ * Provides variety in generated creative assets
+ */
+export type VisualStyleType =
+  | 'photography'      // Realistic photography (current default)
+  | 'ugc'              // User-generated content style (amateur/native)
+  | 'graphic_design'   // Clean graphic design, illustrations
+  | 'text_centric'     // Bold text-focused design with minimal imagery
+  | 'editorial'        // Magazine/lifestyle editorial style
+  | 'minimalist';      // Clean, simple, minimal elements
 
 export interface OfferContext {
   id: string;
@@ -194,7 +212,7 @@ export interface VisualPrompt {
 
   // Specifications
   aspectRatio: '1:1' | '16:9' | '9:16' | '4:3';
-  style: 'photorealistic' | 'illustration' | 'ugc';
+  style: 'photorealistic' | 'illustration' | 'ugc' | 'graphic_design' | 'text_centric' | 'editorial' | 'minimalist';
 
   // Brand safety
   safetyLevel: 'strict' | 'moderate';
@@ -202,6 +220,10 @@ export interface VisualPrompt {
   // Reference
   conceptId: string;
   variation: number;
+
+  // Text overlay configuration (NEW)
+  includeTextOverlay?: boolean;
+  textOverlayContent?: string;
 }
 
 export interface AssembledCreative {

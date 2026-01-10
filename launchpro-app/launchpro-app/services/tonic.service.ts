@@ -235,7 +235,7 @@ class TonicService {
     const attemptCreate = async (campaignName: string): Promise<{ success: boolean; campaignId?: number; error?: string }> => {
       const queryParams = { ...baseQueryParams, name: campaignName };
 
-      logger.info('tonic', `Creating ${params.type.toUpperCase()} campaign: "${campaignName}"`, queryParams);
+      logger.info('tonic', `Creating ${(params.type || 'rsoc').toUpperCase()} campaign: "${campaignName}"`, queryParams);
 
       try {
         const urlParams = Object.entries(queryParams)

@@ -311,6 +311,15 @@ Reference ${i + 1}:
     // Validate and transform
     const platformKey = input.platform.toLowerCase();
 
+    // Use user-selected visualStyle if provided, otherwise use AI-generated
+    const visualStyle = input.visualStyle
+      ? this.mapInputStyleToStrategyStyle(input.visualStyle)
+      : this.validateVisualStyle(parsed.visualStyle);
+
+    if (input.visualStyle) {
+      console.log(`[${AGENT_NAME}] Using user-selected visual style: ${input.visualStyle} -> ${visualStyle}`);
+    }
+
     return {
       primaryAngle: this.validateAngle(parsed.primaryAngle),
       secondaryAngle: parsed.secondaryAngle ? this.validateAngle(parsed.secondaryAngle) : undefined,
@@ -318,7 +327,7 @@ Reference ${i + 1}:
       keyMessage: parsed.keyMessage || `Quality ${input.offer.vertical} for you.`,
       emotionalHook: parsed.emotionalHook || 'Start your journey today.',
       visualConcept: parsed.visualConcept || 'Professional, authentic imagery',
-      visualStyle: this.validateVisualStyle(parsed.visualStyle),
+      visualStyle,
       colorPalette: Array.isArray(parsed.colorPalette) ? parsed.colorPalette : ['#0066CC', '#FFFFFF'],
       platformAdaptations: {
         [platformKey]: this.validatePlatformAdaptation(
@@ -327,6 +336,23 @@ Reference ${i + 1}:
         ),
       },
     };
+  }
+
+  /**
+   * Map user-input visual style to strategy brief style
+   * Allows for broader style selection from the UI
+   */
+  private mapInputStyleToStrategyStyle(inputStyle: string): 'ugc' | 'professional' | 'native' | 'editorial' {
+    const styleMapping: Record<string, 'ugc' | 'professional' | 'native' | 'editorial'> = {
+      'photography': 'professional',
+      'ugc': 'ugc',
+      'graphic_design': 'native', // Map to native with graphic design hints in Visual Engineer
+      'text_centric': 'native',   // Map to native with text-centric hints
+      'editorial': 'editorial',
+      'minimalist': 'professional', // Map to professional with minimalist hints
+    };
+
+    return styleMapping[inputStyle] || 'native';
   }
 
   /**
