@@ -2,12 +2,10 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   // Copy font files to serverless functions
-  experimental: {
-    outputFileTracingIncludes: {
-      '/api/**/*': ['./lib/fonts/**/*'],
-    },
+  outputFileTracingIncludes: {
+    '/api/**/*': ['./lib/fonts/**/*'],
   },
-  // Increase serverless function timeout for image generation
+  // Mark native packages as external for serverless
   serverExternalPackages: ['sharp', '@resvg/resvg-js'],
 };
 
