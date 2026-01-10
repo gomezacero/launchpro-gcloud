@@ -47,12 +47,13 @@ const GEMINI_MODEL = 'gemini-2.0-flash-exp'; // Fallback for when Imagen quota e
 const GCS_FOLDER = 'neural-engine/creatives';
 
 // Load fonts for Satori text rendering
-// Using Inter Variable font (single TTF file supports all weights)
-let interFont: ArrayBuffer | null = null;
+// Using Roboto static TTF fonts (Regular and Bold)
+let robotoRegular: ArrayBuffer | null = null;
+let robotoBold: ArrayBuffer | null = null;
 
-function loadFont(): ArrayBuffer {
-  if (!interFont) {
-    // Satori requires TTF fonts - using Inter Variable which supports all weights
+function loadFonts(): { regular: ArrayBuffer; bold: ArrayBuffer } {
+  if (!robotoRegular || !robotoBold) {
+    // Satori requires static TTF fonts - using Roboto Regular and Bold
     const fontPaths = [
       join(process.cwd(), 'lib', 'fonts'),
       join(process.cwd(), 'launchpro-app', 'lib', 'fonts'),
@@ -60,22 +61,30 @@ function loadFont(): ArrayBuffer {
 
     for (const fontsDir of fontPaths) {
       try {
-        const fontPath = join(fontsDir, 'Inter-Variable.ttf');
-        const fontBuffer = readFileSync(fontPath);
-        interFont = fontBuffer.buffer.slice(fontBuffer.byteOffset, fontBuffer.byteOffset + fontBuffer.byteLength);
-        console.log(`[${AGENT_NAME}] ✅ Font loaded successfully from ${fontPath} (${fontBuffer.length} bytes)`);
+        // Load Regular font
+        const regularPath = join(fontsDir, 'Roboto-Regular.ttf');
+        const regularBuffer = readFileSync(regularPath);
+        robotoRegular = regularBuffer.buffer.slice(regularBuffer.byteOffset, regularBuffer.byteOffset + regularBuffer.byteLength);
+        console.log(`[${AGENT_NAME}] ✅ Roboto Regular loaded from ${regularPath} (${regularBuffer.length} bytes)`);
+
+        // Load Bold font
+        const boldPath = join(fontsDir, 'Roboto-Bold.ttf');
+        const boldBuffer = readFileSync(boldPath);
+        robotoBold = boldBuffer.buffer.slice(boldBuffer.byteOffset, boldBuffer.byteOffset + boldBuffer.byteLength);
+        console.log(`[${AGENT_NAME}] ✅ Roboto Bold loaded from ${boldPath} (${boldBuffer.length} bytes)`);
+
         break;
       } catch (error: any) {
-        console.warn(`[${AGENT_NAME}] ⚠️ Could not load font from ${fontsDir}:`, error.message);
+        console.warn(`[${AGENT_NAME}] ⚠️ Could not load fonts from ${fontsDir}:`, error.message);
       }
     }
 
-    if (!interFont) {
-      console.error(`[${AGENT_NAME}] ❌ Failed to load font from any location`);
-      throw new Error('Could not load font for text rendering');
+    if (!robotoRegular || !robotoBold) {
+      console.error(`[${AGENT_NAME}] ❌ Failed to load Roboto fonts from any location`);
+      throw new Error('Could not load fonts for text rendering');
     }
   }
-  return interFont;
+  return { regular: robotoRegular, bold: robotoBold };
 }
 
 // Text overlay configuration
@@ -750,8 +759,8 @@ export class ComplianceAssembler {
     console.log(`[${AGENT_NAME}]   Font sizes - Headline: ${headlineFontSize}px, CTA: ${ctaFontSize}px`);
 
     try {
-      // Load embedded font (Inter Variable supports all weights)
-      const fontData = loadFont();
+      // Load Roboto fonts (Regular and Bold)
+      const fonts = loadFonts();
 
       // Create the overlay layout using Satori's React-like elements
       // Satori uses a subset of CSS flexbox for layout
@@ -787,7 +796,7 @@ export class ComplianceAssembler {
                         color: 'white',
                         fontSize: `${headlineFontSize}px`,
                         fontWeight: 700,
-                        fontFamily: 'Inter',
+                        fontFamily: 'Roboto',
                         textAlign: 'center',
                         textShadow: '2px 2px 8px rgba(0,0,0,0.8)',
                         lineHeight: 1.2,
@@ -826,7 +835,7 @@ export class ComplianceAssembler {
                         color: 'white',
                         fontSize: `${ctaFontSize}px`,
                         fontWeight: 700,
-                        fontFamily: 'Inter',
+                        fontFamily: 'Roboto',
                         padding: `${Math.floor(ctaFontSize * 0.6)}px ${Math.floor(ctaFontSize * 1.5)}px`,
                         borderRadius: '8px',
                         boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
@@ -842,20 +851,20 @@ export class ComplianceAssembler {
       };
 
       // Render with Satori to SVG
-      // Using Inter Variable font which supports multiple weights in one file
+      // Using Roboto Regular and Bold static fonts
       const svg = await satori(overlayElement as any, {
         width,
         height,
         fonts: [
           {
-            name: 'Inter',
-            data: fontData,
+            name: 'Roboto',
+            data: fonts.bold,
             weight: 700,
             style: 'normal',
           },
           {
-            name: 'Inter',
-            data: fontData,
+            name: 'Roboto',
+            data: fonts.regular,
             weight: 400,
             style: 'normal',
           },
