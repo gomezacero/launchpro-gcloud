@@ -620,14 +620,34 @@ class AIService {
    */
   private getAnthropicClient(): Anthropic {
     if (!this._anthropic) {
-      // Get and CLEAN the API key (remove whitespace, newlines, etc.)
+      // Get the raw API key from environment
       const rawKey = process.env.ANTHROPIC_API_KEY || '';
-      const anthropicKey = rawKey.trim().replace(/[\n\r\s]/g, '');
 
+      // AGGRESSIVE CLEANING: Remove ALL non-printable characters, whitespace, newlines
+      // This handles hidden characters that might come from copy/paste in Vercel
+      const anthropicKey = rawKey
+        .split('')
+        .filter(char => {
+          const code = char.charCodeAt(0);
+          // Keep only printable ASCII characters (33-126) and specific allowed chars
+          // API keys are alphanumeric with dashes and underscores
+          return (code >= 33 && code <= 126);
+        })
+        .join('');
+
+      // Detailed diagnostic logging
       console.log('[AIService] 🔑 Creating Anthropic client on-demand...');
-      console.log('[AIService] 🔑 Key preview: ' + (anthropicKey ? `${anthropicKey.substring(0, 15)}...${anthropicKey.substring(anthropicKey.length - 4)}` : 'MISSING!'));
-      console.log('[AIService] 🔑 Key length: ' + anthropicKey.length);
+      console.log('[AIService] 🔑 Raw key length: ' + rawKey.length);
+      console.log('[AIService] 🔑 Cleaned key length: ' + anthropicKey.length);
+      console.log('[AIService] 🔑 Characters removed: ' + (rawKey.length - anthropicKey.length));
+      console.log('[AIService] 🔑 Key preview: ' + (anthropicKey ? `${anthropicKey.substring(0, 20)}...${anthropicKey.substring(anthropicKey.length - 6)}` : 'MISSING!'));
       console.log('[AIService] 🔑 Key starts with sk-ant-: ' + anthropicKey.startsWith('sk-ant-'));
+
+      // Log character codes of first 30 chars of RAW key to detect invisible chars
+      if (rawKey.length > 0) {
+        const first30Codes = rawKey.substring(0, 30).split('').map(c => c.charCodeAt(0));
+        console.log('[AIService] 🔑 First 30 char codes (raw): ' + JSON.stringify(first30Codes));
+      }
 
       if (!anthropicKey) {
         console.error('[AIService] ❌ CRITICAL: ANTHROPIC_API_KEY is empty or missing!');
@@ -637,13 +657,13 @@ class AIService {
       // Validate key format
       if (!anthropicKey.startsWith('sk-ant-')) {
         console.error('[AIService] ❌ CRITICAL: ANTHROPIC_API_KEY has invalid format (should start with sk-ant-)');
-        console.error('[AIService] ❌ Current key starts with: ' + anthropicKey.substring(0, 10));
+        console.error('[AIService] ❌ Current key starts with: ' + anthropicKey.substring(0, 15));
       }
 
       this._anthropic = new Anthropic({
         apiKey: anthropicKey,
       });
-      console.log('[AIService] ✅ Anthropic client created successfully');
+      console.log('[AIService] ✅ Anthropic client created successfully with cleaned key');
     }
     return this._anthropic;
   }
