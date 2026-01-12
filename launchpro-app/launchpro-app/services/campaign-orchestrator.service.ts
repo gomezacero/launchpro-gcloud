@@ -3881,6 +3881,12 @@ class CampaignOrchestratorService {
     // ============================================
     // STEP 2: Wait for tracking link
     // ============================================
+
+    // Verify tonicCampaignId was assigned (should always be true at this point)
+    if (!tonicCampaignId) {
+      throw new Error('Failed to create or find Tonic campaign - tonicCampaignId is undefined');
+    }
+
     logger.info('tonic', '⏳ Waiting for tracking link...');
 
     const trackingLinkResult = await waitForTrackingLink(
