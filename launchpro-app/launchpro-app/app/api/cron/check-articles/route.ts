@@ -99,10 +99,14 @@ export async function GET(request: NextRequest) {
           // Article approved! Now create Tonic campaign and send to DesignFlow
           logger.info('tonic', `✅ [CRON] Article approved for "${campaign.name}", creating Tonic campaign...`);
 
+          // Declare tonicCampaignId outside try block so it's available in catch
+          // This allows us to save the ID even if subsequent steps fail
+          let tonicCampaignId: string | number | null = null;
+
           try {
             // 1. Create campaign in Tonic with the approved headline
             // IMPORTANT: Use campaign.offer.tonicId (numeric Tonic ID), NOT campaign.offerId (LaunchPro CUID)
-            const tonicCampaignId = await tonicService.createCampaign(credentials, {
+            tonicCampaignId = await tonicService.createCampaign(credentials, {
               name: campaign.name,
               offer_id: campaign.offer?.tonicId || campaign.offerId, // Use Tonic's offer ID
               country: campaign.country,
@@ -268,6 +272,9 @@ export async function GET(request: NextRequest) {
                 data: {
                   status: CampaignStatus.FAILED,
                   tonicArticleId: articleStatus.headline_id,
+                  // CRITICAL FIX: Save tonicCampaignId if it was created before the error
+                  // This prevents duplicate campaign creation on retry
+                  tonicCampaignId: tonicCampaignId ? String(tonicCampaignId) : undefined,
                   errorDetails: {
                     step: 'designflow-creation',
                     message: `Failed to create DesignFlow task: ${errorMessage}`,
@@ -292,6 +299,9 @@ export async function GET(request: NextRequest) {
                 data: {
                   status: CampaignStatus.ARTICLE_APPROVED,
                   tonicArticleId: articleStatus.headline_id,
+                  // CRITICAL FIX: Save tonicCampaignId if it was created before the error
+                  // This prevents "campaign name already in use" error on retry
+                  tonicCampaignId: tonicCampaignId ? String(tonicCampaignId) : undefined,
                   errorDetails: {
                     step: 'post-article-processing',
                     message: errorMessage,

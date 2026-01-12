@@ -206,6 +206,10 @@ export interface CreateCampaignParams {
   needsDesignFlow?: boolean;     // True = wait for DesignFlow, False = launch directly
   designFlowRequester?: string;  // Requester for DesignFlow task (Harry/Jesus/Milher)
   designFlowNotes?: string;      // Additional notes for design team
+
+  // CRITICAL: Pass tonicCampaignId from cloned/reconfigured campaign to prevent duplicates
+  // When using "Volver a Configurar", this preserves the existing Tonic campaign
+  tonicCampaignId?: string | null;
 }
 
 export interface LaunchResult {
@@ -3615,6 +3619,9 @@ class CampaignOrchestratorService {
         needsDesignFlow: params.needsDesignFlow ?? false,
         designFlowRequester: params.designFlowRequester || 'Harry',
         designFlowNotes: params.designFlowNotes,
+        // CRITICAL: Preserve tonicCampaignId from cloned/reconfigured campaign
+        // This prevents "campaign name already in use" errors in Tonic
+        tonicCampaignId: params.tonicCampaignId || null,
         platforms: {
           create: params.platforms.map((p) => ({
             platform: p.platform,
@@ -3813,27 +3820,62 @@ class CampaignOrchestratorService {
       logger.info('tonic', `✅ Tonic campaign already exists: ${campaign.tonicCampaignId}, skipping creation`);
       tonicCampaignId = campaign.tonicCampaignId;
     } else {
-      logger.info('tonic', `Creating ${campaignType.toUpperCase()} campaign in Tonic...`);
+      // DEFENSIVE CHECK: Search for existing campaign in Tonic by name
+      // This handles the case where the campaign was created but tonicCampaignId wasn't saved to DB
+      // (e.g., if check-articles created the campaign but failed to save the ID)
+      logger.info('tonic', 'Checking if Tonic campaign already exists by name...');
 
-      // Generate unique campaign name to avoid collisions in Tonic
-      // Tonic rejects duplicate campaign names even from failed/deleted campaigns
-      // Use full timestamp + random chars for guaranteed uniqueness
-      const timestamp = Date.now().toString(36);
-      const randomChars = Math.random().toString(36).substring(2, 6);
-      const tonicCampaignName = `${campaign.name}_${timestamp}${randomChars}`;
+      let existingCampaignFound = false;
+      const statesToCheck = ['active', 'pending', 'incomplete'] as const;
 
-      const campaignParams = {
-        name: tonicCampaignName,
-        offer: campaign.offer.name,
-        offer_id: campaign.offer.tonicId,
-        country: campaign.country,
-        type: campaignType,
-        return_type: 'id' as const,
-        ...(campaign.tonicArticleId && { headline_id: campaign.tonicArticleId }),
-      };
+      for (const state of statesToCheck) {
+        if (existingCampaignFound) break;
+        try {
+          const existingCampaigns = await tonicService.getCampaignList(credentials, state);
+          const existing = existingCampaigns.find((c: any) => c.name === campaign.name);
 
-      tonicCampaignId = await tonicService.createCampaign(credentials, campaignParams);
-      logger.success('tonic', `Tonic campaign created: ${tonicCampaignId}`);
+          if (existing) {
+            logger.info('tonic', `✅ Found existing Tonic campaign in '${state}' state: ${existing.id}`);
+            tonicCampaignId = existing.id;
+            existingCampaignFound = true;
+
+            // Save to DB for future use
+            await prisma.campaign.update({
+              where: { id: campaignId },
+              data: { tonicCampaignId: String(existing.id) }
+            });
+            logger.info('tonic', `Saved existing tonicCampaignId to DB: ${existing.id}`);
+          }
+        } catch (searchError) {
+          logger.warn('tonic', `Could not search ${state} campaigns: ${searchError}`);
+          // Continue to next state
+        }
+      }
+
+      // If no existing campaign found, create a new one
+      if (!existingCampaignFound) {
+        logger.info('tonic', `Creating ${campaignType.toUpperCase()} campaign in Tonic...`);
+
+        // Generate unique campaign name to avoid collisions in Tonic
+        // Tonic rejects duplicate campaign names even from failed/deleted campaigns
+        // Use full timestamp + random chars for guaranteed uniqueness
+        const timestamp = Date.now().toString(36);
+        const randomChars = Math.random().toString(36).substring(2, 6);
+        const tonicCampaignName = `${campaign.name}_${timestamp}${randomChars}`;
+
+        const campaignParams = {
+          name: tonicCampaignName,
+          offer: campaign.offer.name,
+          offer_id: campaign.offer.tonicId,
+          country: campaign.country,
+          type: campaignType,
+          return_type: 'id' as const,
+          ...(campaign.tonicArticleId && { headline_id: campaign.tonicArticleId }),
+        };
+
+        tonicCampaignId = await tonicService.createCampaign(credentials, campaignParams);
+        logger.success('tonic', `Tonic campaign created: ${tonicCampaignId}`);
+      }
     }
 
     // ============================================

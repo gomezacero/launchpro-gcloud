@@ -56,7 +56,9 @@
       "Bash(git restore:*)",
       "Bash(/usr/bin/head:*)",
       "Bash(vercel:*)",
-      "Bash(npx vercel --prod)"
+      "Bash(npx vercel --prod)",
+      "Bash(node_modules/.bin/prisma generate:*)",
+      "Bash(node_modules/.bin/next build)"
     ],
     "deny": [],
     "ask": []
