@@ -3809,7 +3809,7 @@ class CampaignOrchestratorService {
     }
 
     const errors: string[] = [];
-    let tonicCampaignId: string | number;
+    let tonicCampaignId: string | number | undefined = undefined;
 
     // ============================================
     // STEP 1: Create Tonic campaign (or use existing)
