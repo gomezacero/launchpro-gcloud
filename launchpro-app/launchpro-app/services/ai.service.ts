@@ -608,41 +608,31 @@ ELEMENTOS: Incluir sutilmente un ícono de play para indicar que es video.
 IMPORTANTE: El thumbnail debe generar curiosidad y deseo de ver el video. Debe destacar entre otros contenidos del feed.`;
 }
 
+// Force rebuild: 2026-01-12T22:45:00Z
 class AIService {
-  private _anthropic: Anthropic | null = null;
   private vertexAiClient: any;
   private geminiClient: GoogleGenAI;
   private storage: Storage;
 
   /**
-   * Get Anthropic client - creates fresh instance every time
-   * This avoids stale cached instances in Vercel serverless warm functions
+   * Get clean Anthropic API key from environment
    */
-  private getAnthropicClient(): Anthropic {
-    // ALWAYS create fresh client - no caching
-    // This fixes issues where warm Vercel functions reuse old client instances
+  private getCleanApiKey(): string {
     const rawKey = process.env.ANTHROPIC_API_KEY || '';
-
-    // AGGRESSIVE CLEANING: Remove ALL non-printable characters
-    const anthropicKey = rawKey
-      .split('')
-      .filter(char => {
-        const code = char.charCodeAt(0);
-        return (code >= 33 && code <= 126);
-      })
-      .join('');
-
-    if (!anthropicKey) {
-      throw new Error('ANTHROPIC_API_KEY not configured');
-    }
-
-    // Create fresh client every time
-    return new Anthropic({ apiKey: anthropicKey });
+    // Remove ALL non-printable characters (handles copy/paste issues)
+    return rawKey.split('').filter(c => c.charCodeAt(0) >= 33 && c.charCodeAt(0) <= 126).join('');
   }
 
-  // Getter for backward compatibility
+  /**
+   * Get Anthropic client - ALWAYS creates fresh instance
+   * Never caches to avoid stale instances in serverless
+   */
   private get anthropic(): Anthropic {
-    return this.getAnthropicClient();
+    const apiKey = this.getCleanApiKey();
+    if (!apiKey) {
+      throw new Error('ANTHROPIC_API_KEY not configured');
+    }
+    return new Anthropic({ apiKey });
   }
 
   /**
@@ -660,7 +650,6 @@ class AIService {
     logger.info('ai', `[Anthropic] Starting ${operation}`, {
       keyPreview: apiKey ? `${apiKey.substring(0, 10)}...${apiKey.substring(apiKey.length - 4)}` : 'MISSING',
       keyLength: apiKey.length,
-      clientExists: !!this._anthropic,
     });
 
     try {
@@ -680,7 +669,6 @@ class AIService {
         errorBody: error.error || error.body || 'N/A',
         keyPreview: apiKey ? `${apiKey.substring(0, 10)}...${apiKey.substring(apiKey.length - 4)}` : 'MISSING',
         keyLength: apiKey.length,
-        clientExists: !!this._anthropic,
       });
 
       // Check if this is an authentication error
