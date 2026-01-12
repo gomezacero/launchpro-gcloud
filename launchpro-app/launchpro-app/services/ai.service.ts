@@ -620,13 +620,24 @@ class AIService {
    */
   private getAnthropicClient(): Anthropic {
     if (!this._anthropic) {
-      const anthropicKey = process.env.ANTHROPIC_API_KEY || '';
+      // Get and CLEAN the API key (remove whitespace, newlines, etc.)
+      const rawKey = process.env.ANTHROPIC_API_KEY || '';
+      const anthropicKey = rawKey.trim().replace(/[\n\r\s]/g, '');
+
       console.log('[AIService] 🔑 Creating Anthropic client on-demand...');
-      console.log('[AIService] 🔑 Key preview: ' + (anthropicKey ? anthropicKey.substring(0, 25) + '...' : 'MISSING!'));
+      console.log('[AIService] 🔑 Key preview: ' + (anthropicKey ? `${anthropicKey.substring(0, 15)}...${anthropicKey.substring(anthropicKey.length - 4)}` : 'MISSING!'));
+      console.log('[AIService] 🔑 Key length: ' + anthropicKey.length);
+      console.log('[AIService] 🔑 Key starts with sk-ant-: ' + anthropicKey.startsWith('sk-ant-'));
 
       if (!anthropicKey) {
         console.error('[AIService] ❌ CRITICAL: ANTHROPIC_API_KEY is empty or missing!');
         throw new Error('ANTHROPIC_API_KEY not configured');
+      }
+
+      // Validate key format
+      if (!anthropicKey.startsWith('sk-ant-')) {
+        console.error('[AIService] ❌ CRITICAL: ANTHROPIC_API_KEY has invalid format (should start with sk-ant-)');
+        console.error('[AIService] ❌ Current key starts with: ' + anthropicKey.substring(0, 10));
       }
 
       this._anthropic = new Anthropic({

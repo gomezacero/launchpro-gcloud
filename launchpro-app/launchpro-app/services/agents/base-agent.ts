@@ -31,13 +31,18 @@ export abstract class BaseAgent {
 
   constructor(config: Partial<AgentConfig> = {}) {
     // Use process.env directly to avoid module caching issues
-    const anthropicKey = process.env.ANTHROPIC_API_KEY || '';
+    // CLEAN the API key (remove whitespace, newlines, etc. that may come from env vars)
+    const rawKey = process.env.ANTHROPIC_API_KEY || '';
+    const anthropicKey = rawKey.trim().replace(/[\n\r\s]/g, '');
+
     this.anthropic = new Anthropic({
       apiKey: anthropicKey,
     });
 
     if (!anthropicKey) {
       console.warn('[BaseAgent] ⚠️ WARNING: ANTHROPIC_API_KEY not found');
+    } else if (!anthropicKey.startsWith('sk-ant-')) {
+      console.error('[BaseAgent] ❌ WARNING: ANTHROPIC_API_KEY has invalid format');
     }
     
     this.config = {
