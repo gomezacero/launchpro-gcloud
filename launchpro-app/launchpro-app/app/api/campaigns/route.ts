@@ -146,9 +146,6 @@ export async function POST(request: NextRequest) {
       needsDesignFlow: body.needsDesignFlow ?? false, // Persist to database for cron job decision
       designFlowRequester: body.designFlowRequester || 'Harry',
       designFlowNotes: body.designFlowNotes,
-      // CRITICAL: Pass tonicCampaignId from cloned/reconfigured campaign
-      // This prevents "campaign name already in use" errors when the Tonic campaign already exists
-      tonicCampaignId: body.tonicCampaignId || null,
       platforms: body.platforms.map((p: any) => {
         // Keep startDateTime as string - we'll convert it later with proper timezone handling
         // The user configures in their local timezone, we need to preserve this

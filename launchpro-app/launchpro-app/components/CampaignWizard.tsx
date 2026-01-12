@@ -99,10 +99,6 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
   const [error, setError] = useState<string | null>(null);
   const [loadingClone, setLoadingClone] = useState(!!cloneFromId);
 
-  // When cloning/reconfiguring a failed campaign, preserve the original Tonic campaign ID
-  // This prevents "campaign name already in use" errors when the Tonic campaign already exists
-  const [clonedTonicCampaignId, setClonedTonicCampaignId] = useState<string | null>(null);
-
   // Unique session ID to namespace temp files (prevents race conditions when creating multiple campaigns)
   // Using useRef to ensure the ID never changes during the component's lifecycle
   const wizardSessionIdRef = useRef(`wizard-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`);
@@ -557,13 +553,6 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
 
         const campaign = data.data;
 
-        // CRITICAL: Preserve the original Tonic campaign ID when cloning/reconfiguring
-        // This prevents "campaign name already in use" errors when the Tonic campaign already exists
-        if (campaign.tonicCampaignId) {
-          setClonedTonicCampaignId(campaign.tonicCampaignId);
-          console.log(`[Wizard] Preserving tonicCampaignId from original campaign: ${campaign.tonicCampaignId}`);
-        }
-
         // Find the Tonic account that was used
         const tonicAccountMatch = tonicAccounts.find(acc =>
           acc.id === campaign.tonicAccountId
@@ -878,8 +867,6 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
         needsDesignFlow: formData.needsDesignFlow, // Persist to database for cron job
         designFlowRequester: formData.designFlowRequester,
         designFlowNotes: formData.designFlowNotes || undefined,
-        // CRITICAL: Pass tonicCampaignId from cloned campaign to prevent duplicate Tonic campaigns
-        tonicCampaignId: clonedTonicCampaignId || undefined,
         // Platforms are optional in Step 1 (DesignFlow flow) - will be configured later
         platforms: formData.platforms.length > 0 ? formData.platforms.map(platform => ({
           platform: platform.platform,
@@ -2064,12 +2051,7 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
         headers: {
           'Content-Type': 'application/json',
         },
-        // CRITICAL: Include clonedTonicCampaignId to prevent duplicate Tonic campaigns
-        // when using "Volver a Configurar" on a failed campaign
-        body: JSON.stringify({
-          ...formData,
-          tonicCampaignId: clonedTonicCampaignId || undefined,
-        }),
+        body: JSON.stringify(formData),
       });
 
       const data = await res.json();

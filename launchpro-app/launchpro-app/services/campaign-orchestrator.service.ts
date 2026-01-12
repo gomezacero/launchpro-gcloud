@@ -206,10 +206,6 @@ export interface CreateCampaignParams {
   needsDesignFlow?: boolean;     // True = wait for DesignFlow, False = launch directly
   designFlowRequester?: string;  // Requester for DesignFlow task (Harry/Jesus/Milher)
   designFlowNotes?: string;      // Additional notes for design team
-
-  // CRITICAL: Pass tonicCampaignId from cloned/reconfigured campaign to prevent duplicates
-  // When using "Volver a Configurar", this preserves the existing Tonic campaign
-  tonicCampaignId?: string | null;
 }
 
 export interface LaunchResult {
@@ -3619,9 +3615,6 @@ class CampaignOrchestratorService {
         needsDesignFlow: params.needsDesignFlow ?? false,
         designFlowRequester: params.designFlowRequester || 'Harry',
         designFlowNotes: params.designFlowNotes,
-        // CRITICAL: Preserve tonicCampaignId from cloned/reconfigured campaign
-        // This prevents "campaign name already in use" errors in Tonic
-        tonicCampaignId: params.tonicCampaignId || null,
         platforms: {
           create: params.platforms.map((p) => ({
             platform: p.platform,
