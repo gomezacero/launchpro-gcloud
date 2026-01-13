@@ -2,18 +2,16 @@
 
 import { useState } from 'react';
 
+interface Filters {
+  networks: string[];
+  status: 'all' | 'allowed' | 'declined';
+  campaignName: string;
+}
+
 interface ComplianceFiltersProps {
-  filters: {
-    networks: string[];
-    status: 'all' | 'allowed' | 'declined';
-    campaignName: string;
-  };
-  onFilterChange: (filters: {
-    networks: string[];
-    status: 'all' | 'allowed' | 'declined';
-    campaignName: string;
-  }) => void;
-  onSearch: () => void;
+  filters: Filters;
+  onFilterChange: (filters: Filters) => void;
+  onSearch: (filters: Filters) => void; // Receives filters directly to avoid async state issues
 }
 
 export default function ComplianceFilters({ filters, onFilterChange, onSearch }: ComplianceFiltersProps) {
@@ -31,8 +29,9 @@ export default function ComplianceFilters({ filters, onFilterChange, onSearch }:
   };
 
   const handleSearchClick = () => {
-    onFilterChange({ ...filters, campaignName: localCampaignName });
-    onSearch();
+    const updatedFilters = { ...filters, campaignName: localCampaignName };
+    onFilterChange(updatedFilters);
+    onSearch(updatedFilters); // Pass filters directly to avoid async state race condition
   };
 
   const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -44,8 +43,9 @@ export default function ComplianceFilters({ filters, onFilterChange, onSearch }:
   const handleClearSearch = () => {
     setLocalCampaignName('');
     if (filters.campaignName !== '') {
-      onFilterChange({ ...filters, campaignName: '' });
-      onSearch();
+      const updatedFilters = { ...filters, campaignName: '' };
+      onFilterChange(updatedFilters);
+      onSearch(updatedFilters); // Pass filters directly to avoid async state race condition
     }
   };
 

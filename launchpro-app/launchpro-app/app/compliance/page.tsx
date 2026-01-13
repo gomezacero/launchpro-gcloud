@@ -230,8 +230,9 @@ export default function CompliancePage() {
   };
 
   // Handle explicit search - triggers the fetch
-  const handleSearch = () => {
-    fetchAdsWithFilters(filters, 0);
+  // Accepts filters directly to avoid async state race condition (single click issue)
+  const handleSearch = (filtersToUse: Filters) => {
+    fetchAdsWithFilters(filtersToUse, 0);
   };
 
   // Handle page change
