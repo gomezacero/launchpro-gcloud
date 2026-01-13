@@ -3916,6 +3916,14 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
                         {/* Generate Images Button - Only for Meta with IMAGE or BOTH */}
                         {platform.platform === 'META' && (platform.aiMediaType === 'IMAGE' || platform.aiMediaType === 'BOTH' || !platform.aiMediaType) && (
                           <div className="mt-4">
+                            {/* Show what's missing if button would be disabled */}
+                            {(!formData.offerId || !formData.copyMaster) && (
+                              <div className="mb-2 p-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">
+                                <span className="font-medium">Complete Phase 1 first:</span>
+                                {!formData.offerId && <span className="block">• Select an Offer</span>}
+                                {!formData.copyMaster && <span className="block">• Enter Copy Master text</span>}
+                              </div>
+                            )}
                             <button
                               type="button"
                               onClick={() => generateAIImages(index)}
