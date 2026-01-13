@@ -72,7 +72,8 @@ export async function GET(
     // Fetch pages from Meta API
     // If we have an Ad Account ID, get pages that can be promoted with that account
     // This ensures we only show pages the ad account has permission to use
-    console.log(`[API] Fetching Fan Pages for account ${account.name}`);
+    console.log(`[API] Fetching Fan Pages for account "${account.name}" (ID: ${account.id})`);
+    console.log(`[API] Account metaAdAccountId: ${account.metaAdAccountId || 'NOT SET'}`);
 
     let pages: { id: string; name: string }[] = [];
 
@@ -81,23 +82,37 @@ export async function GET(
       console.log(`[API] Using Ad Account ${account.metaAdAccountId} to get authorized pages`);
       try {
         pages = await metaService.getPromotePages(account.metaAdAccountId, accessToken);
-        console.log(`[API] Found ${pages.length} authorized page(s) for ad account`);
+        console.log(`[API] Found ${pages.length} authorized page(s) for ad account ${account.metaAdAccountId}`);
+
+        // If promote_pages returns empty, try fallback
+        if (pages.length === 0) {
+          console.log(`[API] promote_pages returned 0 pages, trying /me/accounts fallback...`);
+          pages = await metaService.getPages(accessToken);
+          console.log(`[API] Fallback /me/accounts returned ${pages.length} page(s)`);
+        }
       } catch (err: any) {
-        console.warn(`[API] Failed to get promote_pages, falling back to /me/accounts: ${err.message}`);
+        console.warn(`[API] Failed to get promote_pages: ${err.message}`);
+        if (err.response?.data) {
+          console.warn(`[API] Meta API error details:`, JSON.stringify(err.response.data, null, 2));
+        }
         // Fallback to all pages if promote_pages fails
+        console.log(`[API] Falling back to /me/accounts...`);
         pages = await metaService.getPages(accessToken);
+        console.log(`[API] Fallback returned ${pages.length} page(s)`);
       }
     } else {
       // No ad account ID, use fallback to get all accessible pages
-      console.log(`[API] No Ad Account ID, getting all accessible pages`);
+      console.log(`[API] No Ad Account ID configured, getting all accessible pages via /me/accounts`);
       pages = await metaService.getPages(accessToken);
+      console.log(`[API] /me/accounts returned ${pages.length} page(s)`);
     }
 
     if (!pages || pages.length === 0) {
+      console.warn(`[API] No pages found for account "${account.name}" (metaAdAccountId: ${account.metaAdAccountId})`);
       return NextResponse.json(
         {
           success: false,
-          error: 'No Facebook Pages found for this ad account. Please ensure the ad account has access to at least one Page.',
+          error: `No Facebook Pages found for ad account "${account.name}". Please ensure the ad account (${account.metaAdAccountId || 'NOT CONFIGURED'}) has access to at least one Page with "advertise" permissions.`,
         },
         { status: 404 }
       );

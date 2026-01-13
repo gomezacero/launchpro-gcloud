@@ -144,6 +144,7 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
   // Fan Pages for Meta (loaded when Meta account is selected)
   const [metaPages, setMetaPages] = useState<{ id: string; name: string }[]>([]);
   const [loadingMetaPages, setLoadingMetaPages] = useState(false);
+  const [metaPagesError, setMetaPagesError] = useState<string | null>(null);
 
   // Identities for TikTok (loaded when TikTok account is selected)
   const [tiktokIdentities, setTiktokIdentities] = useState<{ id: string; name: string; type: string; isDeprecated?: boolean }[]>([]);
@@ -984,22 +985,27 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
   const loadMetaPages = async (accountId: string) => {
     if (!accountId) {
       setMetaPages([]);
+      setMetaPagesError(null);
       return;
     }
 
     setLoadingMetaPages(true);
+    setMetaPagesError(null);
     try {
       const res = await fetch(`/api/accounts/${accountId}/pages`);
       const data = await res.json();
       if (data.success) {
         setMetaPages(data.data || []);
+        setMetaPagesError(null);
       } else {
         console.error('Error loading Meta pages:', data.error);
         setMetaPages([]);
+        setMetaPagesError(data.error || 'Error loading Fan Pages');
       }
     } catch (err: any) {
       console.error('Error loading Meta pages:', err);
       setMetaPages([]);
+      setMetaPagesError(err.message || 'Network error loading Fan Pages');
     } finally {
       setLoadingMetaPages(false);
     }
@@ -3382,6 +3388,14 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
                         </label>
                         {loadingMetaPages ? (
                           <div className="text-sm text-gray-500 py-2">Loading Fan Pages...</div>
+                        ) : metaPagesError ? (
+                          <div className="text-sm text-red-600 py-2 bg-red-50 px-3 rounded-lg border border-red-200">
+                            <span className="font-medium">Error:</span> {metaPagesError}
+                          </div>
+                        ) : metaPages.length === 0 ? (
+                          <div className="text-sm text-amber-600 py-2 bg-amber-50 px-3 rounded-lg border border-amber-200">
+                            No Fan Pages available for this account. Verify the ad account has page permissions.
+                          </div>
                         ) : (
                           <select
                             value={platform.metaPageId || ''}
