@@ -3849,15 +3849,10 @@ class CampaignOrchestratorService {
       if (!existingCampaignFound) {
         logger.info('tonic', `Creating ${campaignType.toUpperCase()} campaign in Tonic...`);
 
-        // Generate unique campaign name to avoid collisions in Tonic
-        // Tonic rejects duplicate campaign names even from failed/deleted campaigns
-        // Use full timestamp + random chars for guaranteed uniqueness
-        const timestamp = Date.now().toString(36);
-        const randomChars = Math.random().toString(36).substring(2, 6);
-        const tonicCampaignName = `${campaign.name}_${timestamp}${randomChars}`;
-
+        // Use the original campaign name - no suffix
+        // If Tonic rejects due to duplicate name, we'll retry with a minimal suffix
         const campaignParams = {
-          name: tonicCampaignName,
+          name: campaign.name,
           offer: campaign.offer.name,
           offer_id: campaign.offer.tonicId,
           country: campaign.country,
@@ -3866,8 +3861,31 @@ class CampaignOrchestratorService {
           ...(campaign.tonicArticleId && { headline_id: campaign.tonicArticleId }),
         };
 
-        tonicCampaignId = await tonicService.createCampaign(credentials, campaignParams);
-        logger.success('tonic', `Tonic campaign created: ${tonicCampaignId}`);
+        try {
+          tonicCampaignId = await tonicService.createCampaign(credentials, campaignParams);
+          logger.success('tonic', `Tonic campaign created with original name: ${tonicCampaignId}`);
+        } catch (createError: any) {
+          // Check if error is due to duplicate campaign name
+          const errorMsg = createError.message?.toLowerCase() || '';
+          const isDuplicateError = errorMsg.includes('duplicate') ||
+                                   errorMsg.includes('already exists') ||
+                                   errorMsg.includes('name is already') ||
+                                   errorMsg.includes('campaign name');
+
+          if (isDuplicateError) {
+            // Retry with a minimal numeric suffix (just a short number)
+            const shortSuffix = Math.floor(Math.random() * 1000);
+            const retryName = `${campaign.name}_${shortSuffix}`;
+            logger.warn('tonic', `Campaign name "${campaign.name}" already exists in Tonic, retrying with: ${retryName}`);
+
+            campaignParams.name = retryName;
+            tonicCampaignId = await tonicService.createCampaign(credentials, campaignParams);
+            logger.success('tonic', `Tonic campaign created with suffix: ${tonicCampaignId}`);
+          } else {
+            // Re-throw non-duplicate errors
+            throw createError;
+          }
+        }
       }
     }
 
