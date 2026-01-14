@@ -3849,8 +3849,9 @@ class CampaignOrchestratorService {
       if (!existingCampaignFound) {
         logger.info('tonic', `Creating ${campaignType.toUpperCase()} campaign in Tonic...`);
 
-        // Use the original campaign name - no suffix
-        // If Tonic rejects due to duplicate name, we'll retry with a minimal suffix
+        // Use the original campaign name - NO SUFFIX EVER
+        // If Tonic rejects due to duplicate name, let it fail
+        // User must choose a different name to preserve Looker Studio compatibility
         const campaignParams = {
           name: campaign.name,
           offer: campaign.offer.name,
@@ -3861,31 +3862,8 @@ class CampaignOrchestratorService {
           ...(campaign.tonicArticleId && { headline_id: campaign.tonicArticleId }),
         };
 
-        try {
-          tonicCampaignId = await tonicService.createCampaign(credentials, campaignParams);
-          logger.success('tonic', `Tonic campaign created with original name: ${tonicCampaignId}`);
-        } catch (createError: any) {
-          // Check if error is due to duplicate campaign name
-          const errorMsg = createError.message?.toLowerCase() || '';
-          const isDuplicateError = errorMsg.includes('duplicate') ||
-                                   errorMsg.includes('already exists') ||
-                                   errorMsg.includes('name is already') ||
-                                   errorMsg.includes('campaign name');
-
-          if (isDuplicateError) {
-            // Retry with a minimal numeric suffix (just a short number)
-            const shortSuffix = Math.floor(Math.random() * 1000);
-            const retryName = `${campaign.name}_${shortSuffix}`;
-            logger.warn('tonic', `Campaign name "${campaign.name}" already exists in Tonic, retrying with: ${retryName}`);
-
-            campaignParams.name = retryName;
-            tonicCampaignId = await tonicService.createCampaign(credentials, campaignParams);
-            logger.success('tonic', `Tonic campaign created with suffix: ${tonicCampaignId}`);
-          } else {
-            // Re-throw non-duplicate errors
-            throw createError;
-          }
-        }
+        tonicCampaignId = await tonicService.createCampaign(credentials, campaignParams);
+        logger.success('tonic', `Tonic campaign created: ${tonicCampaignId}`);
       }
     }
 
