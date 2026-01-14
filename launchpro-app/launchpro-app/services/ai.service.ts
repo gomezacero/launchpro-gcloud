@@ -624,6 +624,45 @@ class AIService {
   }
 
   /**
+   * Get language name and instruction based on language code
+   * Supports: en, es, pt, it, fr, de, nl, pl and any other language
+   */
+  private getLanguageInfo(langCode: string, originalParam: string): { languageName: string; languageInstruction: string } {
+    const lang = langCode.toLowerCase();
+
+    const languageMap: Record<string, { name: string; instruction: string }> = {
+      'en': { name: 'English', instruction: 'WRITE ENTIRELY IN ENGLISH.' },
+      'english': { name: 'English', instruction: 'WRITE ENTIRELY IN ENGLISH.' },
+      'es': { name: 'Spanish', instruction: 'WRITE ENTIRELY IN SPANISH.' },
+      'spanish': { name: 'Spanish', instruction: 'WRITE ENTIRELY IN SPANISH.' },
+      'pt': { name: 'Portuguese', instruction: 'WRITE ENTIRELY IN PORTUGUESE.' },
+      'portuguese': { name: 'Portuguese', instruction: 'WRITE ENTIRELY IN PORTUGUESE.' },
+      'it': { name: 'Italian', instruction: 'WRITE ENTIRELY IN ITALIAN.' },
+      'italian': { name: 'Italian', instruction: 'WRITE ENTIRELY IN ITALIAN.' },
+      'fr': { name: 'French', instruction: 'WRITE ENTIRELY IN FRENCH.' },
+      'french': { name: 'French', instruction: 'WRITE ENTIRELY IN FRENCH.' },
+      'de': { name: 'German', instruction: 'WRITE ENTIRELY IN GERMAN.' },
+      'german': { name: 'German', instruction: 'WRITE ENTIRELY IN GERMAN.' },
+      'nl': { name: 'Dutch', instruction: 'WRITE ENTIRELY IN DUTCH.' },
+      'dutch': { name: 'Dutch', instruction: 'WRITE ENTIRELY IN DUTCH.' },
+      'pl': { name: 'Polish', instruction: 'WRITE ENTIRELY IN POLISH.' },
+      'polish': { name: 'Polish', instruction: 'WRITE ENTIRELY IN POLISH.' },
+    };
+
+    const mapped = languageMap[lang];
+    if (mapped) {
+      return { languageName: mapped.name, languageInstruction: mapped.instruction };
+    }
+
+    // For any other language, use the parameter directly (never default to Spanish)
+    const capitalizedLang = originalParam.charAt(0).toUpperCase() + originalParam.slice(1).toLowerCase();
+    return {
+      languageName: capitalizedLang,
+      languageInstruction: `WRITE ENTIRELY IN ${originalParam.toUpperCase()}.`
+    };
+  }
+
+  /**
    * Get Anthropic client - ALWAYS creates fresh instance
    * Never caches to avoid stale instances in serverless
    */
@@ -970,7 +1009,12 @@ Return ONLY a JSON array: ["keyword1", "keyword2", ..., "keyword10"]`;
     const lang = params.language.toLowerCase();
     const isEnglish = lang === 'en' || lang === 'english';
     const isPortuguese = lang === 'pt' || lang === 'portuguese';
-    const isSpanish = lang === 'es' || lang === 'spanish' || (!isEnglish && !isPortuguese);
+    const isSpanish = lang === 'es' || lang === 'spanish';
+    const isItalian = lang === 'it' || lang === 'italian';
+    const isFrench = lang === 'fr' || lang === 'french';
+    const isGerman = lang === 'de' || lang === 'german';
+    const isDutch = lang === 'nl' || lang === 'dutch';
+    const isPolish = lang === 'pl' || lang === 'polish';
 
     // Map countries to their specific Spanish dialect rules
     const spanishDialectRules: Record<string, string> = {
@@ -1012,11 +1056,37 @@ Return ONLY a JSON array: ["keyword1", "keyword2", ..., "keyword10"]`;
       dialectRule = portugueseDialectRules[params.country] || 'Brazilian Portuguese: Use standard Brazilian Portuguese.';
       languageInstruction = 'WRITE ENTIRELY IN PORTUGUESE.';
       languageName = 'Portuguese';
-    } else {
-      // Default to Spanish
+    } else if (isItalian) {
+      dialectRule = 'Standard Italian: Use formal "Lei" or informal "tu" appropriately. Clear, professional language.';
+      languageInstruction = 'WRITE ENTIRELY IN ITALIAN.';
+      languageName = 'Italian';
+    } else if (isFrench) {
+      dialectRule = params.country === 'CA' ? 'Canadian French: Use Québécois conventions.' : 'Standard French: Use formal "vous" or informal "tu" appropriately.';
+      languageInstruction = 'WRITE ENTIRELY IN FRENCH.';
+      languageName = 'French';
+    } else if (isGerman) {
+      dialectRule = params.country === 'AT' ? 'Austrian German conventions.' : params.country === 'CH' ? 'Swiss German conventions.' : 'Standard German: Use formal "Sie" or informal "du" appropriately.';
+      languageInstruction = 'WRITE ENTIRELY IN GERMAN.';
+      languageName = 'German';
+    } else if (isDutch) {
+      dialectRule = params.country === 'BE' ? 'Belgian Dutch (Flemish) conventions.' : 'Standard Dutch: Clear, professional language.';
+      languageInstruction = 'WRITE ENTIRELY IN DUTCH.';
+      languageName = 'Dutch';
+    } else if (isPolish) {
+      dialectRule = 'Standard Polish: Use formal or informal address appropriately. Clear, professional language.';
+      languageInstruction = 'WRITE ENTIRELY IN POLISH.';
+      languageName = 'Polish';
+    } else if (isSpanish) {
       dialectRule = spanishDialectRules[params.country] || 'Neutral Spanish: Use "tú/usted" forms.';
       languageInstruction = 'WRITE ENTIRELY IN SPANISH.';
       languageName = 'Spanish';
+    } else {
+      // For any other language, use the language parameter directly
+      // This ensures we never default to Spanish incorrectly
+      const capitalizedLang = params.language.charAt(0).toUpperCase() + params.language.slice(1).toLowerCase();
+      dialectRule = `Standard ${capitalizedLang}: Use appropriate formal/informal conventions for ${params.country}.`;
+      languageInstruction = `WRITE ENTIRELY IN ${params.language.toUpperCase()}.`;
+      languageName = capitalizedLang;
     }
 
     logger.info('ai', `Generating article in ${languageName} for country ${params.country}`);
@@ -1138,23 +1208,9 @@ IMPORTANT: The contentGenerationPhrases array MUST contain between 3 and 5 items
   }> {
     // Determine the base language from the language parameter
     const lang = params.language.toLowerCase();
-    const isEnglish = lang === 'en' || lang === 'english';
-    const isPortuguese = lang === 'pt' || lang === 'portuguese';
-    const isSpanish = lang === 'es' || lang === 'spanish' || (!isEnglish && !isPortuguese);
 
-    let languageInstruction: string;
-    let languageName: string;
-
-    if (isEnglish) {
-      languageInstruction = 'WRITE ENTIRELY IN ENGLISH.';
-      languageName = 'English';
-    } else if (isPortuguese) {
-      languageInstruction = 'WRITE ENTIRELY IN PORTUGUESE.';
-      languageName = 'Portuguese';
-    } else {
-      languageInstruction = 'WRITE ENTIRELY IN SPANISH.';
-      languageName = 'Spanish';
-    }
+    // Get language name and instruction based on language code
+    const { languageName, languageInstruction } = this.getLanguageInfo(lang, params.language);
 
     logger.info('ai', `Generating ad copy in ${languageName} for ${params.platform}`);
 
