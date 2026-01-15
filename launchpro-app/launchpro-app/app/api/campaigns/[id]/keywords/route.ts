@@ -70,8 +70,8 @@ export async function GET(
     }
 
     const credentials = {
-      consumerKey: tonicAccount.tonicConsumerKey,
-      consumerSecret: tonicAccount.tonicConsumerSecret,
+      consumer_key: tonicAccount.tonicConsumerKey,
+      consumer_secret: tonicAccount.tonicConsumerSecret,
     };
 
     // Get keywords from Tonic
@@ -180,8 +180,8 @@ export async function PUT(
     }
 
     const credentials = {
-      consumerKey: tonicAccount.tonicConsumerKey,
-      consumerSecret: tonicAccount.tonicConsumerSecret,
+      consumer_key: tonicAccount.tonicConsumerKey,
+      consumer_secret: tonicAccount.tonicConsumerSecret,
     };
 
     // Update keywords in Tonic
