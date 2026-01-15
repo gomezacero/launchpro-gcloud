@@ -302,8 +302,8 @@ class TikTokAdRulesService {
       return 0;
     }
 
-    const calculatedRoas = (tonicRevenue / tiktokCost) * 100;
-    logger.debug('ad-rules', `Hybrid ROAS for "${entityName}": ${calculatedRoas.toFixed(2)}% (Tonic: $${tonicRevenue.toFixed(2)}, TikTok: $${tiktokCost.toFixed(2)})`);
+    const calculatedRoas = tonicRevenue / tiktokCost;
+    logger.debug('ad-rules', `Hybrid ROAS for "${entityName}": ${calculatedRoas.toFixed(2)} (Tonic: $${tonicRevenue.toFixed(2)}, TikTok: $${tiktokCost.toFixed(2)})`);
 
     return calculatedRoas;
   }

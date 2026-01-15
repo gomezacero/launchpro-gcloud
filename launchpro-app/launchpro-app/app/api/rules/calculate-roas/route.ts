@@ -7,7 +7,7 @@ import { tonicService, TonicCredentials } from '@/services/tonic.service';
  * POST /api/rules/calculate-roas
  * Debug endpoint to calculate ROAS using Tonic revenue and Meta cost
  *
- * ROAS Formula: (Gross Revenue from Tonic / Cost from Meta) * 100
+ * ROAS Formula: Gross Revenue from Tonic / Cost from Meta (net number, not percentage)
  */
 
 interface CalculateRoasRequest {
@@ -261,8 +261,8 @@ export async function POST(request: NextRequest) {
         errors.push(error);
       }
 
-      // Calculate ROAS: (Gross Revenue / Cost) * 100
-      const calculatedRoas = cost > 0 ? (grossRevenue / cost) * 100 : 0;
+      // Calculate ROAS: Gross Revenue / Cost (net number, not percentage)
+      const calculatedRoas = cost > 0 ? grossRevenue / cost : 0;
 
       totalGrossRevenue += grossRevenue;
       totalCost += cost;
@@ -279,8 +279,8 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Calculate overall ROAS
-    const overallRoas = totalCost > 0 ? (totalGrossRevenue / totalCost) * 100 : 0;
+    // Calculate overall ROAS (net number, not percentage)
+    const overallRoas = totalCost > 0 ? totalGrossRevenue / totalCost : 0;
 
     return NextResponse.json({
       success: true,

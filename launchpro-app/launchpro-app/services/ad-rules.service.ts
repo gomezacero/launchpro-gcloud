@@ -311,8 +311,8 @@ class AdRulesService {
       return 0;
     }
 
-    const calculatedRoas = (tonicRevenue / metaCost) * 100;
-    logger.debug('ad-rules', `Hybrid ROAS for "${entityName}": ${calculatedRoas.toFixed(2)}% (Tonic: $${tonicRevenue.toFixed(2)}, Meta: $${metaCost.toFixed(2)})`);
+    const calculatedRoas = tonicRevenue / metaCost;
+    logger.debug('ad-rules', `Hybrid ROAS for "${entityName}": ${calculatedRoas.toFixed(2)} (Tonic: $${tonicRevenue.toFixed(2)}, Meta: $${metaCost.toFixed(2)})`);
 
     return calculatedRoas;
   }
