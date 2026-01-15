@@ -125,9 +125,89 @@ export default function CampaignDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
 
+  // Keywords editing state
+  const [showKeywordsModal, setShowKeywordsModal] = useState(false);
+  const [editingKeywords, setEditingKeywords] = useState<string[]>([]);
+  const [newKeyword, setNewKeyword] = useState('');
+  const [savingKeywords, setSavingKeywords] = useState(false);
+  const [keywordsError, setKeywordsError] = useState<string | null>(null);
+  const [keywordsSuccess, setKeywordsSuccess] = useState(false);
+
   // Función para ir al wizard con los datos precargados
   const handleReconfigure = () => {
     router.push(`/campaigns/new?clone=${campaignId}`);
+  };
+
+  // Keywords editing functions
+  const openKeywordsModal = () => {
+    setEditingKeywords([...(campaign?.keywords || [])]);
+    setNewKeyword('');
+    setKeywordsError(null);
+    setKeywordsSuccess(false);
+    setShowKeywordsModal(true);
+  };
+
+  const addKeyword = () => {
+    const trimmed = newKeyword.trim();
+    if (!trimmed) return;
+    if (editingKeywords.includes(trimmed)) {
+      setKeywordsError('Esta keyword ya existe');
+      return;
+    }
+    if (editingKeywords.length >= 10) {
+      setKeywordsError('Máximo 10 keywords permitidas');
+      return;
+    }
+    setEditingKeywords([...editingKeywords, trimmed]);
+    setNewKeyword('');
+    setKeywordsError(null);
+  };
+
+  const removeKeyword = (keyword: string) => {
+    setEditingKeywords(editingKeywords.filter(k => k !== keyword));
+    setKeywordsError(null);
+  };
+
+  const saveKeywords = async () => {
+    if (editingKeywords.length < 3) {
+      setKeywordsError('Mínimo 3 keywords requeridas');
+      return;
+    }
+    if (editingKeywords.length > 10) {
+      setKeywordsError('Máximo 10 keywords permitidas');
+      return;
+    }
+
+    setSavingKeywords(true);
+    setKeywordsError(null);
+
+    try {
+      const res = await fetch(`/api/campaigns/${campaignId}/keywords`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keywords: editingKeywords }),
+      });
+
+      const data = await res.json();
+
+      if (!data.success) {
+        throw new Error(data.error || 'Error al guardar keywords');
+      }
+
+      // Update local campaign state
+      setCampaign(prev => prev ? { ...prev, keywords: editingKeywords } : null);
+      setKeywordsSuccess(true);
+
+      // Close modal after short delay
+      setTimeout(() => {
+        setShowKeywordsModal(false);
+        setKeywordsSuccess(false);
+      }, 1500);
+    } catch (err: any) {
+      setKeywordsError(err.message || 'Error al guardar keywords');
+    } finally {
+      setSavingKeywords(false);
+    }
   };
 
   useEffect(() => {
@@ -644,10 +724,21 @@ export default function CampaignDetailPage() {
         {/* Keywords */}
         {campaign.keywords && campaign.keywords.length > 0 && (
           <div className="bg-white shadow rounded-lg p-6 mb-6">
-            <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
-              <span>🏷️</span> Keywords
-              <span className="text-sm font-normal text-gray-500">({campaign.keywords.length})</span>
-            </h2>
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                <span>🏷️</span> Keywords
+                <span className="text-sm font-normal text-gray-500">({campaign.keywords.length})</span>
+              </h2>
+              {campaign.tonicCampaignId && (
+                <button
+                  onClick={openKeywordsModal}
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium text-sm flex items-center gap-2 transition-colors"
+                >
+                  <span>✏️</span>
+                  Editar Keywords
+                </button>
+              )}
+            </div>
             <div className="flex flex-wrap gap-2">
               {campaign.keywords.map((keyword, index) => (
                 <span
@@ -778,6 +869,144 @@ export default function CampaignDetailPage() {
           </Link>
         </div>
       </div>
+
+      {/* Keywords Edit Modal */}
+      {showKeywordsModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-hidden">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-4">
+              <div className="flex justify-between items-center">
+                <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                  <span>🏷️</span> Editar Keywords
+                </h3>
+                <button
+                  onClick={() => setShowKeywordsModal(false)}
+                  className="text-white/80 hover:text-white text-2xl font-bold"
+                >
+                  ×
+                </button>
+              </div>
+              <p className="text-blue-100 text-sm mt-1">
+                Las keywords se actualizarán directamente en Tonic
+              </p>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto max-h-[60vh]">
+              {/* Success Message */}
+              {keywordsSuccess && (
+                <div className="mb-4 p-3 bg-green-100 border border-green-300 rounded-lg text-green-800 flex items-center gap-2">
+                  <span>✅</span> Keywords actualizadas exitosamente
+                </div>
+              )}
+
+              {/* Error Message */}
+              {keywordsError && (
+                <div className="mb-4 p-3 bg-red-100 border border-red-300 rounded-lg text-red-800 flex items-center gap-2">
+                  <span>❌</span> {keywordsError}
+                </div>
+              )}
+
+              {/* Add New Keyword */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Agregar nueva keyword
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newKeyword}
+                    onChange={(e) => setNewKeyword(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && addKeyword()}
+                    placeholder="Escribe una keyword..."
+                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    disabled={savingKeywords}
+                  />
+                  <button
+                    onClick={addKeyword}
+                    disabled={!newKeyword.trim() || savingKeywords}
+                    className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                  >
+                    Agregar
+                  </button>
+                </div>
+              </div>
+
+              {/* Keywords List */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Keywords actuales ({editingKeywords.length}/10)
+                  <span className="text-gray-500 font-normal ml-2">(mínimo 3, máximo 10)</span>
+                </label>
+                <div className="flex flex-wrap gap-2 min-h-[100px] p-3 border border-gray-200 rounded-lg bg-gray-50">
+                  {editingKeywords.length === 0 ? (
+                    <p className="text-gray-400 text-sm">No hay keywords. Agrega al menos 3.</p>
+                  ) : (
+                    editingKeywords.map((keyword, index) => (
+                      <span
+                        key={index}
+                        className="bg-white text-blue-700 px-3 py-1.5 rounded-lg text-sm font-medium border border-blue-200 flex items-center gap-2 group"
+                      >
+                        {keyword}
+                        <button
+                          onClick={() => removeKeyword(keyword)}
+                          disabled={savingKeywords}
+                          className="text-red-400 hover:text-red-600 font-bold opacity-60 group-hover:opacity-100 transition-opacity"
+                          title="Eliminar keyword"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Info */}
+              <div className="text-xs text-gray-500 bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                <p className="font-medium text-yellow-800 mb-1">⚠️ Importante:</p>
+                <ul className="list-disc list-inside space-y-1 text-yellow-700">
+                  <li>Los cambios se guardarán directamente en Tonic</li>
+                  <li>Tonic requiere entre 3 y 10 keywords por campaña</li>
+                  <li>Las keywords afectan el targeting de tu campaña RSOC</li>
+                </ul>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex justify-end gap-3">
+              <button
+                onClick={() => setShowKeywordsModal(false)}
+                disabled={savingKeywords}
+                className="px-4 py-2 text-gray-700 hover:text-gray-900 font-medium transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={saveKeywords}
+                disabled={savingKeywords || editingKeywords.length < 3 || editingKeywords.length > 10}
+                className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white px-6 py-2 rounded-lg font-semibold flex items-center gap-2 transition-colors"
+              >
+                {savingKeywords ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    Guardando...
+                  </>
+                ) : (
+                  <>
+                    <span>💾</span>
+                    Guardar en Tonic
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
