@@ -5,7 +5,7 @@
   "description": "Digital Ads Campaign Management Platform with AI-powered content generation",
   "scripts": {
     "dev": "next dev -p 3001",
-    "build": "prisma generate && prisma db push && next build",
+    "build": "prisma generate && prisma db push --skip-generate --accept-data-loss && next build",
     "postinstall": "prisma generate",
     "start": "next start",
     "lint": "next lint",
