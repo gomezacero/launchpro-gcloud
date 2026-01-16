@@ -38,37 +38,42 @@ function extractTonicIdFromCampaignName(name: string): string | null {
 
 /**
  * Convert date range to Tonic from/to dates
+ *
+ * NOTE: The EPC Final endpoint now supports today's date.
+ * We use the actual date selected by the user.
  */
 function getTonicDateRange(dateRange: string): { from: string; to: string } {
   const now = new Date();
   const formatDate = (d: Date) => d.toISOString().split('T')[0];
 
-  // Yesterday - EPC Final has data up to yesterday
+  const todayStr = formatDate(now);
+
   const yesterday = new Date(now);
   yesterday.setDate(yesterday.getDate() - 1);
   const yesterdayStr = formatDate(yesterday);
 
-  console.log(`[TIKTOK-ROAS-DATE] dateRange=${dateRange}, now=${formatDate(now)}, yesterday=${yesterdayStr}`);
+  console.log(`[TIKTOK-ROAS-DATE] dateRange=${dateRange}, today=${todayStr}, yesterday=${yesterdayStr}`);
 
   switch (dateRange) {
     case 'today': {
-      return { from: yesterdayStr, to: yesterdayStr };
+      // Use today's actual date for real-time data
+      return { from: todayStr, to: todayStr };
     }
     case 'yesterday': {
       return { from: yesterdayStr, to: yesterdayStr };
     }
     case 'last7days': {
-      const from = new Date(yesterday);
+      const from = new Date(now);
       from.setDate(from.getDate() - 6);
-      return { from: formatDate(from), to: yesterdayStr };
+      return { from: formatDate(from), to: todayStr };
     }
     case 'last30days': {
-      const from = new Date(yesterday);
+      const from = new Date(now);
       from.setDate(from.getDate() - 29);
-      return { from: formatDate(from), to: yesterdayStr };
+      return { from: formatDate(from), to: todayStr };
     }
     default: {
-      return { from: yesterdayStr, to: yesterdayStr };
+      return { from: todayStr, to: todayStr };
     }
   }
 }
