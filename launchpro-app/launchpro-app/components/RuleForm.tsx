@@ -1371,7 +1371,7 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
                   <div className="text-sm text-red-800">Costo (Meta)</div>
                 </div>
                 <div className="bg-blue-50 rounded-lg p-4 text-center">
-                  <div className="text-2xl font-bold text-blue-600">{roasResult.totals.overallRoas.toFixed(2)}%</div>
+                  <div className="text-2xl font-bold text-blue-600">{roasResult.totals.overallRoas.toFixed(2)}</div>
                   <div className="text-sm text-blue-800">ROAS Calculado</div>
                 </div>
                 <div className="bg-gray-50 rounded-lg p-4 text-center">
@@ -1436,7 +1436,7 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
                             {campaign.metaRoas.toFixed(2)}%
                           </td>
                           <td className="px-3 py-2 text-right font-mono font-bold text-blue-700">
-                            {campaign.calculatedRoas.toFixed(2)}%
+                            {campaign.calculatedRoas.toFixed(2)}
                           </td>
                           <td className="px-3 py-2 text-center">
                             {campaign.error ? (
@@ -1470,7 +1470,7 @@ export default function RuleForm({ initialData, ruleId, mode }: RuleFormProps) {
                   </p>
                   <p>
                     <span className="font-semibold text-blue-700">ROAS Calculado:</span>{' '}
-                    <code className="bg-gray-200 px-2 py-1 rounded">(Gross Revenue de Tonic / Costo de Meta) x 100</code>
+                    <code className="bg-gray-200 px-2 py-1 rounded">Gross Revenue de Tonic / Costo de Meta</code>
                   </p>
                 </div>
                 <p className="text-xs text-gray-500 mt-3">

@@ -1373,7 +1373,7 @@ export default function TikTokRuleForm({ initialData, ruleId, mode }: TikTokRule
                   <div className="text-sm text-red-800">Costo (TikTok)</div>
                 </div>
                 <div className="bg-gray-100 rounded-lg p-4 text-center">
-                  <div className="text-2xl font-bold text-gray-900">{roasResult.totals.overallRoas.toFixed(2)}%</div>
+                  <div className="text-2xl font-bold text-gray-900">{roasResult.totals.overallRoas.toFixed(2)}</div>
                   <div className="text-sm text-gray-700">ROAS Calculado</div>
                 </div>
                 <div className="bg-gray-50 rounded-lg p-4 text-center">
@@ -1434,7 +1434,7 @@ export default function TikTokRuleForm({ initialData, ruleId, mode }: TikTokRule
                             ${campaign.cost.toFixed(2)}
                           </td>
                           <td className="px-3 py-2 text-right font-mono font-bold text-gray-900">
-                            {campaign.calculatedRoas.toFixed(2)}%
+                            {campaign.calculatedRoas.toFixed(2)}
                           </td>
                           <td className="px-3 py-2 text-center">
                             {campaign.error ? (
@@ -1465,7 +1465,7 @@ export default function TikTokRuleForm({ initialData, ruleId, mode }: TikTokRule
                 <div className="space-y-2 text-sm text-gray-600">
                   <p>
                     <span className="font-semibold text-gray-900">ROAS Calculado:</span>{' '}
-                    <code className="bg-gray-200 px-2 py-1 rounded">(Gross Revenue de Tonic / Costo de TikTok) x 100</code>
+                    <code className="bg-gray-200 px-2 py-1 rounded">Gross Revenue de Tonic / Costo de TikTok</code>
                   </p>
                 </div>
                 <p className="text-xs text-gray-500 mt-3">
