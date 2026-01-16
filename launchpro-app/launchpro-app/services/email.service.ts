@@ -994,6 +994,229 @@ class EmailService {
       };
     }
   }
+
+  /**
+   * Send email when a rule is created
+   */
+  async sendRuleCreatedEmail(rule: {
+    id: string;
+    name: string;
+    platform: string;
+    level: string;
+    metric: string;
+    operator: string;
+    value: number;
+    action: string;
+  }, creatorEmail: string): Promise<void> {
+    const client = this.getClient();
+    if (!client) {
+      logger.warn('email', 'Resend not configured, skipping rule created notification');
+      return;
+    }
+
+    const platformEmoji = rule.platform === 'META' ? '📘' : '🎵';
+    const actionText = this.getActionText(rule.action);
+    const operatorText = this.getOperatorText(rule.operator);
+
+    try {
+      await client.emails.send({
+        from: this.getFromEmail(),
+        to: [creatorEmail],
+        subject: `${platformEmoji} Nueva Regla Creada: ${rule.name}`,
+        html: `
+          <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 650px; margin: 0 auto; background: #ffffff;">
+            <!-- Header -->
+            <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
+              <h1 style="color: white; margin: 0; font-size: 24px;">✨ Regla Creada Exitosamente</h1>
+              <p style="color: rgba(255,255,255,0.9); margin: 10px 0 0 0; font-size: 16px;">LaunchPro - Sistema de Reglas</p>
+            </div>
+
+            <!-- Content -->
+            <div style="padding: 25px; background: #f8fafc;">
+              <div style="background: white; border-radius: 8px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                <h2 style="margin: 0 0 20px 0; color: #1e293b; font-size: 18px;">
+                  ${platformEmoji} ${rule.name}
+                </h2>
+
+                <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                  <tr>
+                    <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; color: #64748b;">Plataforma</td>
+                    <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; font-weight: 600; color: #1e293b;">${rule.platform}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; color: #64748b;">Nivel</td>
+                    <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; font-weight: 600; color: #1e293b;">${rule.level}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; color: #64748b;">Condición</td>
+                    <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; font-weight: 600; color: #1e293b;">
+                      ${rule.metric} ${operatorText} ${rule.value}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 10px; color: #64748b;">Acción</td>
+                    <td style="padding: 10px; font-weight: 600; color: #1e293b;">${actionText}</td>
+                  </tr>
+                </table>
+              </div>
+
+              <div style="background: #ecfdf5; border-radius: 8px; padding: 15px; margin-top: 20px; border: 1px solid #a7f3d0;">
+                <p style="margin: 0; color: #065f46; font-size: 13px;">
+                  ✅ La regla está activa y comenzará a evaluarse según la programación configurada.
+                  Recibirás un email cada vez que esta regla se ejecute.
+                </p>
+              </div>
+            </div>
+
+            <!-- Footer -->
+            <div style="padding: 20px; text-align: center; color: #94a3b8; font-size: 12px; background: #f1f5f9; border-radius: 0 0 8px 8px;">
+              <p style="margin: 0;">LaunchPro - Campaign Management System</p>
+              <p style="margin: 5px 0 0 0;">Creada el ${new Date().toLocaleString('es-ES')}</p>
+            </div>
+          </div>
+        `,
+      });
+      logger.success('email', `Rule created email sent to ${creatorEmail}`, { ruleId: rule.id });
+    } catch (error: any) {
+      logger.error('email', `Failed to send rule created email: ${error.message}`, { ruleId: rule.id, error });
+    }
+  }
+
+  /**
+   * Send email when a rule is executed
+   */
+  async sendRuleExecutedEmail(
+    rule: {
+      id: string;
+      name: string;
+      platform: string;
+      level: string;
+      metric: string;
+      operator: string;
+      value: number;
+      action: string;
+    },
+    execution: {
+      targetName: string;
+      metricValue: number;
+      actionResult: string;
+      actionDetails?: any;
+    },
+    recipientEmail: string
+  ): Promise<void> {
+    const client = this.getClient();
+    if (!client) {
+      logger.warn('email', 'Resend not configured, skipping rule executed notification');
+      return;
+    }
+
+    const platformEmoji = rule.platform === 'META' ? '📘' : '🎵';
+    const actionText = this.getActionText(rule.action);
+    const isSuccess = execution.actionResult === 'SUCCESS';
+    const statusEmoji = isSuccess ? '✅' : '❌';
+    const statusColor = isSuccess ? '#10b981' : '#ef4444';
+    const statusBgColor = isSuccess ? '#ecfdf5' : '#fef2f2';
+    const statusBorderColor = isSuccess ? '#a7f3d0' : '#fecaca';
+
+    try {
+      await client.emails.send({
+        from: this.getFromEmail(),
+        to: [recipientEmail],
+        subject: `${platformEmoji} Regla Ejecutada: ${rule.name} - ${execution.targetName}`,
+        html: `
+          <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 650px; margin: 0 auto; background: #ffffff;">
+            <!-- Header -->
+            <div style="background: linear-gradient(135deg, ${statusColor} 0%, ${isSuccess ? '#059669' : '#dc2626'} 100%); padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
+              <h1 style="color: white; margin: 0; font-size: 24px;">${statusEmoji} Regla Ejecutada</h1>
+              <p style="color: rgba(255,255,255,0.9); margin: 10px 0 0 0; font-size: 16px;">${rule.name}</p>
+            </div>
+
+            <!-- Content -->
+            <div style="padding: 25px; background: #f8fafc;">
+              <div style="background: white; border-radius: 8px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                <h3 style="margin: 0 0 15px 0; color: #1e293b; font-size: 16px;">
+                  📊 Detalles de Ejecución
+                </h3>
+
+                <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                  <tr>
+                    <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; color: #64748b;">Entidad</td>
+                    <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; font-weight: 600; color: #1e293b;">${execution.targetName}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; color: #64748b;">Valor de ${rule.metric}</td>
+                    <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; font-weight: 600; color: #1e293b;">${execution.metricValue.toFixed(2)}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; color: #64748b;">Condición</td>
+                    <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; font-weight: 600; color: #1e293b;">${rule.metric} ${this.getOperatorText(rule.operator)} ${rule.value}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; color: #64748b;">Acción</td>
+                    <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; font-weight: 600; color: #1e293b;">${actionText}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 10px; color: #64748b;">Resultado</td>
+                    <td style="padding: 10px; font-weight: 600; color: ${statusColor};">${isSuccess ? 'Exitoso' : 'Fallido'}</td>
+                  </tr>
+                  ${execution.actionDetails ? `
+                  <tr>
+                    <td style="padding: 10px; border-top: 1px solid #e2e8f0; color: #64748b;">Detalles</td>
+                    <td style="padding: 10px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #475569;">${typeof execution.actionDetails === 'string' ? execution.actionDetails : JSON.stringify(execution.actionDetails)}</td>
+                  </tr>
+                  ` : ''}
+                </table>
+              </div>
+
+              <div style="background: ${statusBgColor}; border-radius: 8px; padding: 15px; margin-top: 20px; border: 1px solid ${statusBorderColor};">
+                <p style="margin: 0; color: ${isSuccess ? '#065f46' : '#991b1b'}; font-size: 13px;">
+                  ${isSuccess
+                    ? '✅ La acción se ejecutó correctamente.'
+                    : '❌ La acción no se pudo completar. Revisa los detalles arriba.'}
+                </p>
+              </div>
+            </div>
+
+            <!-- Footer -->
+            <div style="padding: 20px; text-align: center; color: #94a3b8; font-size: 12px; background: #f1f5f9; border-radius: 0 0 8px 8px;">
+              <p style="margin: 0;">LaunchPro - Campaign Management System</p>
+              <p style="margin: 5px 0 0 0;">Ejecutada el ${new Date().toLocaleString('es-ES')}</p>
+            </div>
+          </div>
+        `,
+      });
+      logger.success('email', `Rule executed email sent to ${recipientEmail}`, { ruleId: rule.id });
+    } catch (error: any) {
+      logger.error('email', `Failed to send rule executed email: ${error.message}`, { ruleId: rule.id, error });
+    }
+  }
+
+  /**
+   * Get human-readable action text
+   */
+  private getActionText(action: string): string {
+    const actions: Record<string, string> = {
+      'NOTIFY': 'Notificar',
+      'PAUSE': 'Pausar',
+      'UNPAUSE': 'Reactivar',
+      'INCREASE_BUDGET': 'Aumentar Presupuesto',
+      'DECREASE_BUDGET': 'Disminuir Presupuesto',
+    };
+    return actions[action] || action;
+  }
+
+  /**
+   * Get human-readable operator text
+   */
+  private getOperatorText(operator: string): string {
+    const operators: Record<string, string> = {
+      'GREATER_THAN': '>',
+      'LESS_THAN': '<',
+      'BETWEEN': 'entre',
+      'NOT_BETWEEN': 'fuera de',
+    };
+    return operators[operator] || operator;
+  }
 }
 
 // Export singleton instance

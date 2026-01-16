@@ -397,6 +397,9 @@ model Manager {
   stopLossViolations  StopLossViolation[]
   weeklySnapshots     WeeklySnapshot[]
 
+  // Rules created by this manager
+  adRules             AdRule[]     @relation("RuleCreator")
+
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
   lastLoginAt  DateTime?
@@ -531,6 +534,10 @@ model AdRule {
 
   // History
   executions      AdRuleExecution[]
+
+  // Creator - who created this rule
+  createdById     String?
+  createdBy       Manager?       @relation("RuleCreator", fields: [createdById], references: [id])
 
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt

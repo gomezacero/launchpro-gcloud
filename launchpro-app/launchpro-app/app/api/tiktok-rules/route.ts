@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger';
 import { AdRuleLevel, AdRuleMetric, AdRuleOperator, AdRuleAction } from '@prisma/client';
+import { emailService } from '@/services/email.service';
+import { cookies } from 'next/headers';
 
 /**
  * GET /api/tiktok-rules
@@ -201,6 +203,26 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Get current user from cookie
+    const cookieStore = await cookies();
+    const managerCookie = cookieStore.get('manager');
+    let managerId: string | null = null;
+    let managerEmail: string | null = null;
+
+    if (managerCookie) {
+      try {
+        const managerData = JSON.parse(managerCookie.value);
+        managerId = managerData.id;
+        const manager = await prisma.manager.findUnique({
+          where: { id: managerId! },
+          select: { email: true },
+        });
+        managerEmail = manager?.email || null;
+      } catch (e) {
+        logger.warn('api', 'Could not parse manager cookie');
+      }
+    }
+
     // Create the rule
     const rule = await prisma.adRule.create({
       data: {
@@ -230,6 +252,7 @@ export async function POST(request: NextRequest) {
         scheduleDays: body.scheduleDays || [],
         cooldownMinutes: body.cooldownMinutes || 60,
         maxExecutions: body.maxExecutions ?? null,
+        createdById: managerId || undefined,
       },
       include: {
         tiktokAccount: {
@@ -251,6 +274,22 @@ export async function POST(request: NextRequest) {
 
     const duration = Date.now() - startTime;
     logger.success('api', `TikTok rule created: ${rule.name}`, { ruleId: rule.id }, duration);
+
+    // Send email notification to creator
+    if (managerEmail) {
+      emailService.sendRuleCreatedEmail({
+        id: rule.id,
+        name: rule.name,
+        platform: 'TIKTOK',
+        level: rule.level,
+        metric: rule.metric,
+        operator: rule.operator,
+        value: rule.value,
+        action: rule.action,
+      }, managerEmail).catch(err => {
+        logger.error('api', `Failed to send rule created email: ${err.message}`);
+      });
+    }
 
     return NextResponse.json({
       success: true,

@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { tiktokService } from './tiktok.service';
 import { tonicService, TonicCredentials } from './tonic.service';
+import { emailService } from './email.service';
 import { logger } from '@/lib/logger';
 import { Resend } from 'resend';
 import {
@@ -253,6 +254,37 @@ class TikTokAdRulesService {
               executionCount: { increment: 1 },
             },
           });
+
+          // Send email notification to rule creator
+          if (rule.createdById) {
+            const creator = await prisma.manager.findUnique({
+              where: { id: rule.createdById },
+              select: { email: true },
+            });
+            if (creator?.email) {
+              emailService.sendRuleExecutedEmail(
+                {
+                  id: rule.id,
+                  name: rule.name,
+                  platform: rule.platform || 'TIKTOK',
+                  level: rule.level,
+                  metric: rule.metric,
+                  operator: rule.operator,
+                  value: rule.value,
+                  action: rule.action,
+                },
+                {
+                  targetName: entity.name,
+                  metricValue,
+                  actionResult: actionResult.success ? 'SUCCESS' : 'FAILED',
+                  actionDetails: actionResult.details,
+                },
+                creator.email
+              ).catch(err => {
+                logger.error('ad-rules', `Failed to send execution email: ${err.message}`);
+              });
+            }
+          }
 
           anyTriggered = true;
         }
