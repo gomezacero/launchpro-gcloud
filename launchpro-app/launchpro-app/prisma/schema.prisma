@@ -388,6 +388,9 @@ model Manager {
   name         String
   role         ManagerRole  @default(MANAGER)
 
+  // Looker Studio Report URL (for analytics dashboard)
+  lookerReportUrl String?
+
   // Campaigns created by this manager
   campaigns    Campaign[]   @relation("CampaignCreator")
 

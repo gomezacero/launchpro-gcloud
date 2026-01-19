@@ -161,6 +161,12 @@ export default function SettingsPage() {
           >
             Accounts
           </Link>
+          <Link
+            href="/settings/managers"
+            className="px-4 py-2 bg-white text-gray-700 rounded-lg font-medium hover:bg-gray-100 border border-gray-200"
+          >
+            Managers
+          </Link>
         </div>
 
         {/* Error Alert */}

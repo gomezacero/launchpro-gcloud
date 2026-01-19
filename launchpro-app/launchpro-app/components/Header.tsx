@@ -11,6 +11,7 @@ const baseNavigation = [
   { name: 'Dashboard', href: '/dashboard', icon: '📊' },
   { name: 'Campaigns', href: '/campaigns', icon: '📋' },
   { name: 'New Campaign', href: '/campaigns/new', icon: '🚀' },
+  { name: 'Analytics', href: '/analytics', icon: '📈' },
   { name: 'Reglas', href: '/rules', icon: '⚡' },
   { name: 'Logs', href: '/logs', icon: '📝' },
   { name: 'Compliance', href: '/compliance', icon: '✅' },

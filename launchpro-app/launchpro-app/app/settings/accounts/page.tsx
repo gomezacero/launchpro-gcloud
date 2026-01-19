@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { Account, AccountType } from '@prisma/client';
 
 interface AccountWithStatus extends Account {
@@ -117,10 +118,29 @@ export default function AccountsPage() {
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Account Management</h1>
+          <h1 className="text-3xl font-bold text-gray-900">Settings</h1>
           <p className="mt-2 text-gray-600">
             Manage your Tonic, Meta, and TikTok advertising accounts
           </p>
+        </div>
+
+        {/* Navigation */}
+        <div className="mb-6 flex gap-4">
+          <Link
+            href="/settings"
+            className="px-4 py-2 bg-white text-gray-700 rounded-lg font-medium hover:bg-gray-100 border border-gray-200"
+          >
+            General
+          </Link>
+          <span className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium">
+            Accounts
+          </span>
+          <Link
+            href="/settings/managers"
+            className="px-4 py-2 bg-white text-gray-700 rounded-lg font-medium hover:bg-gray-100 border border-gray-200"
+          >
+            Managers
+          </Link>
         </div>
 
         {/* Error Alert */}
