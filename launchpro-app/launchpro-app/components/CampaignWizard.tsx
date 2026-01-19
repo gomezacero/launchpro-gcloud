@@ -4719,8 +4719,11 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
                 </button>
               )
             ) : (
-              /* Show Launch Campaign only when NOT using DesignFlow flow */
-              !formData.needsDesignFlow && (
+              /* Show Launch Campaign when:
+                 1. NOT using DesignFlow flow, OR
+                 2. Using DesignFlow but design is already done (status === 'Done')
+              */
+              (!formData.needsDesignFlow || (isEditMode && editCampaignData?.designFlowTask?.status === 'Done')) && (
               <button
                 type="button"
                 onClick={handleSubmit}
