@@ -59,7 +59,11 @@
       "Bash(npx vercel --prod)",
       "Bash(node_modules/.bin/prisma generate:*)",
       "Bash(node_modules/.bin/next build)",
-      "Bash(DATABASE_URL=\"postgresql://postgres.ojhflsfnlwnpysvwtvnw:Legolas9OD7A9SX!@aws-0-us-west-2.pooler.supabase.com:6543/postgres?pgbouncer=true\" npx tsx:*)"
+      "Bash(DATABASE_URL=\"postgresql://postgres.ojhflsfnlwnpysvwtvnw:Legolas9OD7A9SX!@aws-0-us-west-2.pooler.supabase.com:6543/postgres?pgbouncer=true\" npx tsx:*)",
+      "Bash(DATABASE_URL=\"postgresql://postgres.ojhflsfnlwnpysvwtvnw:Legolas9OD7A9SX!@aws-0-us-west-2.pooler.supabase.com:6543/postgres?pgbouncer=true\" npx prisma db push:*)",
+      "Bash(npx vercel env:*)",
+      "Bash(DATABASE_URL='postgresql://postgres.ojhflsfnlwnpysvwtvnw:Legolas9OD7A9SX%21@aws-0-us-west-2.pooler.supabase.com:6543/postgres?pgbouncer=true' npx prisma db push:*)",
+      "Bash(DATABASE_URL='postgresql://postgres.ojhflsfnlwnpysvwtvnw:Legolas9OD7A9SX%21@aws-0-us-west-2.pooler.supabase.com:5432/postgres' npx prisma db push:*)"
     ],
     "deny": [],
     "ask": []
