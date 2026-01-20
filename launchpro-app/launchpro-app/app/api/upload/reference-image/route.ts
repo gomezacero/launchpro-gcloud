@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getStorageBucket } from '@/lib/gcs';
 import { logger } from '@/lib/logger';
-import { v4 as uuid } from 'uuid';
+import { randomUUID } from 'crypto';
 
 /**
  * Upload reference image for Neural Engine style guidance
@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
 
     // Generate unique filename
     const extension = file.name.split('.').pop() || 'jpg';
-    const filename = `reference-images/${uuid()}.${extension}`;
+    const filename = `reference-images/${randomUUID()}.${extension}`;
 
     // Convert file to buffer
     const arrayBuffer = await file.arrayBuffer();
