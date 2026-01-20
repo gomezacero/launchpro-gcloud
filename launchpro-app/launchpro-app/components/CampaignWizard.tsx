@@ -333,6 +333,15 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
         setEditCampaignData(campaign);
 
         // Populate form data with existing campaign data
+        // Filter out platforms that don't have valid data (e.g., Taboola added by error)
+        const validPlatforms = campaign.platforms.filter((p: any) =>
+          p.platform && ['META', 'TIKTOK', 'TABOOLA'].includes(p.platform)
+        );
+
+        // If campaign already has a tonicCampaignId, use it as selectedHeadlineId
+        // This ensures the article is preserved when navigating between steps
+        const hasExistingArticle = !!campaign.tonicCampaignId;
+
         setFormData({
           name: campaign.name,
           campaignType: campaign.campaignType || 'CBO',
@@ -344,7 +353,7 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
           communicationAngle: campaign.communicationAngle || '',
           keywords: campaign.keywords || [],
           contentGenerationPhrases: campaign.contentGenerationPhrases || [],
-          platforms: campaign.platforms.map((p: any) => ({
+          platforms: validPlatforms.map((p: any) => ({
             platform: p.platform,
             accountId: p.accountId || 'auto',
             performanceGoal: p.performanceGoal || 'OUTCOME_LEADS',
@@ -356,8 +365,9 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
             uploadedImages: [],
             uploadedVideos: [],
           })),
-          rsocMode: 'existing',
-          selectedHeadlineId: null,
+          // If campaign has existing Tonic article, use 'existing' mode with the article ID
+          rsocMode: hasExistingArticle ? 'existing' : 'new',
+          selectedHeadlineId: hasExistingArticle ? parseInt(campaign.tonicCampaignId) : null,
           needsDesignFlow: campaign.needsDesignFlow || false, // Keep campaign's saved value
           designFlowRequester: campaign.designFlowRequester || 'Harry',
           designFlowNotes: campaign.designFlowNotes || '',
@@ -2531,13 +2541,17 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Language *
+                  Language
+                  <span className="text-xs text-gray-500 ml-2">
+                    (Select "No Language Targeting" for Meta to skip language targeting)
+                  </span>
                 </label>
                 <select
                   value={formData.language}
                   onChange={(e) => handleInputChange('language', e.target.value)}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
+                  <option value="">-- No Language Targeting --</option>
                   <option value="en">English</option>
                   <option value="es">Español</option>
                   <option value="fr">Français</option>

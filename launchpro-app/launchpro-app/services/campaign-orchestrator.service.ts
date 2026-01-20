@@ -1783,8 +1783,9 @@ class CampaignOrchestratorService {
     };
 
     // Normalize language input (lowercase, trim)
-    const normalizedLang = campaign.language ? campaign.language.toLowerCase().trim() : 'en';
-    const targetLocales = localeMap[normalizedLang] || undefined;
+    // If language is empty/null, don't default to 'en' - use undefined to skip locale targeting
+    const normalizedLang = campaign.language ? campaign.language.toLowerCase().trim() : '';
+    const targetLocales = normalizedLang ? (localeMap[normalizedLang] || undefined) : undefined;
 
     logger.info('meta', `Normalized language: "${normalizedLang}"`);
     logger.info('meta', `Locale lookup result: ${JSON.stringify(targetLocales)}`);
