@@ -52,6 +52,8 @@ interface PlatformConfig {
   aiVisualStyle?: VisualStyleType;  // Visual style for AI image generation
   aiIncludeTextOverlay?: boolean;  // Whether to include text overlay on generated images
   aiUseNeuralEngine?: boolean;  // Use Neural Engine Pipeline instead of basic generation
+  aiReferenceImageUrl?: string;  // Reference image URL to guide style generation
+  aiReferenceImagePreview?: string;  // Local preview URL for the reference image
   adsPerAdSet?: number;  // For ABO: How many ads to put in each ad set (1-5)
   uploadedImages?: UploadedFile[];
   uploadedVideos?: UploadedFile[];
@@ -1485,6 +1487,7 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
             copyMaster: formData.copyMaster,
             visualStyle: platform.aiVisualStyle || 'photography',
             includeTextOverlay: platform.aiIncludeTextOverlay !== false, // Default true
+            referenceImageUrl: platform.aiReferenceImageUrl, // Reference image for style guidance
             previewMode: true,
           }),
         });
@@ -3924,6 +3927,94 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
                                 </p>
                               </div>
                             </div>
+
+                            {/* Reference Image Upload - Shows for non-photography styles */}
+                            {platform.aiVisualStyle && platform.aiVisualStyle !== 'photography' && (
+                              <div className="mt-4 p-3 bg-white rounded-lg border border-purple-200">
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                  🖼️ Reference Image (Optional)
+                                  <span className="font-normal text-xs text-gray-500 ml-2">
+                                    Upload an example to guide the AI style
+                                  </span>
+                                </label>
+
+                                {platform.aiReferenceImagePreview ? (
+                                  <div className="relative">
+                                    <img
+                                      src={platform.aiReferenceImagePreview}
+                                      alt="Reference"
+                                      className="w-full h-32 object-cover rounded-lg border border-purple-200"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        updatePlatform(index, 'aiReferenceImageUrl', undefined);
+                                        updatePlatform(index, 'aiReferenceImagePreview', undefined);
+                                      }}
+                                      className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
+                                    >
+                                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                      </svg>
+                                    </button>
+                                    <p className="text-xs text-green-600 mt-2">
+                                      ✓ Reference image loaded - AI will analyze this style
+                                    </p>
+                                  </div>
+                                ) : (
+                                  <div className="relative">
+                                    <input
+                                      type="file"
+                                      accept="image/jpeg,image/png,image/webp"
+                                      onChange={async (e) => {
+                                        const file = e.target.files?.[0];
+                                        if (!file) return;
+
+                                        // Create preview
+                                        const previewUrl = URL.createObjectURL(file);
+                                        updatePlatform(index, 'aiReferenceImagePreview', previewUrl);
+
+                                        // Upload to GCS for the Neural Engine to access
+                                        const formData = new FormData();
+                                        formData.append('file', file);
+                                        formData.append('type', 'reference');
+
+                                        try {
+                                          const response = await fetch('/api/upload/reference-image', {
+                                            method: 'POST',
+                                            body: formData,
+                                          });
+
+                                          if (response.ok) {
+                                            const { url } = await response.json();
+                                            updatePlatform(index, 'aiReferenceImageUrl', url);
+                                          }
+                                        } catch (error) {
+                                          console.error('Failed to upload reference image:', error);
+                                        }
+                                      }}
+                                      className="hidden"
+                                      id={`reference-image-${index}`}
+                                    />
+                                    <label
+                                      htmlFor={`reference-image-${index}`}
+                                      className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-purple-300 rounded-lg cursor-pointer hover:border-purple-400 hover:bg-purple-50 transition-colors"
+                                    >
+                                      <svg className="w-8 h-8 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                      </svg>
+                                      <span className="text-xs text-purple-600 mt-1">Click to upload reference image</span>
+                                      <span className="text-xs text-gray-400">JPG, PNG, WebP (max 5MB)</span>
+                                    </label>
+                                  </div>
+                                )}
+
+                                <p className="text-xs text-purple-500 mt-2 italic">
+                                  💡 Tip: Upload an image that represents the visual style you want.
+                                  The AI will analyze colors, composition, and mood to create similar images.
+                                </p>
+                              </div>
+                            )}
                           </div>
                         )}
 

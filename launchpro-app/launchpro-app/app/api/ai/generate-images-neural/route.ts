@@ -31,6 +31,7 @@ export async function POST(request: NextRequest) {
       visualStyle = 'photography',
       includeTextOverlay = true,
       customTextOverlay,
+      referenceImageUrl, // Reference image for style guidance
       previewMode = true, // Optimize for faster preview
     } = body;
 
@@ -61,6 +62,7 @@ export async function POST(request: NextRequest) {
       platform,
       visualStyle: selectedStyle,
       includeTextOverlay,
+      hasReferenceImage: !!referenceImageUrl,
       previewMode,
     });
 
@@ -79,6 +81,7 @@ export async function POST(request: NextRequest) {
       visualStyle: selectedStyle as VisualStyleType,
       includeTextOverlay,
       customTextOverlay: customTextOverlay || undefined,
+      referenceImageUrl: referenceImageUrl || undefined,
       useCache: true,
       useFallbackModels: true,
       previewMode: true, // Always preview mode for wizard

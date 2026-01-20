@@ -24,6 +24,7 @@ export interface NeuralEngineInput {
   visualStyle?: VisualStyleType;
   includeTextOverlay?: boolean;
   customTextOverlay?: string; // If provided, use this instead of safe copy
+  referenceImageUrl?: string; // URL of reference image to guide style generation
 
   // Feature flags
   useCache?: boolean;

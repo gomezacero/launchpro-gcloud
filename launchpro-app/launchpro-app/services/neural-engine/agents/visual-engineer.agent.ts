@@ -277,6 +277,75 @@ export class VisualEngineerAgent {
   }
 
   /**
+   * Analyze reference image to extract style characteristics
+   * Uses Gemini's vision capabilities to understand the visual style
+   */
+  private async analyzeReferenceImage(imageUrl: string): Promise<string | null> {
+    console.log(`[${AGENT_NAME}] 🖼️ Analyzing reference image for style guidance...`);
+
+    try {
+      // Fetch the image and convert to base64
+      const response = await fetch(imageUrl);
+      if (!response.ok) {
+        console.warn(`[${AGENT_NAME}] Failed to fetch reference image: ${response.status}`);
+        return null;
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      const base64Image = Buffer.from(arrayBuffer).toString('base64');
+      const mimeType = response.headers.get('content-type') || 'image/jpeg';
+
+      // Use Gemini Vision to analyze the image
+      const analysisResponse = await this.gemini.models.generateContent({
+        model: VISUAL_ENGINEER_CONFIG.model.model,
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                inlineData: {
+                  mimeType,
+                  data: base64Image,
+                },
+              },
+              {
+                text: `Analyze this reference image and extract its visual style characteristics.
+
+Focus on:
+1. **Color Palette**: What are the dominant colors? (e.g., warm earth tones, cool blues, muted pastels)
+2. **Composition**: How is the image composed? (e.g., centered, rule of thirds, negative space usage)
+3. **Mood/Atmosphere**: What feeling does it evoke? (e.g., calm, energetic, professional, playful)
+4. **Lighting**: What type of lighting? (e.g., natural sunlight, soft diffused, high contrast, studio)
+5. **Texture & Detail Level**: Is it clean/minimal or rich in texture/detail?
+6. **Visual Elements**: Key visual elements that define this style (e.g., geometric shapes, gradients, organic forms)
+
+Provide a concise analysis (3-5 sentences) that could be used to guide AI image generation to match this style.
+Format: Start directly with the style description, no intro phrases.`,
+              },
+            ],
+          },
+        ],
+        config: {
+          temperature: 0.3, // Lower temperature for more consistent analysis
+          maxOutputTokens: 500,
+        },
+      });
+
+      const analysis = analysisResponse.text || '';
+
+      if (analysis) {
+        console.log(`[${AGENT_NAME}] ✅ Reference image analyzed: ${analysis.substring(0, 100)}...`);
+        return analysis;
+      }
+
+      return null;
+    } catch (error: any) {
+      console.warn(`[${AGENT_NAME}] ⚠️ Reference image analysis failed: ${error.message}`);
+      return null;
+    }
+  }
+
+  /**
    * Generate prompts using Gemini Flash
    */
   private async generatePrompts(
@@ -284,7 +353,13 @@ export class VisualEngineerAgent {
     strategyBrief: StrategyBrief,
     culturalContext: CulturalContext
   ): Promise<VisualPrompt[]> {
-    const prompt = this.buildPromptGenerationPrompt(input, strategyBrief, culturalContext);
+    // Analyze reference image if provided
+    let referenceImageAnalysis: string | null = null;
+    if (input.referenceImageUrl) {
+      referenceImageAnalysis = await this.analyzeReferenceImage(input.referenceImageUrl);
+    }
+
+    const prompt = this.buildPromptGenerationPrompt(input, strategyBrief, culturalContext, referenceImageAnalysis);
 
     console.log(`[${AGENT_NAME}] Calling Gemini Flash for prompt generation...`);
 
@@ -315,7 +390,8 @@ export class VisualEngineerAgent {
   private buildPromptGenerationPrompt(
     input: NeuralEngineInput,
     strategyBrief: StrategyBrief,
-    culturalContext: CulturalContext
+    culturalContext: CulturalContext,
+    referenceImageAnalysis?: string | null
   ): string {
     const aspects = PLATFORM_ASPECTS[input.platform] || PLATFORM_ASPECTS.META;
 
@@ -334,6 +410,26 @@ export class VisualEngineerAgent {
     const copyMasterContext = input.copyMaster
       ? `\n## COPY MASTER (Manager's Ad Message)\n"${input.copyMaster}"\nThis text will be overlaid on the image. The visual should SUPPORT and COMPLEMENT this message.\n`
       : '';
+
+    // Include reference image analysis if available
+    const referenceImageContext = referenceImageAnalysis
+      ? `\n## 🎨 REFERENCE IMAGE STYLE ANALYSIS (HIGH PRIORITY)
+The user has provided a reference image. Your prompts MUST incorporate the following style characteristics extracted from the reference:
+
+"${referenceImageAnalysis}"
+
+⚠️ CRITICAL: Match these visual characteristics as closely as possible:
+- Use the same color palette and mood
+- Mirror the composition style and lighting
+- Replicate the overall aesthetic feel
+- Apply the same texture and detail level
+
+This reference image takes PRIORITY over generic style descriptions.\n`
+      : '';
+
+    if (referenceImageAnalysis) {
+      console.log(`[${AGENT_NAME}] 🖼️ Including reference image analysis in prompt generation`);
+    }
 
     // Build style-specific instructions
     const styleInstructions = this.getStyleDescription(visualStyle);
@@ -393,7 +489,7 @@ Generate image generation prompts for the following advertising campaign.
 - Visual Concept: ${strategyBrief.visualConcept}
 - Color Palette: ${strategyBrief.colorPalette.join(', ')}
 - Psychological Angle: ${strategyBrief.primaryAngle}
-${copyMasterContext}
+${copyMasterContext}${referenceImageContext}
 ${visualRequirementsSection}
 
 ## CULTURAL CODES TO INCORPORATE
