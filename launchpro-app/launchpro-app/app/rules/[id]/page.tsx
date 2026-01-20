@@ -10,12 +10,17 @@ interface RuleFormData {
   metaAccountId: string;
   level: string;
   targetIds: string[];
+  applyToAllCampaigns: boolean;
+  specificCampaignIds: string[];
   metric: string;
   operator: string;
   value: string;
   valueMin: string;
   valueMax: string;
   timeWindow: string;
+  tonicAccountId: string;
+  roasDateRange: string;
+  frequencyHours: string;
   action: string;
   actionValue: string;
   actionValueType: string;
@@ -49,13 +54,20 @@ export default function EditRulePage({ params }: { params: Promise<{ id: string 
           isActive: rule.isActive,
           metaAccountId: rule.metaAccountId,
           level: rule.level,
-          targetIds: rule.targetIds,
+          targetIds: rule.targetIds || [],
+          // Campaign scope - CRITICAL fields that were missing
+          applyToAllCampaigns: rule.applyToAllCampaigns ?? false,
+          specificCampaignIds: rule.specificCampaignIds || [],
           metric: rule.metric,
           operator: rule.operator,
           value: rule.value?.toString() || '',
           valueMin: rule.valueMin?.toString() || '',
           valueMax: rule.valueMax?.toString() || '',
           timeWindow: rule.timeWindow,
+          // ROAS specific fields - CRITICAL fields that were missing
+          tonicAccountId: rule.tonicAccountId || '',
+          roasDateRange: rule.roasDateRange || 'today',
+          frequencyHours: rule.frequencyHours?.toString() || '3',
           action: rule.action,
           actionValue: rule.actionValue?.toString() || '',
           actionValueType: rule.actionValueType || 'PERCENTAGE',
