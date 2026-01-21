@@ -31,9 +31,14 @@ export abstract class BaseAgent {
 
   constructor(config: Partial<AgentConfig> = {}) {
     // Use process.env directly to avoid module caching issues
-    // CLEAN the API key (remove whitespace, newlines, etc. that may come from env vars)
+    // CLEAN the API key (remove whitespace, newlines, quotes, etc. that may come from env vars)
     const rawKey = process.env.ANTHROPIC_API_KEY || '';
-    const anthropicKey = rawKey.trim().replace(/[\n\r\s]/g, '');
+    let anthropicKey = rawKey.split('').filter(c => c.charCodeAt(0) >= 33 && c.charCodeAt(0) <= 126).join('');
+    // Remove surrounding quotes if present (common Vercel env var issue)
+    if ((anthropicKey.startsWith('"') && anthropicKey.endsWith('"')) ||
+        (anthropicKey.startsWith("'") && anthropicKey.endsWith("'"))) {
+      anthropicKey = anthropicKey.slice(1, -1);
+    }
 
     this.anthropic = new Anthropic({
       apiKey: anthropicKey,

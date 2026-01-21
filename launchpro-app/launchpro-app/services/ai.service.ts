@@ -616,11 +616,18 @@ class AIService {
 
   /**
    * Get clean Anthropic API key from environment
+   * Handles: whitespace, newlines, copy/paste issues, and surrounding quotes
    */
   private getCleanApiKey(): string {
     const rawKey = process.env.ANTHROPIC_API_KEY || '';
     // Remove ALL non-printable characters (handles copy/paste issues)
-    return rawKey.split('').filter(c => c.charCodeAt(0) >= 33 && c.charCodeAt(0) <= 126).join('');
+    let cleanedKey = rawKey.split('').filter(c => c.charCodeAt(0) >= 33 && c.charCodeAt(0) <= 126).join('');
+    // Remove surrounding quotes if present (common Vercel env var issue)
+    if ((cleanedKey.startsWith('"') && cleanedKey.endsWith('"')) ||
+        (cleanedKey.startsWith("'") && cleanedKey.endsWith("'"))) {
+      cleanedKey = cleanedKey.slice(1, -1);
+    }
+    return cleanedKey;
   }
 
   /**
@@ -963,18 +970,38 @@ REMEMBER:
 
 Return ONLY a JSON array: ["keyword1", "keyword2", ..., "keyword10"]`;
 
-    const message = await this.anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 600, // Increased for 10 longer keywords (long-tails)
-      temperature: 0.8,
-      system: systemPrompt,
-      messages: [
-        {
-          role: 'user',
-          content: userPrompt,
-        },
-      ],
+    // Debug: Log API key info before making the call
+    const debugKey = this.getCleanApiKey();
+    console.log(`[AIService.generateKeywords] 🔑 API Key debug:`, {
+      keyLength: debugKey.length,
+      keyStart: debugKey.substring(0, 15),
+      keyEnd: debugKey.substring(debugKey.length - 6),
+      startsWithSkAnt: debugKey.startsWith('sk-ant-'),
     });
+
+    let message;
+    try {
+      message = await this.anthropic.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 600, // Increased for 10 longer keywords (long-tails)
+        temperature: 0.8,
+        system: systemPrompt,
+        messages: [
+          {
+            role: 'user',
+            content: userPrompt,
+          },
+        ],
+      });
+    } catch (error: any) {
+      console.error(`[AIService.generateKeywords] ❌ Anthropic API Error:`, {
+        status: error.status,
+        message: error.message,
+        keyUsed: `${debugKey.substring(0, 15)}...${debugKey.substring(debugKey.length - 6)}`,
+        rawEnvLength: (process.env.ANTHROPIC_API_KEY || '').length,
+      });
+      throw error;
+    }
 
     const responseText = message.content[0].type === 'text' ? message.content[0].text : '[]';
     const cleanedResponse = this.cleanJsonResponse(responseText);

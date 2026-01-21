@@ -17,14 +17,26 @@ export async function GET(request: NextRequest) {
     // Get the raw key from environment
     const rawKey = process.env.ANTHROPIC_API_KEY || '';
 
-    // Clean the key aggressively
-    const cleanedKey = rawKey
+    // Check for common issues
+    const hasLeadingQuote = rawKey.startsWith('"') || rawKey.startsWith("'");
+    const hasTrailingQuote = rawKey.endsWith('"') || rawKey.endsWith("'");
+    const hasLeadingWhitespace = rawKey !== rawKey.trimStart();
+    const hasTrailingWhitespace = rawKey !== rawKey.trimEnd();
+
+    // Clean the key aggressively - also strip quotes
+    let cleanedKey = rawKey
       .split('')
       .filter(char => {
         const code = char.charCodeAt(0);
         return (code >= 33 && code <= 126);
       })
       .join('');
+
+    // Remove surrounding quotes if present
+    if ((cleanedKey.startsWith('"') && cleanedKey.endsWith('"')) ||
+        (cleanedKey.startsWith("'") && cleanedKey.endsWith("'"))) {
+      cleanedKey = cleanedKey.slice(1, -1);
+    }
 
     // Find problematic characters
     const problematicChars: { index: number; char: string; code: number }[] = [];
@@ -45,6 +57,14 @@ export async function GET(request: NextRequest) {
       first30CharCodes: rawKey.substring(0, 30).split('').map(c => c.charCodeAt(0)),
       problematicCharacters: problematicChars,
       keyIsEmpty: !cleanedKey,
+      // Common issues detected
+      issues: {
+        hasLeadingQuote,
+        hasTrailingQuote,
+        hasLeadingWhitespace,
+        hasTrailingWhitespace,
+        hasSurroundingQuotes: hasLeadingQuote && hasTrailingQuote,
+      },
     };
 
     // If key is valid format, try a simple API call
