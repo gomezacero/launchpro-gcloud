@@ -67,33 +67,49 @@ export async function GET(request: NextRequest) {
       },
     };
 
-    // If key is valid format, try a simple API call
-    let apiTestResult: string;
-    if (cleanedKey && cleanedKey.startsWith('sk-ant-')) {
-      try {
-        const client = new Anthropic({ apiKey: cleanedKey });
+    // If key is valid format, try API calls with different models
+    let apiTestHaiku: string;
+    let apiTestSonnet: string;
 
-        // Try a minimal API call
+    if (cleanedKey && cleanedKey.startsWith('sk-ant-')) {
+      const client = new Anthropic({ apiKey: cleanedKey });
+
+      // Test 1: Haiku model
+      try {
         const response = await client.messages.create({
           model: 'claude-3-5-haiku-20241022',
           max_tokens: 10,
           messages: [{ role: 'user', content: 'Say "OK"' }],
         });
-
         const responseText = response.content[0].type === 'text' ? response.content[0].text : '';
-        apiTestResult = `SUCCESS: API responded with "${responseText.substring(0, 50)}"`;
+        apiTestHaiku = `SUCCESS: "${responseText.substring(0, 20)}"`;
       } catch (apiError: any) {
-        apiTestResult = `FAILED: ${apiError.status || 'unknown'} - ${apiError.message}`;
+        apiTestHaiku = `FAILED: ${apiError.status || 'unknown'} - ${apiError.message}`;
+      }
+
+      // Test 2: Sonnet 4 model (same as generateKeywords)
+      try {
+        const response = await client.messages.create({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 10,
+          messages: [{ role: 'user', content: 'Say "OK"' }],
+        });
+        const responseText = response.content[0].type === 'text' ? response.content[0].text : '';
+        apiTestSonnet = `SUCCESS: "${responseText.substring(0, 20)}"`;
+      } catch (apiError: any) {
+        apiTestSonnet = `FAILED: ${apiError.status || 'unknown'} - ${apiError.message}`;
       }
     } else {
-      apiTestResult = 'SKIPPED: Key is missing or invalid format';
+      apiTestHaiku = 'SKIPPED: Key is missing or invalid format';
+      apiTestSonnet = 'SKIPPED: Key is missing or invalid format';
     }
 
     return NextResponse.json({
       success: true,
       diagnostic: {
         ...diagnosticInfo,
-        apiTestResult,
+        apiTestHaiku,
+        apiTestSonnet,
         timestamp: new Date().toISOString(),
         environment: process.env.NODE_ENV,
       },
