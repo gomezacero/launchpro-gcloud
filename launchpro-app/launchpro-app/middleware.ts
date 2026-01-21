@@ -8,7 +8,7 @@ export async function middleware(req: NextRequest) {
   // Public paths that don't require authentication
   const isAuthPage = pathname.startsWith('/login') || pathname.startsWith('/register');
   const isApiAuth = pathname.startsWith('/api/auth');
-  const isPublicApi = pathname === '/api/health' || pathname === '/api/neural-engine/test';
+  const isPublicApi = pathname === '/api/health' || pathname === '/api/neural-engine/test' || pathname === '/api/diagnostic/anthropic-key';
   const isCronApi = pathname.startsWith('/api/cron');
   const isApi = pathname.startsWith('/api/');
 
