@@ -870,13 +870,16 @@ class CampaignOrchestratorService {
       }
 
       // 4c. Set keywords in Tonic
+      // Note: keyword_amount must be 3-10 (controls how many appear on parking page)
+      // If not provided, Tonic defaults to 6
       logger.info('tonic', 'Setting keywords in Tonic...', { count: aiContentResult.keywords.length });
+      const keywordAmount = Math.min(10, Math.max(3, aiContentResult.keywords.length));
       await tonicService.setKeywords(credentials, {
         campaign_id: parseInt(tonicCampaignId.toString()),
         keywords: aiContentResult.keywords,
-        keyword_amount: aiContentResult.keywords.length,
+        keyword_amount: keywordAmount,
       });
-      logger.success('tonic', 'Keywords set in Tonic');
+      logger.success('tonic', 'Keywords set in Tonic', { keywordAmount });
       campaignLogger.completeStep(campaign.id, 'keywords', 'Keywords configurados');
 
       // 4d. Article already created if RSOC (in Step 4)
@@ -4074,10 +4077,12 @@ class CampaignOrchestratorService {
     }
 
     // Set keywords in Tonic
+    // Note: keyword_amount must be 3-10 (controls how many appear on parking page)
+    const keywordAmount = Math.min(10, Math.max(3, aiContentResult.keywords.length));
     await tonicService.setKeywords(credentials, {
       campaign_id: parseInt(tonicCampaignId.toString()),
       keywords: aiContentResult.keywords,
-      keyword_amount: aiContentResult.keywords.length,
+      keyword_amount: keywordAmount,
     });
 
     logger.success('ai', 'AI content generated and keywords set');
