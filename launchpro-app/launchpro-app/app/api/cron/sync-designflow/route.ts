@@ -88,13 +88,27 @@ export async function GET(request: NextRequest) {
         const externalTask = await designflowService.getTaskById(taskId);
 
         if (!externalTask) {
-          logger.warn('system', `⚠️ DesignFlow task ${taskId} not found for campaign "${campaign.name}"`);
+          // Task was deleted from DesignFlow - clean up the orphaned campaign
+          logger.info('system', `🧹 DesignFlow task ${taskId} not found for campaign "${campaign.name}" - resetting to DRAFT`);
+
+          // Reset campaign to DRAFT so user can re-request design
+          await prisma.campaign.update({
+            where: { id: campaign.id },
+            data: { status: CampaignStatus.DRAFT },
+          });
+
+          // Delete the orphaned DesignFlowTask record
+          await prisma.designFlowTask.delete({
+            where: { id: campaign.designFlowTask.id },
+          });
+
+          updatedCount++;
           results.push({
             campaignId: campaign.id,
             campaignName: campaign.name,
             previousStatus: localStatus,
-            newStatus: 'NOT_FOUND',
-            updated: false,
+            newStatus: 'RESET_TO_DRAFT',
+            updated: true,
           });
           continue;
         }
