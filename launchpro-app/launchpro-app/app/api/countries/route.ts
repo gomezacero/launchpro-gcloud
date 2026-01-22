@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { tonicService, TonicCredentials } from '@/services/tonic.service';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger';
+import {
+  isCountryAllowed,
+  WORLDWIDE_OPTION,
+  ALLOWED_COUNTRIES
+} from '@/lib/allowed-countries';
 
 /**
  * GET /api/countries
@@ -41,20 +46,40 @@ export async function GET(request: NextRequest) {
       consumer_secret: tonicAccount.tonicConsumerSecret,
     };
 
-    let countries;
+    let tonicCountries;
 
     if (offerId) {
-      countries = await tonicService.getCountriesForOffer(credentials, parseInt(offerId), type);
+      tonicCountries = await tonicService.getCountriesForOffer(credentials, parseInt(offerId), type);
     } else {
-      countries = await tonicService.getCountries(credentials, type);
+      tonicCountries = await tonicService.getCountries(credentials, type);
     }
 
+    // Filter countries to only include allowed GEOs (Tonic restrictions as of Jan 2026)
+    const filteredCountries = tonicCountries?.filter((country: { code: string }) =>
+      isCountryAllowed(country.code)
+    ) || [];
+
+    // Add WORLDWIDE option at the beginning
+    const countriesWithWorldwide = [
+      { code: WORLDWIDE_OPTION.code, name: WORLDWIDE_OPTION.name },
+      ...filteredCountries,
+    ];
+
     const duration = Date.now() - startTime;
-    logger.success('api', `Fetched ${countries?.length || 0} countries from Tonic`, { count: countries?.length }, duration);
+    logger.success('api', `Fetched ${filteredCountries.length} allowed countries (filtered from ${tonicCountries?.length || 0} Tonic countries)`, {
+      allowedCount: filteredCountries.length,
+      tonicCount: tonicCountries?.length || 0,
+      blockedCount: (tonicCountries?.length || 0) - filteredCountries.length,
+    }, duration);
 
     return NextResponse.json({
       success: true,
-      data: countries,
+      data: countriesWithWorldwide,
+      meta: {
+        totalAllowed: filteredCountries.length,
+        hasWorldwide: true,
+        note: 'Countries filtered based on Tonic GEO restrictions. WORLDWIDE targets all 87 allowed countries.',
+      },
     });
   } catch (error: any) {
     const duration = Date.now() - startTime;

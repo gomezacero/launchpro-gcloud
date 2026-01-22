@@ -3,6 +3,7 @@ import { campaignOrchestrator } from '@/services/campaign-orchestrator.service';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger';
 import { requireAuth, isSuperAdmin } from '@/lib/auth-utils';
+import { isCountryAllowed, isWorldwide } from '@/lib/allowed-countries';
 
 /**
  * GET /api/campaigns
@@ -124,6 +125,22 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
+    }
+
+    // Validate country is allowed (GEO restrictions as of Jan 2026)
+    const countryCode = body.country;
+    if (!isWorldwide(countryCode) && !isCountryAllowed(countryCode)) {
+      logger.warn('api', `Blocked GEO: ${countryCode} is not in the allowed countries list`, {
+        country: countryCode,
+        campaignName: body.name,
+      });
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Country "${countryCode}" is not available for campaign launches. Only 87 approved countries are allowed based on Tonic GEO restrictions.`,
+        },
+        { status: 400 }
+      );
     }
 
     // Create campaign quickly (async mode - returns immediately)

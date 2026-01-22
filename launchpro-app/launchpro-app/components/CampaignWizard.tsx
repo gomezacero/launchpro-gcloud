@@ -2524,7 +2524,7 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Country *
+                  Country / GEO *
                 </label>
                 <select
                   value={formData.country}
@@ -2540,6 +2540,23 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
                     </option>
                   ))}
                 </select>
+                {formData.country === 'WORLDWIDE' && (
+                  <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                    <div className="flex items-start gap-2">
+                      <span className="text-amber-600 text-lg">🌍</span>
+                      <div>
+                        <p className="text-sm font-medium text-amber-800">Worldwide Targeting</p>
+                        <p className="text-xs text-amber-700 mt-1">
+                          This will target <strong>87 allowed countries</strong> based on Tonic&apos;s GEO restrictions.
+                          Countries not on the approved list (e.g., certain regions in Asia, Africa) are excluded.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                <p className="mt-1 text-xs text-gray-500">
+                  Only countries permitted by Tonic are shown (87 GEOs available).
+                </p>
               </div>
 
               <div>

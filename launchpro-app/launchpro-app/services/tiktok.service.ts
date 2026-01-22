@@ -1542,6 +1542,33 @@ class TikTokService {
       throw error;
     }
   }
+
+  /**
+   * Get Location IDs for multiple country codes
+   * Used for WORLDWIDE targeting where we need all 87 allowed countries
+   * Returns only the countries that have valid location IDs
+   */
+  async getLocationIds(countryCodes: string[]): Promise<string[]> {
+    const locationIds: string[] = [];
+    const failedCountries: string[] = [];
+
+    for (const code of countryCodes) {
+      try {
+        const locationId = await this.getLocationId(code);
+        locationIds.push(locationId);
+      } catch (error) {
+        failedCountries.push(code);
+        console.warn(`[TikTok] Could not get location ID for ${code}, skipping`);
+      }
+    }
+
+    if (failedCountries.length > 0) {
+      console.log(`[TikTok] Skipped ${failedCountries.length} countries without location IDs: ${failedCountries.join(', ')}`);
+    }
+
+    console.log(`[TikTok] Resolved ${locationIds.length} location IDs for ${countryCodes.length} countries`);
+    return locationIds;
+  }
 }
 
 // Export singleton instance

@@ -15,6 +15,7 @@ import { CampaignStatus, Platform, CampaignType, MediaType } from '@prisma/clien
 import { Storage } from '@google-cloud/storage';
 import sharp from 'sharp';
 import { getStorageBucket } from '@/lib/gcs';
+import { resolveCountryCodes, isWorldwide } from '@/lib/allowed-countries';
 
 // ============================================================================
 // NEURAL ENGINE FEATURE FLAG
@@ -1681,8 +1682,8 @@ class CampaignOrchestratorService {
       objective: campaignObjective,
       status: 'ACTIVE', // Campaign active, only ads are paused
       special_ad_categories: effectiveSpecialAdCategories,
-      // Required when special_ad_categories is not NONE - pass the campaign country
-      special_ad_category_country: hasRestrictedCategory ? [campaign.country] : undefined,
+      // Required when special_ad_categories is not NONE - pass all target countries (WORLDWIDE = 87)
+      special_ad_category_country: hasRestrictedCategory ? resolveCountryCodes(campaign.country) : undefined,
       // CBO: Set budget at campaign level
       // ABO: Do NOT set budget at campaign level
       daily_budget: isCBO ? budgetInCents : undefined,
@@ -1797,10 +1798,17 @@ class CampaignOrchestratorService {
     }
     logger.info('meta', `=== END LANGUAGE DEBUG ===`);
 
+    // Resolve country codes - WORLDWIDE expands to all 87 allowed countries
+    const targetCountries = resolveCountryCodes(campaign.country);
+    logger.info('meta', `Targeting ${targetCountries.length} country(ies): ${isWorldwide(campaign.country) ? 'WORLDWIDE' : campaign.country}`, {
+      isWorldwide: isWorldwide(campaign.country),
+      countryCount: targetCountries.length,
+    });
+
     // Build targeting object - only include locales if we have a valid value
     const targetingSpec: any = {
       geo_locations: {
-        countries: [campaign.country], // Use campaign country
+        countries: targetCountries, // Use resolved country codes (WORLDWIDE = 87 countries)
       },
       age_min: ageMin,
       age_max: ageMax,
@@ -2718,13 +2726,21 @@ class CampaignOrchestratorService {
     // Note: Interest mapping for TikTok requires Category IDs which are complex to map without fuzzy search.
     // We are skipping interest mapping for now and relying on broad targeting + pixel optimization.
 
-    // Get Location ID for TikTok
-    let locationId: string;
+    // Get Location IDs for TikTok - handle WORLDWIDE by resolving all 87 country codes
+    let locationIds: string[];
     try {
-      locationId = await tiktokService.getLocationId(campaign.country);
-      logger.info('tiktok', `Resolved location ID for ${campaign.country}: ${locationId}`);
+      const targetCountriesTiktok = resolveCountryCodes(campaign.country);
+      if (isWorldwide(campaign.country)) {
+        logger.info('tiktok', `WORLDWIDE targeting - resolving location IDs for ${targetCountriesTiktok.length} countries...`);
+        locationIds = await tiktokService.getLocationIds(targetCountriesTiktok);
+        logger.info('tiktok', `Resolved ${locationIds.length} location IDs for WORLDWIDE targeting`);
+      } else {
+        const locationId = await tiktokService.getLocationId(campaign.country);
+        locationIds = [locationId];
+        logger.info('tiktok', `Resolved location ID for ${campaign.country}: ${locationId}`);
+      }
     } catch (error: any) {
-      logger.warn('tiktok', `Failed to resolve location ID for ${campaign.country}. Using default/fallback if available, or erroring out.`, { error: error.message });
+      logger.warn('tiktok', `Failed to resolve location IDs for ${campaign.country}. Using default/fallback if available, or erroring out.`, { error: error.message });
       throw error;
     }
 
@@ -2779,7 +2795,7 @@ class CampaignOrchestratorService {
       // Configuración de Pixel para conversiones (OBLIGATORIO)
       pixel_id: pixelId,
       optimization_event: 'SHOPPING', // Evento de compra/venta (TikTok usa 'SHOPPING', no 'COMPLETE_PAYMENT')
-      location_ids: [locationId], // Use resolved Location ID
+      location_ids: locationIds, // Use resolved Location IDs (87 for WORLDWIDE)
       operation_status: 'ENABLE', // Ad Group active, only ads are paused
     };
 
@@ -3197,7 +3213,10 @@ class CampaignOrchestratorService {
       };
 
       // Create Taboola campaign
-      logger.info('taboola', 'Creating Taboola campaign...');
+      // Resolve country codes - WORLDWIDE expands to all 87 allowed countries
+      const taboolaTargetCountries = resolveCountryCodes(campaign.country);
+      logger.info('taboola', `Targeting ${taboolaTargetCountries.length} country(ies): ${isWorldwide(campaign.country) ? 'WORLDWIDE' : campaign.country}`);
+
       const taboolaCampaign = await taboolaService.createCampaign({
         name: campaign.name,
         branding_text: platformConfig.taboolaBrandingText || 'Sponsored',
@@ -3208,7 +3227,7 @@ class CampaignOrchestratorService {
         spending_limit_model: 'MONTHLY',
         country_targeting: {
           type: 'INCLUDE',
-          value: [campaign.country],
+          value: taboolaTargetCountries, // WORLDWIDE = 87 countries
         },
         is_active: false, // Start paused, activate after item is ready
       });
