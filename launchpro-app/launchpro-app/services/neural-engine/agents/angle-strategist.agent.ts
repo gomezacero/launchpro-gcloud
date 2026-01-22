@@ -37,32 +37,41 @@ const AGENT_NAME = 'AngleStrategist';
 // ============================================================================
 
 export class AngleStrategistAgent {
-  private anthropic: Anthropic;
   private cacheService = getSemanticCacheService();
 
-  constructor() {
-    // Use process.env directly to avoid module caching issues
-    // CLEAN the API key (remove whitespace, newlines, quotes, etc. that may come from env vars)
+  /**
+   * Get clean Anthropic API key from environment
+   * Handles: whitespace, newlines, copy/paste issues, and surrounding quotes
+   */
+  private getCleanApiKey(): string {
     const rawKey = process.env.ANTHROPIC_API_KEY || '';
-    let anthropicKey = rawKey.split('').filter(c => c.charCodeAt(0) >= 33 && c.charCodeAt(0) <= 126).join('');
+    // Remove ALL non-printable characters (handles copy/paste issues)
+    let cleanedKey = rawKey.split('').filter(c => c.charCodeAt(0) >= 33 && c.charCodeAt(0) <= 126).join('');
     // Remove surrounding quotes if present (common Vercel env var issue)
-    if ((anthropicKey.startsWith('"') && anthropicKey.endsWith('"')) ||
-        (anthropicKey.startsWith("'") && anthropicKey.endsWith("'"))) {
-      anthropicKey = anthropicKey.slice(1, -1);
+    if ((cleanedKey.startsWith('"') && cleanedKey.endsWith('"')) ||
+        (cleanedKey.startsWith("'") && cleanedKey.endsWith("'"))) {
+      cleanedKey = cleanedKey.slice(1, -1);
     }
+    return cleanedKey;
+  }
 
-    console.log('[AngleStrategist] 🔑 Key length: ' + anthropicKey.length);
-    console.log('[AngleStrategist] 🔑 Key starts with sk-ant-: ' + anthropicKey.startsWith('sk-ant-'));
-
-    this.anthropic = new Anthropic({
-      apiKey: anthropicKey,
-    });
-
-    if (!anthropicKey) {
-      console.warn('[AngleStrategist] ⚠️ WARNING: ANTHROPIC_API_KEY not found');
-    } else if (!anthropicKey.startsWith('sk-ant-')) {
-      console.error('[AngleStrategist] ❌ WARNING: ANTHROPIC_API_KEY has invalid format');
+  /**
+   * Get Anthropic client - ALWAYS creates fresh instance
+   * Never caches to avoid stale instances in serverless (fixes 401 errors)
+   */
+  private get anthropic(): Anthropic {
+    const apiKey = this.getCleanApiKey();
+    if (!apiKey) {
+      throw new Error('[AngleStrategist] ANTHROPIC_API_KEY not configured');
     }
+    if (!apiKey.startsWith('sk-ant-')) {
+      console.warn('[AngleStrategist] ⚠️ ANTHROPIC_API_KEY has unexpected format');
+    }
+    return new Anthropic({ apiKey });
+  }
+
+  constructor() {
+    // No initialization needed - Anthropic client is created fresh on each call
   }
 
   /**
