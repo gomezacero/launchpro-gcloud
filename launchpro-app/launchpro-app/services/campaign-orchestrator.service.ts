@@ -1420,6 +1420,9 @@ class CampaignOrchestratorService {
           campaignLogger.completeWithError(campaign.id, 'La campaña se completó con errores en algunas plataformas');
         }
 
+        // Persist all logs to database for later viewing
+        await campaignLogger.persistToDatabase(campaign.id);
+
         return {
           success: allSuccessful,
           campaignId: campaign.id,
@@ -1441,6 +1444,9 @@ class CampaignOrchestratorService {
       if (campaign?.id) {
         campaignLogger.failStep(campaign.id, 'error', 'Error en el lanzamiento de la campaña', error.message);
         campaignLogger.completeWithError(campaign.id, 'El lanzamiento falló');
+
+        // Persist logs to database before updating status
+        await campaignLogger.persistToDatabase(campaign.id);
 
         // Guardar detalles del error en la BD
         await prisma.campaign.update({

@@ -1,8 +1,10 @@
 /**
  * Campaign Logger Service
  * Sistema de logs en tiempo real para el proceso de creación de campañas
- * Los logs se almacenan en memoria por campaignId y se pueden obtener vía polling
+ * Los logs se almacenan en memoria Y en la base de datos para persistencia
  */
+
+import { prisma } from '@/lib/prisma';
 
 export type CampaignLogStep =
   | 'validation'
@@ -213,10 +215,65 @@ class CampaignLoggerService {
   }
 
   /**
-   * Obtiene los logs de una campaña
+   * Obtiene los logs de una campaña (desde memoria)
    */
   getLogs(campaignId: string): CampaignLogsState | null {
     return this.campaignLogs.get(campaignId) || null;
+  }
+
+  /**
+   * Persiste los logs actuales a la base de datos
+   * Llamar después de cada paso importante o al final del proceso
+   */
+  async persistToDatabase(campaignId: string): Promise<void> {
+    const state = this.campaignLogs.get(campaignId);
+    if (!state) return;
+
+    try {
+      await prisma.campaign.update({
+        where: { id: campaignId },
+        data: {
+          launchLogs: state.logs as any,
+        },
+      });
+    } catch (error) {
+      console.error(`[CampaignLogger] Failed to persist logs to database:`, error);
+    }
+  }
+
+  /**
+   * Agrega un log y persiste inmediatamente a la DB
+   */
+  async addLogAndPersist(
+    campaignId: string,
+    step: CampaignLogStep,
+    status: CampaignLogStatus,
+    message: string,
+    details?: string
+  ): Promise<void> {
+    const log: CampaignLog = {
+      id: this.generateId(),
+      timestamp: new Date().toISOString(),
+      step,
+      status,
+      message,
+      details,
+    };
+
+    const state = this.campaignLogs.get(campaignId);
+    if (state) {
+      state.logs.push(log);
+    } else {
+      this.initialize(campaignId);
+      this.campaignLogs.get(campaignId)!.logs.push(log);
+    }
+
+    // Log to console
+    const emoji = status === 'success' ? '✅' : status === 'error' ? '❌' : status === 'in_progress' ? '⏳' : '📝';
+    console.log(`[CampaignLogger] [${campaignId}] ${emoji} [${step}] ${message}`);
+
+    // Persist to database
+    await this.persistToDatabase(campaignId);
   }
 
   /**

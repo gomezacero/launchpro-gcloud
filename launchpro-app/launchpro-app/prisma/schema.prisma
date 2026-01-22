@@ -179,6 +179,9 @@ model Campaign {
   // Error details (when status is FAILED)
   errorDetails      Json?              // { step, message, timestamp, platform?, technicalDetails? }
 
+  // Launch logs - detailed step-by-step log of the campaign launch process
+  launchLogs        Json?              // Array of { timestamp, step, status, message, details? }
+
   // Dashboard relations
   streak              CampaignStreak?
   stopLossViolations  StopLossViolation[]
