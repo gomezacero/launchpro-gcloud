@@ -18,7 +18,6 @@ import { getStorageBucket } from '@/lib/gcs';
 import {
   resolveCountryCodes,
   resolveCountryCodesForTikTok,
-  resolveCountryForArticle,
   isWorldwide
 } from '@/lib/allowed-countries';
 
@@ -591,15 +590,14 @@ class CampaignOrchestratorService {
 
         logger.info('tonic', 'Creating article request in Tonic...');
         try {
-          // Resolve country for article - WORLDWIDE gets converted to language-based default
-          const articleCountry = resolveCountryForArticle(params.country, params.language);
+          // Tonic accepts "WO" for worldwide articles
           if (isWorldwide(params.country)) {
-            logger.info('tonic', `WORLDWIDE resolved to ${articleCountry} for article creation (based on language: ${params.language})`);
+            logger.info('tonic', `Creating article with WORLDWIDE (WO) targeting`);
           }
 
           const articleRequestPayload = {
             offer_id: parseInt(params.offerId),
-            country: articleCountry, // Use resolved country (not WORLDWIDE)
+            country: params.country, // Tonic accepts "WO" for worldwide
             language: params.language,
             domain: rsocDomain,
             content_generation_phrases: finalContentPhrases,
@@ -3750,15 +3748,14 @@ class CampaignOrchestratorService {
       }
 
       // Create article request in Tonic (returns immediately)
-      // Resolve country for article - WORLDWIDE gets converted to language-based default
-      const articleCountry = resolveCountryForArticle(params.country, params.language);
+      // Tonic accepts "WO" for worldwide articles
       if (isWorldwide(params.country)) {
-        logger.info('tonic', `WORLDWIDE resolved to ${articleCountry} for article (language: ${params.language})`);
+        logger.info('tonic', `Creating article with WORLDWIDE (WO) targeting`);
       }
 
       articleRequestId = await tonicService.createArticleRequest(credentials, {
         offer_id: parseInt(params.offerId),
-        country: articleCountry, // Use resolved country (not WORLDWIDE)
+        country: params.country, // Tonic accepts "WO" for worldwide
         language: params.language,
         domain: rsocDomain,
         content_generation_phrases: contentPhrases,

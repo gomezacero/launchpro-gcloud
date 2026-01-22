@@ -2540,7 +2540,7 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
                     </option>
                   ))}
                 </select>
-                {formData.country === 'WORLDWIDE' && (
+                {formData.country === 'WO' && (
                   <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
                     <div className="flex items-start gap-2">
                       <span className="text-amber-600 text-lg">🌍</span>

@@ -186,10 +186,11 @@ export function getCountriesByRegion(): Record<string, AllowedCountry[]> {
 
 /**
  * WORLDWIDE targeting - represents all allowed countries
- * When a campaign uses "WORLDWIDE", it will target all countries in ALLOWED_COUNTRIES
+ * Tonic API uses "WO" as the country code for worldwide targeting
+ * When a campaign uses "WO", it will target all countries in ALLOWED_COUNTRIES
  */
 export const WORLDWIDE_OPTION = {
-  code: 'WORLDWIDE',
+  code: 'WO',  // Tonic's worldwide code
   name: 'Worldwide (87 allowed countries)',
   region: 'Global',
   description: 'Target all 87 countries where campaigns are permitted. Does NOT include restricted GEOs.',
@@ -198,9 +199,10 @@ export const WORLDWIDE_OPTION = {
 
 /**
  * Check if the selection is worldwide
+ * Tonic uses "WO" for worldwide
  */
 export function isWorldwide(countryCode: string): boolean {
-  return countryCode === 'WORLDWIDE';
+  return countryCode === 'WO';
 }
 
 /**
@@ -273,11 +275,10 @@ export function getDefaultCountryForLanguage(language: string): string {
 
 /**
  * Resolve country for Tonic article creation
- * WORLDWIDE gets converted to a default country based on language
+ * Tonic API accepts "WO" for worldwide articles, so we pass it through
+ * The language-based default is kept for potential future use
  */
 export function resolveCountryForArticle(countryCode: string, language: string): string {
-  if (isWorldwide(countryCode)) {
-    return getDefaultCountryForLanguage(language);
-  }
+  // Tonic accepts "WO" for worldwide - no conversion needed
   return countryCode;
 }
