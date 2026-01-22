@@ -2547,15 +2547,16 @@ export default function CampaignWizard({ cloneFromId, editCampaignId }: Campaign
                       <div>
                         <p className="text-sm font-medium text-amber-800">Worldwide Targeting</p>
                         <p className="text-xs text-amber-700 mt-1">
-                          This will target <strong>87 allowed countries</strong> based on Tonic&apos;s GEO restrictions.
-                          Countries not on the approved list (e.g., certain regions in Asia, Africa) are excluded.
+                          <strong>Tonic/Meta:</strong> 87 allowed countries<br />
+                          <strong>TikTok:</strong> 85 countries (JP, KR excluded from monetization)<br />
+                          Countries not on the approved list are automatically excluded.
                         </p>
                       </div>
                     </div>
                   </div>
                 )}
                 <p className="mt-1 text-xs text-gray-500">
-                  Only countries permitted by Tonic are shown (87 GEOs available).
+                  Only countries permitted by Tonic are shown. TikTok excludes JP and KR.
                 </p>
               </div>
 

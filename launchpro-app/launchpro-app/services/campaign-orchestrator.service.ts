@@ -15,7 +15,12 @@ import { CampaignStatus, Platform, CampaignType, MediaType } from '@prisma/clien
 import { Storage } from '@google-cloud/storage';
 import sharp from 'sharp';
 import { getStorageBucket } from '@/lib/gcs';
-import { resolveCountryCodes, isWorldwide } from '@/lib/allowed-countries';
+import {
+  resolveCountryCodes,
+  resolveCountryCodesForTikTok,
+  resolveCountryForArticle,
+  isWorldwide
+} from '@/lib/allowed-countries';
 
 // ============================================================================
 // NEURAL ENGINE FEATURE FLAG
@@ -586,9 +591,15 @@ class CampaignOrchestratorService {
 
         logger.info('tonic', 'Creating article request in Tonic...');
         try {
+          // Resolve country for article - WORLDWIDE gets converted to language-based default
+          const articleCountry = resolveCountryForArticle(params.country, params.language);
+          if (isWorldwide(params.country)) {
+            logger.info('tonic', `WORLDWIDE resolved to ${articleCountry} for article creation (based on language: ${params.language})`);
+          }
+
           const articleRequestPayload = {
             offer_id: parseInt(params.offerId),
-            country: params.country,
+            country: articleCountry, // Use resolved country (not WORLDWIDE)
             language: params.language,
             domain: rsocDomain,
             content_generation_phrases: finalContentPhrases,
@@ -2726,15 +2737,20 @@ class CampaignOrchestratorService {
     // Note: Interest mapping for TikTok requires Category IDs which are complex to map without fuzzy search.
     // We are skipping interest mapping for now and relying on broad targeting + pixel optimization.
 
-    // Get Location IDs for TikTok - handle WORLDWIDE by resolving all 87 country codes
+    // Get Location IDs for TikTok - handle WORLDWIDE by resolving all 85 allowed country codes
+    // Note: TikTok excludes JP and KR from monetization (only 85 countries vs 87 for Meta/Tonic)
     let locationIds: string[];
     try {
-      const targetCountriesTiktok = resolveCountryCodes(campaign.country);
+      const targetCountriesTiktok = resolveCountryCodesForTikTok(campaign.country);
       if (isWorldwide(campaign.country)) {
-        logger.info('tiktok', `WORLDWIDE targeting - resolving location IDs for ${targetCountriesTiktok.length} countries...`);
+        logger.info('tiktok', `WORLDWIDE targeting - resolving location IDs for ${targetCountriesTiktok.length} TikTok-allowed countries (excludes JP, KR)...`);
         locationIds = await tiktokService.getLocationIds(targetCountriesTiktok);
         logger.info('tiktok', `Resolved ${locationIds.length} location IDs for WORLDWIDE targeting`);
       } else {
+        // Check if single country is allowed for TikTok
+        if (targetCountriesTiktok.length === 0) {
+          throw new Error(`Country ${campaign.country} is not allowed for TikTok monetization`);
+        }
         const locationId = await tiktokService.getLocationId(campaign.country);
         locationIds = [locationId];
         logger.info('tiktok', `Resolved location ID for ${campaign.country}: ${locationId}`);
@@ -3734,9 +3750,15 @@ class CampaignOrchestratorService {
       }
 
       // Create article request in Tonic (returns immediately)
+      // Resolve country for article - WORLDWIDE gets converted to language-based default
+      const articleCountry = resolveCountryForArticle(params.country, params.language);
+      if (isWorldwide(params.country)) {
+        logger.info('tonic', `WORLDWIDE resolved to ${articleCountry} for article (language: ${params.language})`);
+      }
+
       articleRequestId = await tonicService.createArticleRequest(credentials, {
         offer_id: parseInt(params.offerId),
-        country: params.country,
+        country: articleCountry, // Use resolved country (not WORLDWIDE)
         language: params.language,
         domain: rsocDomain,
         content_generation_phrases: contentPhrases,
