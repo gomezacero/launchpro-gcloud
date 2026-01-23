@@ -856,18 +856,43 @@ Generate a compelling Copy Master that:
 - Is truthful and professional
 - Captures the essence of this offer and resonates with the target audience`;
 
-    const message = await this.anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 500,
-      temperature: 0.7,
-      system: systemPrompt,
-      messages: [
-        {
-          role: 'user',
-          content: userPrompt,
-        },
-      ],
+    // Debug: Log API key info before making the call (same as generateKeywords)
+    const debugKey = this.getCleanApiKey();
+    console.log(`[AIService.generateCopyMaster] 🔑 API Key debug:`, {
+      keyLength: debugKey.length,
+      keyStart: debugKey.substring(0, 15),
+      keyEnd: debugKey.substring(debugKey.length - 6),
+      startsWithSkAnt: debugKey.startsWith('sk-ant-'),
+      rawEnvLength: (process.env.ANTHROPIC_API_KEY || '').length,
+      offerName: params.offerName,
+      country: params.country,
     });
+
+    let message;
+    try {
+      message = await this.anthropic.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 500,
+        temperature: 0.7,
+        system: systemPrompt,
+        messages: [
+          {
+            role: 'user',
+            content: userPrompt,
+          },
+        ],
+      });
+    } catch (error: any) {
+      console.error(`[AIService.generateCopyMaster] ❌ Anthropic API Error:`, {
+        status: error.status,
+        statusCode: error.statusCode,
+        message: error.message,
+        errorType: error.constructor?.name,
+        keyUsed: `${debugKey.substring(0, 15)}...${debugKey.substring(debugKey.length - 6)}`,
+        rawEnvLength: (process.env.ANTHROPIC_API_KEY || '').length,
+      });
+      throw error;
+    }
 
     const copyMaster = message.content[0].type === 'text' ? message.content[0].text : '';
 

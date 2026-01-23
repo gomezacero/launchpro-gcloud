@@ -4045,10 +4045,22 @@ class CampaignOrchestratorService {
     // ============================================
     logger.info('ai', 'Generating AI content...');
 
+    // Debug: Check environment before calling AI service
+    const envDebug = {
+      anthropicKeyExists: !!process.env.ANTHROPIC_API_KEY,
+      anthropicKeyLength: (process.env.ANTHROPIC_API_KEY || '').length,
+      anthropicKeyStart: (process.env.ANTHROPIC_API_KEY || '').substring(0, 15),
+      nodeEnv: process.env.NODE_ENV,
+      vercelEnv: process.env.VERCEL_ENV,
+    };
+    logger.info('ai', `[CampaignOrchestrator] Environment check before AI calls:`, envDebug);
+    console.log(`[CampaignOrchestrator] Environment check:`, JSON.stringify(envDebug));
+
     const aiContentResult: any = {};
 
     // Generate Copy Master if not set
     if (!campaign.copyMaster) {
+      logger.info('ai', `[CampaignOrchestrator] Calling aiService.generateCopyMaster for campaign ${campaignId}...`);
       aiContentResult.copyMaster = await aiService.generateCopyMaster({
         offerName: campaign.offer.name,
         offerDescription: campaign.offer.description || undefined,
