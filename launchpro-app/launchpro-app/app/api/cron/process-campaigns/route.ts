@@ -51,10 +51,20 @@ export async function GET(request: NextRequest) {
     console.log('[CRON process-campaigns] Environment debug:', JSON.stringify(envDebug));
     logger.info('system', '🔄 [CRON] Starting process-campaigns job...', envDebug);
 
-    // ONLY process ARTICLE_APPROVED campaigns - simple and predictable
+    // Find campaigns to process:
+    // 1. ARTICLE_APPROVED - ready for processing
+    // 2. GENERATING_AI stuck for more than 5 minutes (timeout recovery)
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+
     const campaign = await prisma.campaign.findFirst({
       where: {
-        status: CampaignStatus.ARTICLE_APPROVED,
+        OR: [
+          { status: CampaignStatus.ARTICLE_APPROVED },
+          {
+            status: CampaignStatus.GENERATING_AI,
+            updatedAt: { lt: fiveMinutesAgo }
+          },
+        ],
       },
       include: {
         platforms: {
@@ -72,6 +82,12 @@ export async function GET(request: NextRequest) {
         message: 'No campaigns to process',
         processed: 0,
       });
+    }
+
+    // If this is a stuck GENERATING_AI campaign, log it
+    const isRetry = campaign.status === CampaignStatus.GENERATING_AI;
+    if (isRetry) {
+      logger.info('system', `🔄 [CRON] Retrying stuck campaign "${campaign.name}" (was in GENERATING_AI >5min)`);
     }
 
     logger.info('system', `📋 [CRON] Processing campaign "${campaign.name}" (${campaign.id})`);
