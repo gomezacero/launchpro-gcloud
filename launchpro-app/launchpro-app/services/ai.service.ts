@@ -675,6 +675,17 @@ class AIService {
    */
   private get anthropic(): Anthropic {
     const apiKey = this.getCleanApiKey();
+
+    // DETAILED DEBUG: Log exactly what key we're using
+    console.log('[AIService.anthropic getter] Creating new Anthropic client:', {
+      keyLength: apiKey.length,
+      keyStart: apiKey.substring(0, 20),
+      keyEnd: apiKey.substring(apiKey.length - 10),
+      rawEnvLength: (process.env.ANTHROPIC_API_KEY || '').length,
+      rawEnvStart: (process.env.ANTHROPIC_API_KEY || '').substring(0, 20),
+      timestamp: new Date().toISOString(),
+    });
+
     if (!apiKey) {
       throw new Error('ANTHROPIC_API_KEY not configured');
     }
