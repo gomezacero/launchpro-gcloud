@@ -72,6 +72,7 @@ lerna-debug.log*
 # But allow app/logs and app/api/logs directories
 !app/logs/
 !app/api/logs/
+!app/api/campaigns/*/logs/
 
 # OS
 .DS_Store
