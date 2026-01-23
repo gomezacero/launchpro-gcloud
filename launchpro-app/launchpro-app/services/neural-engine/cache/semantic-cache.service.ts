@@ -43,9 +43,29 @@ export class SemanticCacheService {
   private stats: CacheStats;
 
   constructor() {
-    this.firestore = new Firestore({
+    // Parse credentials from environment (for Vercel serverless)
+    const credentialsJson = process.env.GCP_SERVICE_ACCOUNT_KEY;
+    let credentials: any = null;
+
+    if (credentialsJson) {
+      try {
+        credentials = JSON.parse(credentialsJson);
+        console.log(`[SemanticCacheService] Using explicit GCP credentials for project: ${credentials.project_id}`);
+      } catch (e: any) {
+        console.warn(`[SemanticCacheService] Failed to parse GCP_SERVICE_ACCOUNT_KEY:`, e.message);
+      }
+    }
+
+    // Initialize Firestore with explicit credentials if available
+    const firestoreOptions: any = {
       projectId: process.env.GCP_PROJECT_ID,
-    });
+    };
+
+    if (credentials) {
+      firestoreOptions.credentials = credentials;
+    }
+
+    this.firestore = new Firestore(firestoreOptions);
 
     this.embeddingsService = getEmbeddingsService();
 

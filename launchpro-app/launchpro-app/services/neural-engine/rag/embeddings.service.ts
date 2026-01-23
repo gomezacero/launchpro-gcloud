@@ -28,11 +28,23 @@ export class EmbeddingsService {
   private projectId: string;
   private location: string;
   private endpoint: string;
+  private credentials: any = null;
 
   constructor() {
     this.projectId = process.env.GCP_PROJECT_ID || '';
     this.location = process.env.GCP_LOCATION || 'us-central1';
     this.endpoint = `projects/${this.projectId}/locations/${this.location}/publishers/google/models/${EMBEDDING_MODEL}`;
+
+    // Parse credentials from environment (for Vercel serverless)
+    const credentialsJson = process.env.GCP_SERVICE_ACCOUNT_KEY;
+    if (credentialsJson) {
+      try {
+        this.credentials = JSON.parse(credentialsJson);
+        console.log(`[EmbeddingsService] Using explicit GCP credentials for project: ${this.credentials.project_id}`);
+      } catch (e: any) {
+        console.warn(`[EmbeddingsService] Failed to parse GCP_SERVICE_ACCOUNT_KEY:`, e.message);
+      }
+    }
 
     if (!this.projectId) {
       console.warn('[EmbeddingsService] GCP_PROJECT_ID not set. Embeddings will fail.');
@@ -44,9 +56,17 @@ export class EmbeddingsService {
    */
   private getClient(): any {
     if (!this.client) {
-      this.client = new PredictionServiceClient({
+      const clientOptions: any = {
         apiEndpoint: `${this.location}-aiplatform.googleapis.com`,
-      });
+      };
+
+      // Use explicit credentials if available (for Vercel deployment)
+      if (this.credentials) {
+        clientOptions.credentials = this.credentials;
+        clientOptions.projectId = this.credentials.project_id || this.projectId;
+      }
+
+      this.client = new PredictionServiceClient(clientOptions);
     }
     return this.client;
   }
