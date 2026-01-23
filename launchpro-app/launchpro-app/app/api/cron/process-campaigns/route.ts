@@ -37,7 +37,19 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    logger.info('system', '🔄 [CRON] Starting process-campaigns job...');
+    // Debug: Log environment info at the start of cron
+    const envDebug = {
+      anthropicKeyExists: !!process.env.ANTHROPIC_API_KEY,
+      anthropicKeyLength: (process.env.ANTHROPIC_API_KEY || '').length,
+      anthropicKeyPreview: process.env.ANTHROPIC_API_KEY
+        ? `${(process.env.ANTHROPIC_API_KEY || '').substring(0, 10)}...${(process.env.ANTHROPIC_API_KEY || '').substring(-4)}`
+        : 'MISSING',
+      nodeEnv: process.env.NODE_ENV,
+      vercelEnv: process.env.VERCEL_ENV,
+      vercelGitCommitSha: process.env.VERCEL_GIT_COMMIT_SHA?.substring(0, 7),
+    };
+    console.log('[CRON process-campaigns] Environment debug:', JSON.stringify(envDebug));
+    logger.info('system', '🔄 [CRON] Starting process-campaigns job...', envDebug);
 
     // ONLY process ARTICLE_APPROVED campaigns - simple and predictable
     const campaign = await prisma.campaign.findFirst({
