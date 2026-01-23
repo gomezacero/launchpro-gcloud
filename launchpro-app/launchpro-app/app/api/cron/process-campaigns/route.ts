@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger';
 import { campaignOrchestrator } from '@/services/campaign-orchestrator.service';
 import { emailService } from '@/services/email.service';
-import { CampaignStatus } from '@prisma/client';
+import { CampaignStatus, Prisma } from '@prisma/client';
 
 /**
  * Cron Job: Process Approved Campaigns
@@ -55,6 +55,7 @@ export async function GET(request: NextRequest) {
     // Find campaigns to process:
     // 1. ARTICLE_APPROVED - ready for processing
     // 2. GENERATING_AI stuck for more than 5 minutes (timeout recovery)
+    // IMPORTANT: Exclude campaigns that already have ACTIVE platforms (already launched successfully)
     const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
 
     const campaign = await prisma.campaign.findFirst({
@@ -66,6 +67,15 @@ export async function GET(request: NextRequest) {
             updatedAt: { lt: fiveMinutesAgo }
           },
         ],
+        // Exclude campaigns that already have platforms in ACTIVE status
+        // This prevents re-processing of campaigns that succeeded on some platforms
+        NOT: {
+          platforms: {
+            some: {
+              status: 'ACTIVE',
+            },
+          },
+        },
       },
       include: {
         platforms: {
@@ -89,6 +99,26 @@ export async function GET(request: NextRequest) {
     const isRetry = campaign.status === CampaignStatus.GENERATING_AI;
     if (isRetry) {
       logger.info('system', `🔄 [CRON] Retrying stuck campaign "${campaign.name}" (was in GENERATING_AI >5min)`);
+
+      // Additional safety check: verify no platforms are active
+      const hasActivePlatforms = campaign.platforms.some(p => p.status === 'ACTIVE');
+      if (hasActivePlatforms) {
+        // This campaign was partially successful - fix it instead of reprocessing
+        logger.info('system', `⚠️ [CRON] Campaign "${campaign.name}" has ACTIVE platforms - fixing status instead of reprocessing`);
+        await prisma.campaign.update({
+          where: { id: campaign.id },
+          data: {
+            status: CampaignStatus.ACTIVE,
+            errorDetails: Prisma.DbNull,
+          },
+        });
+        return NextResponse.json({
+          success: true,
+          message: `Campaign "${campaign.name}" status fixed to ACTIVE (had active platforms)`,
+          campaignId: campaign.id,
+          fixed: true,
+        });
+      }
     }
 
     logger.info('system', `📋 [CRON] Processing campaign "${campaign.name}" (${campaign.id})`);
