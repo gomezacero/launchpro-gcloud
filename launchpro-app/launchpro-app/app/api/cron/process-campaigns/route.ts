@@ -22,8 +22,9 @@ import { CampaignStatus } from '@prisma/client';
  * - This prevents orphaned campaigns from blocking the queue
  */
 
-// Extend Vercel function timeout to 60 seconds (default is 10s)
-export const maxDuration = 60;
+// Extend Vercel function timeout to 120 seconds (Pro plan supports up to 300s)
+// Neural Engine + Meta launch requires ~50-60s, so 120s gives comfortable margin
+export const maxDuration = 120;
 
 export async function GET(request: NextRequest) {
   const startTime = Date.now();
