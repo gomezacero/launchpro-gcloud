@@ -154,12 +154,35 @@ class AdRulesService {
       value: rule.value,
     });
 
-    const accessToken = rule.metaAccount.metaAccessToken;
+    // Get ad account ID from the account (required)
     const adAccountId = rule.metaAccount.metaAdAccountId;
 
-    if (!accessToken || !adAccountId) {
-      logger.warn('ad-rules', `Rule "${rule.name}" skipped: Missing access token or ad account ID`);
+    if (!adAccountId) {
+      logger.warn('ad-rules', `Rule "${rule.name}" skipped: Missing ad account ID`, {
+        accountId: rule.metaAccount.id,
+        accountName: rule.metaAccount.name,
+      });
       return false;
+    }
+
+    // Get access token - try account-specific first, then fall back to global settings
+    let accessToken = rule.metaAccount.metaAccessToken;
+
+    if (!accessToken) {
+      // Try to get global Meta access token from GlobalSettings
+      const globalSettings = await prisma.globalSettings.findFirst();
+      accessToken = globalSettings?.metaAccessToken || null;
+
+      if (accessToken) {
+        logger.info('ad-rules', `Rule "${rule.name}": Using global Meta access token for account "${rule.metaAccount.name}"`);
+      } else {
+        logger.warn('ad-rules', `Rule "${rule.name}" skipped: No access token in account or global settings`, {
+          accountId: rule.metaAccount.id,
+          accountName: rule.metaAccount.name,
+          adAccountId,
+        });
+        return false;
+      }
     }
 
     // Prepare Tonic credentials if this is a ROAS rule with Tonic account
