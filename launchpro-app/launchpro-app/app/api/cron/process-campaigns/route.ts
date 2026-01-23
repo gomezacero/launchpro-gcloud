@@ -14,11 +14,17 @@ import { CampaignStatus } from '@prisma/client';
  * - Gets tracking link
  * - Generates AI content
  * - Launches to platforms
+ *
+ * Also retries campaigns stuck in GENERATING_AI for more than 5 minutes
+ * (handles timeout/crash recovery scenarios)
  */
 
 // Extend Vercel function timeout to 60 seconds (default is 10s)
 // This is needed because AI generation can take longer
 export const maxDuration = 60;
+
+// Time threshold for considering a GENERATING_AI campaign as stuck (5 minutes)
+const STUCK_THRESHOLD_MS = 5 * 60 * 1000;
 
 export async function GET(request: NextRequest) {
   const startTime = Date.now();
@@ -35,10 +41,23 @@ export async function GET(request: NextRequest) {
   try {
     logger.info('system', '🔄 [CRON] Starting process-campaigns job...');
 
-    // Find all campaigns ready to continue processing
-    const approvedCampaigns = await prisma.campaign.findMany({
+    // Calculate threshold time for stuck campaigns
+    const stuckThreshold = new Date(Date.now() - STUCK_THRESHOLD_MS);
+
+    // Find campaigns to process:
+    // 1. ARTICLE_APPROVED - ready for processing
+    // 2. GENERATING_AI that has been stuck for more than 5 minutes (timeout recovery)
+    const campaignsToProcess = await prisma.campaign.findMany({
       where: {
-        status: CampaignStatus.ARTICLE_APPROVED,
+        OR: [
+          // Normal path: approved and ready
+          { status: CampaignStatus.ARTICLE_APPROVED },
+          // Recovery path: stuck in GENERATING_AI (timed out or crashed)
+          {
+            status: CampaignStatus.GENERATING_AI,
+            updatedAt: { lt: stuckThreshold },
+          },
+        ],
       },
       include: {
         platforms: true,
@@ -48,8 +67,8 @@ export async function GET(request: NextRequest) {
       orderBy: { createdAt: 'asc' }, // FIFO
     });
 
-    if (approvedCampaigns.length === 0) {
-      logger.info('system', '✅ [CRON] No approved campaigns to process');
+    if (campaignsToProcess.length === 0) {
+      logger.info('system', '✅ [CRON] No campaigns to process');
       return NextResponse.json({
         success: true,
         message: 'No campaigns to process',
@@ -57,7 +76,38 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const campaign = approvedCampaigns[0];
+    const campaign = campaignsToProcess[0];
+    const isRetry = campaign.status === CampaignStatus.GENERATING_AI;
+
+    // Check retry count from errorDetails to prevent infinite loops
+    const errorDetails = campaign.errorDetails as any;
+    const retryCount = errorDetails?.retryCount || 0;
+    const MAX_RETRIES = 3;
+
+    if (isRetry) {
+      if (retryCount >= MAX_RETRIES) {
+        // Too many retries, mark as failed
+        await prisma.campaign.update({
+          where: { id: campaign.id },
+          data: {
+            status: CampaignStatus.FAILED,
+            errorDetails: {
+              ...errorDetails,
+              step: 'cron-processing',
+              message: `Campaign failed after ${MAX_RETRIES} retry attempts`,
+              timestamp: new Date().toISOString(),
+            },
+          },
+        });
+        logger.error('system', `❌ [CRON] Campaign "${campaign.name}" exceeded max retries (${MAX_RETRIES}), marked as FAILED`);
+        return NextResponse.json({
+          success: false,
+          message: `Campaign "${campaign.name}" exceeded max retries`,
+          campaignId: campaign.id,
+        });
+      }
+      logger.info('system', `🔄 [CRON] Retrying stuck campaign "${campaign.name}" (attempt ${retryCount + 1}/${MAX_RETRIES})`);
+    }
     logger.info('system', `📋 [CRON] Processing campaign "${campaign.name}" (${campaign.id})`);
 
     // Mark as processing to prevent double-processing
@@ -107,35 +157,48 @@ export async function GET(request: NextRequest) {
       });
 
     } catch (processError: any) {
-      // Mark campaign as failed
+      const newRetryCount = retryCount + 1;
+      const shouldRetry = newRetryCount < MAX_RETRIES;
+
+      // If retries remaining, keep in GENERATING_AI for retry; otherwise mark as FAILED
       const failedCampaign = await prisma.campaign.update({
         where: { id: campaign.id },
         data: {
-          status: CampaignStatus.FAILED,
+          status: shouldRetry ? CampaignStatus.GENERATING_AI : CampaignStatus.FAILED,
           errorDetails: {
             step: 'cron-processing',
             message: processError.message,
             timestamp: new Date().toISOString(),
-            technicalDetails: processError.stack,
+            technicalDetails: processError.stack?.substring(0, 500),
+            retryCount: newRetryCount,
+            lastError: processError.message,
           },
         },
         include: { platforms: true, offer: true },
       });
 
-      logger.error('system', `❌ [CRON] Failed to process campaign "${campaign.name}": ${processError.message}`);
+      if (shouldRetry) {
+        logger.warn('system', `⚠️ [CRON] Campaign "${campaign.name}" failed (attempt ${newRetryCount}/${MAX_RETRIES}), will retry: ${processError.message}`);
+      } else {
+        logger.error('system', `❌ [CRON] Campaign "${campaign.name}" failed after ${MAX_RETRIES} attempts: ${processError.message}`);
+      }
 
-      // Send failure email
-      try {
-        await emailService.sendCampaignFailed(failedCampaign, processError.message);
-      } catch (emailError) {
-        logger.error('email', `Failed to send failure email: ${emailError}`);
+      // Only send failure email on final failure (no more retries)
+      if (!shouldRetry) {
+        try {
+          await emailService.sendCampaignFailed(failedCampaign, processError.message);
+        } catch (emailError) {
+          logger.error('email', `Failed to send failure email: ${emailError}`);
+        }
       }
 
       return NextResponse.json({
         success: false,
         error: processError.message,
         campaignId: campaign.id,
-      }, { status: 500 });
+        willRetry: shouldRetry,
+        retryCount: newRetryCount,
+      }, { status: shouldRetry ? 200 : 500 });
     }
 
   } catch (error: any) {
