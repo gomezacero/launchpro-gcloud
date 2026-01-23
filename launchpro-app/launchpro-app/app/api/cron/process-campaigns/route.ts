@@ -15,6 +15,11 @@ import { CampaignStatus } from '@prisma/client';
  * - Generates AI content
  * - Launches to platforms
  */
+
+// Extend Vercel function timeout to 60 seconds (default is 10s)
+// This is needed because AI generation can take longer
+export const maxDuration = 60;
+
 export async function GET(request: NextRequest) {
   const startTime = Date.now();
 

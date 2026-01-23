@@ -12,6 +12,10 @@ import { CampaignStatus } from '@prisma/client';
  * Runs every minute via Vercel Cron
  * Checks all campaigns with PENDING_ARTICLE status and updates them when approved/rejected
  */
+
+// Extend Vercel function timeout to 60 seconds (default is 10s)
+export const maxDuration = 60;
+
 export async function GET(request: NextRequest) {
   const startTime = Date.now();
 
