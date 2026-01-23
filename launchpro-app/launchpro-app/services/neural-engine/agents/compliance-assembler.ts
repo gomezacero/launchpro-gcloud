@@ -330,8 +330,9 @@ export class ComplianceAssembler {
     console.log(`[${AGENT_NAME}] 🔄 Generating images with Gemini ${GEMINI_MODEL}...`);
     const generatedImages: GeneratedImage[] = [];
 
-    // Generate images for each prompt (limited to 4 for cost control)
-    const promptsToProcess = prompts.slice(0, 4);
+    // Generate images for each prompt (limited to 2 for Vercel 60s timeout)
+    // Each image takes ~10s, so 2 images = ~20s, leaving room for other phases
+    const promptsToProcess = prompts.slice(0, 2);
 
     for (let i = 0; i < promptsToProcess.length; i++) {
       const prompt = promptsToProcess[i];
@@ -441,8 +442,9 @@ export class ComplianceAssembler {
     const generatedImages: GeneratedImage[] = [];
     let quotaExceeded = false;
 
-    // Generate images for each prompt (limited to 4 for cost control)
-    const promptsToProcess = prompts.slice(0, 4);
+    // Generate images for each prompt (limited to 2 for Vercel 60s timeout)
+    // Each image takes ~10s, so 2 images = ~20s, leaving room for other phases
+    const promptsToProcess = prompts.slice(0, 2);
 
     for (let i = 0; i < promptsToProcess.length; i++) {
       const prompt = promptsToProcess[i];
