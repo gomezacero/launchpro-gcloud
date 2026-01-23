@@ -12,7 +12,7 @@ import type { NeuralEngineInput, CreativePackage } from './neural-engine/types';
 import { waitForArticleApproval, formatElapsedTime } from '@/lib/article-polling';
 // NOTE: waitForTrackingLink removed - incompatible with Vercel 60s timeout
 // We now do single-attempt checks instead of long polling
-import { CampaignStatus, Platform, CampaignType, MediaType } from '@prisma/client';
+import { CampaignStatus, Platform, CampaignType, MediaType, Prisma } from '@prisma/client';
 import { Storage } from '@google-cloud/storage';
 import sharp from 'sharp';
 import { getStorageBucket } from '@/lib/gcs';
@@ -3497,18 +3497,22 @@ class CampaignOrchestratorService {
         technicalDetails: JSON.stringify(failedPlatformsAsync, null, 2),
       } : undefined;
 
+      // Update final status - IMPORTANT: Clear errorDetails on success to avoid showing stale errors
+      const finalStatus = allSuccessful ? CampaignStatus.ACTIVE : CampaignStatus.FAILED;
       await prisma.campaign.update({
         where: { id: campaignId },
         data: {
-          status: allSuccessful ? CampaignStatus.ACTIVE : CampaignStatus.FAILED,
+          status: finalStatus,
           launchedAt: new Date(),
-          ...(errorDetailsAsync && { errorDetails: errorDetailsAsync }),
+          // Clear errorDetails on success, set new errorDetails on failure
+          errorDetails: allSuccessful ? Prisma.DbNull : errorDetailsAsync,
         },
       });
 
-      logger.success('system', `Campaign launch complete! Status: ${allSuccessful ? 'ACTIVE' : 'FAILED'} `, {
+      logger.success('system', `Campaign launch complete! Status: ${finalStatus}`, {
         campaignId,
         platforms: platformResults.map(p => ({ platform: p.platform, success: p.success })),
+        errorDetailsCleared: allSuccessful,
       });
 
       return {
