@@ -29,8 +29,18 @@ import {
 /**
  * Check if Neural Engine is enabled
  * When enabled, uses 5-agent pipeline instead of traditional AI service
+ *
+ * TEMPORARILY DISABLED: Neural Engine causes Vercel 60s timeout due to GCP credential issues.
+ * Once GCP credentials are properly configured in Vercel, remove the `return false` below.
  */
 function isNeuralEngineEnabled(): boolean {
+  // TEMP FIX: Disable Neural Engine until GCP credentials are configured in Vercel
+  // The 5-agent pipeline times out on Vercel's 60s limit
+  // TODO: Re-enable once GOOGLE_APPLICATION_CREDENTIALS is properly set up
+  if (process.env.VERCEL) {
+    console.log('[Neural Engine] Disabled in Vercel environment (GCP credentials not configured)');
+    return false;
+  }
   return env.ENABLE_NEURAL_ENGINE === 'true';
 }
 
