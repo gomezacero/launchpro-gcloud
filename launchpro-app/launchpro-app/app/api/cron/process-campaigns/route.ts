@@ -15,16 +15,15 @@ import { CampaignStatus } from '@prisma/client';
  * - Generates AI content
  * - Launches to platforms
  *
- * Also retries campaigns stuck in GENERATING_AI for more than 5 minutes
- * (handles timeout/crash recovery scenarios)
+ * SIMPLIFIED APPROACH:
+ * - Only process ARTICLE_APPROVED campaigns (no retry of GENERATING_AI)
+ * - Validate credentials BEFORE processing (fail fast)
+ * - If processing fails, mark as FAILED immediately (no retries)
+ * - This prevents orphaned campaigns from blocking the queue
  */
 
 // Extend Vercel function timeout to 60 seconds (default is 10s)
-// This is needed because AI generation can take longer
 export const maxDuration = 60;
-
-// Time threshold for considering a GENERATING_AI campaign as stuck (5 minutes)
-const STUCK_THRESHOLD_MS = 5 * 60 * 1000;
 
 export async function GET(request: NextRequest) {
   const startTime = Date.now();
@@ -32,7 +31,6 @@ export async function GET(request: NextRequest) {
   // Verify cron secret (Vercel sends this header)
   const authHeader = request.headers.get('authorization');
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    // In development, allow without secret
     if (process.env.NODE_ENV === 'production') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -41,33 +39,21 @@ export async function GET(request: NextRequest) {
   try {
     logger.info('system', '🔄 [CRON] Starting process-campaigns job...');
 
-    // Calculate threshold time for stuck campaigns
-    const stuckThreshold = new Date(Date.now() - STUCK_THRESHOLD_MS);
-
-    // Find campaigns to process:
-    // 1. ARTICLE_APPROVED - ready for processing
-    // 2. GENERATING_AI that has been stuck for more than 5 minutes (timeout recovery)
-    const campaignsToProcess = await prisma.campaign.findMany({
+    // ONLY process ARTICLE_APPROVED campaigns - simple and predictable
+    const campaign = await prisma.campaign.findFirst({
       where: {
-        OR: [
-          // Normal path: approved and ready
-          { status: CampaignStatus.ARTICLE_APPROVED },
-          // Recovery path: stuck in GENERATING_AI (timed out or crashed)
-          {
-            status: CampaignStatus.GENERATING_AI,
-            updatedAt: { lt: stuckThreshold },
-          },
-        ],
+        status: CampaignStatus.ARTICLE_APPROVED,
       },
       include: {
-        platforms: true,
+        platforms: {
+          include: { tonicAccount: true },
+        },
         offer: true,
       },
-      take: 1, // Process one at a time to avoid timeout
       orderBy: { createdAt: 'asc' }, // FIFO
     });
 
-    if (campaignsToProcess.length === 0) {
+    if (!campaign) {
       logger.info('system', '✅ [CRON] No campaigns to process');
       return NextResponse.json({
         success: true,
@@ -76,48 +62,41 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const campaign = campaignsToProcess[0];
-    const isRetry = campaign.status === CampaignStatus.GENERATING_AI;
-
-    // Check retry count from errorDetails to prevent infinite loops
-    const errorDetails = campaign.errorDetails as any;
-    const retryCount = errorDetails?.retryCount || 0;
-    const MAX_RETRIES = 3;
-
-    if (isRetry) {
-      if (retryCount >= MAX_RETRIES) {
-        // Too many retries, mark as failed
-        await prisma.campaign.update({
-          where: { id: campaign.id },
-          data: {
-            status: CampaignStatus.FAILED,
-            errorDetails: {
-              ...errorDetails,
-              step: 'cron-processing',
-              message: `Campaign failed after ${MAX_RETRIES} retry attempts`,
-              timestamp: new Date().toISOString(),
-            },
-          },
-        });
-        logger.error('system', `❌ [CRON] Campaign "${campaign.name}" exceeded max retries (${MAX_RETRIES}), marked as FAILED`);
-        return NextResponse.json({
-          success: false,
-          message: `Campaign "${campaign.name}" exceeded max retries`,
-          campaignId: campaign.id,
-        });
-      }
-      logger.info('system', `🔄 [CRON] Retrying stuck campaign "${campaign.name}" (attempt ${retryCount + 1}/${MAX_RETRIES})`);
-    }
     logger.info('system', `📋 [CRON] Processing campaign "${campaign.name}" (${campaign.id})`);
 
-    // Mark as processing to prevent double-processing
+    // VALIDATION: Check Tonic credentials BEFORE processing
+    const tonicPlatform = campaign.platforms.find(p => p.platform === 'TONIC');
+    const tonicAccount = tonicPlatform?.tonicAccount;
+
+    if (!tonicAccount?.tonicConsumerKey || !tonicAccount?.tonicConsumerSecret) {
+      // Missing credentials = permanent failure, don't retry
+      await prisma.campaign.update({
+        where: { id: campaign.id },
+        data: {
+          status: CampaignStatus.FAILED,
+          errorDetails: {
+            step: 'validation',
+            message: 'Campaign is missing Tonic credentials. Please check the linked account.',
+            timestamp: new Date().toISOString(),
+          },
+        },
+      });
+      logger.error('system', `❌ [CRON] Campaign "${campaign.name}" FAILED: Missing Tonic credentials`);
+      return NextResponse.json({
+        success: false,
+        error: 'Missing Tonic credentials',
+        campaignId: campaign.id,
+      });
+    }
+
+    // Mark as GENERATING_AI to prevent double-processing
     await prisma.campaign.update({
       where: { id: campaign.id },
       data: { status: CampaignStatus.GENERATING_AI },
     });
 
     try {
-      // Continue campaign processing after article approval
+      // Process the campaign
       const result = await campaignOrchestrator.continueCampaignAfterArticle(campaign.id);
 
       const duration = Date.now() - startTime;
@@ -126,13 +105,13 @@ export async function GET(request: NextRequest) {
         platforms: result.platforms,
       });
 
-      // Get updated campaign with all relations for email
+      // Get updated campaign for email
       const updatedCampaign = await prisma.campaign.findUnique({
         where: { id: campaign.id },
         include: { platforms: true, offer: true },
       });
 
-      // Send success or partial failure email
+      // Send email notification
       if (updatedCampaign) {
         const allSuccess = result.platforms.every((p: any) => p.success);
         try {
@@ -157,48 +136,35 @@ export async function GET(request: NextRequest) {
       });
 
     } catch (processError: any) {
-      const newRetryCount = retryCount + 1;
-      const shouldRetry = newRetryCount < MAX_RETRIES;
-
-      // If retries remaining, keep in GENERATING_AI for retry; otherwise mark as FAILED
+      // Processing failed - mark as FAILED immediately (no retries)
       const failedCampaign = await prisma.campaign.update({
         where: { id: campaign.id },
         data: {
-          status: shouldRetry ? CampaignStatus.GENERATING_AI : CampaignStatus.FAILED,
+          status: CampaignStatus.FAILED,
           errorDetails: {
             step: 'cron-processing',
             message: processError.message,
             timestamp: new Date().toISOString(),
             technicalDetails: processError.stack?.substring(0, 500),
-            retryCount: newRetryCount,
-            lastError: processError.message,
           },
         },
         include: { platforms: true, offer: true },
       });
 
-      if (shouldRetry) {
-        logger.warn('system', `⚠️ [CRON] Campaign "${campaign.name}" failed (attempt ${newRetryCount}/${MAX_RETRIES}), will retry: ${processError.message}`);
-      } else {
-        logger.error('system', `❌ [CRON] Campaign "${campaign.name}" failed after ${MAX_RETRIES} attempts: ${processError.message}`);
-      }
+      logger.error('system', `❌ [CRON] Campaign "${campaign.name}" FAILED: ${processError.message}`);
 
-      // Only send failure email on final failure (no more retries)
-      if (!shouldRetry) {
-        try {
-          await emailService.sendCampaignFailed(failedCampaign, processError.message);
-        } catch (emailError) {
-          logger.error('email', `Failed to send failure email: ${emailError}`);
-        }
+      // Send failure email
+      try {
+        await emailService.sendCampaignFailed(failedCampaign, processError.message);
+      } catch (emailError) {
+        logger.error('email', `Failed to send failure email: ${emailError}`);
       }
 
       return NextResponse.json({
         success: false,
         error: processError.message,
         campaignId: campaign.id,
-        willRetry: shouldRetry,
-        retryCount: newRetryCount,
-      }, { status: shouldRetry ? 200 : 500 });
+      }, { status: 500 });
     }
 
   } catch (error: any) {
