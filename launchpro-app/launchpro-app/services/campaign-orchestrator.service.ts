@@ -870,15 +870,22 @@ class CampaignOrchestratorService {
       // 4c. Set keywords in Tonic
       // Note: keyword_amount must be 3-10 (controls how many appear on parking page)
       // If not provided, Tonic defaults to 6
+      // Wrapped in try/catch to handle cases where Tonic campaign is in invalid state
       logger.info('tonic', 'Setting keywords in Tonic...', { count: aiContentResult.keywords.length });
       const keywordAmount = Math.min(10, Math.max(3, aiContentResult.keywords.length));
-      await tonicService.setKeywords(credentials, {
-        campaign_id: parseInt(tonicCampaignId.toString()),
-        keywords: aiContentResult.keywords,
-        keyword_amount: keywordAmount,
-      });
-      logger.success('tonic', 'Keywords set in Tonic', { keywordAmount });
-      campaignLogger.completeStep(campaign.id, 'keywords', 'Keywords configurados');
+      try {
+        await tonicService.setKeywords(credentials, {
+          campaign_id: parseInt(tonicCampaignId.toString()),
+          keywords: aiContentResult.keywords,
+          keyword_amount: keywordAmount,
+        });
+        logger.success('tonic', 'Keywords set in Tonic', { keywordAmount });
+        campaignLogger.completeStep(campaign.id, 'keywords', 'Keywords configurados');
+      } catch (keywordError: any) {
+        // Log warning but continue - keywords might fail if Tonic campaign is in invalid state
+        logger.warn('tonic', `⚠️ Failed to set keywords in Tonic (continuing anyway): ${keywordError.message}`);
+        campaignLogger.completeStep(campaign.id, 'keywords', 'Keywords (warning: Tonic update failed)');
+      }
 
       // 4d. Article already created if RSOC (in Step 4)
       if (campaignType === 'rsoc' && articleHeadlineId) {
@@ -4151,14 +4158,26 @@ class CampaignOrchestratorService {
 
     // Set keywords in Tonic
     // Note: keyword_amount must be 3-10 (controls how many appear on parking page)
+    // Wrapped in try/catch to handle retry scenarios where keywords may already be set
+    // or the campaign is in an invalid state in Tonic
     const keywordAmount = Math.min(10, Math.max(3, aiContentResult.keywords.length));
-    await tonicService.setKeywords(credentials, {
-      campaign_id: parseInt(tonicCampaignId.toString()),
-      keywords: aiContentResult.keywords,
-      keyword_amount: keywordAmount,
-    });
+    try {
+      await tonicService.setKeywords(credentials, {
+        campaign_id: parseInt(tonicCampaignId.toString()),
+        keywords: aiContentResult.keywords,
+        keyword_amount: keywordAmount,
+      });
+      logger.success('ai', 'Keywords set in Tonic successfully');
+    } catch (keywordError: any) {
+      // Log the error but continue - keywords might already be set (retry scenario)
+      // or Tonic campaign might be in an invalid state that doesn't affect platform launch
+      logger.warn('tonic', `⚠️ Failed to set keywords in Tonic (continuing anyway): ${keywordError.message}`, {
+        campaignId: tonicCampaignId,
+        error: keywordError.response?.data || keywordError.message,
+      });
+    }
 
-    logger.success('ai', 'AI content generated and keywords set');
+    logger.success('ai', 'AI content generated');
 
     // ============================================
     // STEP 3.5: Generate AI Media (Images/Videos) if enabled
