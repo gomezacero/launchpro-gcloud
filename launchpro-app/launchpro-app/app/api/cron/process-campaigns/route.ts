@@ -148,11 +148,31 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Mark as GENERATING_AI to prevent double-processing
-    await prisma.campaign.update({
-      where: { id: campaign.id },
-      data: { status: CampaignStatus.GENERATING_AI },
+    // ATOMIC CLAIM: Use updateMany with conditions to prevent race condition
+    // If another process already claimed this campaign, the update will affect 0 rows
+    const claimed = await prisma.campaign.updateMany({
+      where: {
+        id: campaign.id,
+        status: campaign.status, // Must still be the same status we found
+        updatedAt: campaign.updatedAt, // Must not have been modified by another process
+      },
+      data: {
+        status: CampaignStatus.GENERATING_AI,
+      },
     });
+
+    // If no rows updated, another process already claimed this campaign
+    if (claimed.count === 0) {
+      logger.info('system', `⏭️ [CRON] Campaign "${campaign.name}" already claimed by another process, skipping`);
+      return NextResponse.json({
+        success: true,
+        message: 'Campaign already being processed by another instance',
+        campaignId: campaign.id,
+        skipped: true,
+      });
+    }
+
+    logger.info('system', `🔒 [CRON] Successfully claimed campaign "${campaign.name}" for processing`);
 
     try {
       // Process the campaign

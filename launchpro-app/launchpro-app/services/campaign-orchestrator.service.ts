@@ -1402,7 +1402,9 @@ class CampaignOrchestratorService {
           data: {
             status: allSuccessful ? CampaignStatus.ACTIVE : CampaignStatus.FAILED,
             launchedAt: new Date(),
-            ...(errorDetailsData && { errorDetails: errorDetailsData }),
+            // CRITICAL FIX: Clear errorDetails on success using Prisma.DbNull
+            // Previously used spread operator which didn't clear old errors
+            errorDetails: allSuccessful ? Prisma.DbNull : errorDetailsData,
           },
         });
 
