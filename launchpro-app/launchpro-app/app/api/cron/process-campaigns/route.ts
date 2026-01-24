@@ -150,6 +150,27 @@ export async function GET(request: NextRequest) {
 
     logger.info('system', `📋 [CRON] Processing campaign "${campaign.name}" (${campaign.id})`);
 
+    // VALIDATION: Check Anthropic API key BEFORE processing (fail fast)
+    // This prevents campaigns from getting stuck in GENERATING_AI with 401 errors
+    const anthropicKey = (process.env.ANTHROPIC_API_KEY || '').trim();
+    if (!anthropicKey || anthropicKey.length < 50 || !anthropicKey.startsWith('sk-ant-')) {
+      logger.error('system', `❌ [CRON] CRITICAL: Anthropic API key is invalid or missing!`, {
+        keyLength: anthropicKey.length,
+        keyStart: anthropicKey.substring(0, 10) || 'EMPTY',
+        startsWithSkAnt: anthropicKey.startsWith('sk-ant-'),
+        campaignName: campaign.name,
+      });
+      // Don't mark campaign as failed - this is a system configuration issue
+      // The campaign can be retried once the key is fixed
+      return NextResponse.json({
+        success: false,
+        error: 'Anthropic API key is invalid or missing. Please check ANTHROPIC_API_KEY environment variable.',
+        campaignId: campaign.id,
+        systemError: true,
+      }, { status: 500 });
+    }
+    logger.info('system', `✅ [CRON] Anthropic API key validated: ${anthropicKey.substring(0, 10)}...${anthropicKey.slice(-4)} (${anthropicKey.length} chars)`);
+
     // VALIDATION: Check Tonic credentials BEFORE processing
     const tonicPlatform = campaign.platforms.find(p => p.platform === 'TONIC');
     const tonicAccount = tonicPlatform?.tonicAccount;

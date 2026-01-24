@@ -4199,13 +4199,24 @@ class CampaignOrchestratorService {
     // Generate Copy Master if not set
     if (!campaign.copyMaster) {
       logger.info('ai', `[CampaignOrchestrator] Calling aiService.generateCopyMaster for campaign ${campaignId}...`);
-      aiContentResult.copyMaster = await aiService.generateCopyMaster({
-        offerName: campaign.offer.name,
-        offerDescription: campaign.offer.description || undefined,
-        vertical: campaign.offer.vertical,
-        country: campaign.country,
-        language: campaign.language,
-      });
+      try {
+        aiContentResult.copyMaster = await aiService.generateCopyMaster({
+          offerName: campaign.offer.name,
+          offerDescription: campaign.offer.description || undefined,
+          vertical: campaign.offer.vertical,
+          country: campaign.country,
+          language: campaign.language,
+        });
+      } catch (copyMasterError: any) {
+        logger.error('ai', `❌ [CampaignOrchestrator] FAILED to generate Copy Master for campaign ${campaignId}`, {
+          errorStatus: copyMasterError.status,
+          errorMessage: copyMasterError.message,
+          errorType: copyMasterError.constructor?.name,
+          campaignName: campaign.name,
+          anthropicKeyPreview: `${(process.env.ANTHROPIC_API_KEY || '').substring(0, 10)}...`,
+        });
+        throw new Error(`AI Copy Master generation failed: ${copyMasterError.message}`);
+      }
 
       await prisma.campaign.update({
         where: { id: campaignId },
@@ -4217,12 +4228,24 @@ class CampaignOrchestratorService {
 
     // Generate Keywords if not set
     if (!campaign.keywords || campaign.keywords.length === 0) {
-      aiContentResult.keywords = await aiService.generateKeywords({
-        offerName: campaign.offer.name,
-        copyMaster: aiContentResult.copyMaster,
-        count: 6,
-        country: campaign.country,
-      });
+      logger.info('ai', `[CampaignOrchestrator] Calling aiService.generateKeywords for campaign ${campaignId}...`);
+      try {
+        aiContentResult.keywords = await aiService.generateKeywords({
+          offerName: campaign.offer.name,
+          copyMaster: aiContentResult.copyMaster,
+          count: 6,
+          country: campaign.country,
+        });
+      } catch (keywordsError: any) {
+        logger.error('ai', `❌ [CampaignOrchestrator] FAILED to generate Keywords for campaign ${campaignId}`, {
+          errorStatus: keywordsError.status,
+          errorMessage: keywordsError.message,
+          errorType: keywordsError.constructor?.name,
+          campaignName: campaign.name,
+          anthropicKeyPreview: `${(process.env.ANTHROPIC_API_KEY || '').substring(0, 10)}...`,
+        });
+        throw new Error(`AI Keywords generation failed: ${keywordsError.message}`);
+      }
 
       await prisma.campaign.update({
         where: { id: campaignId },
