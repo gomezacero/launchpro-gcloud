@@ -236,29 +236,34 @@ export async function GET(request: NextRequest) {
               });
 
             } else {
-              // DIRECT LAUNCH PATH: Skip DesignFlow, proceed to platform launch
-              logger.info('system', `🚀 [CRON] Campaign "${campaign.name}" does NOT need DesignFlow, proceeding to launch...`);
+              // DIRECT LAUNCH PATH: Skip DesignFlow, wait for tracking link first
+              // Tracking link takes 10-14 minutes to become available from Tonic
+              // poll-tracking-links cron will monitor and move to ARTICLE_APPROVED when ready
+              logger.info('system', `🚀 [CRON] Campaign "${campaign.name}" does NOT need DesignFlow, waiting for tracking link...`);
 
-              // Update campaign with Tonic data and set status to ARTICLE_APPROVED
-              // This allows process-campaigns cron to pick it up and launch
+              // Update campaign with Tonic data and set status to AWAITING_TRACKING
+              // The poll-tracking-links cron will check for tracking link availability
+              // and move to ARTICLE_APPROVED when the tracking link is ready
               await prisma.campaign.update({
                 where: { id: campaign.id },
                 data: {
-                  status: CampaignStatus.ARTICLE_APPROVED,
+                  status: CampaignStatus.AWAITING_TRACKING,
                   tonicCampaignId: String(tonicCampaignId),
                   tonicArticleId: articleStatus.headline_id,
-                  tonicTrackingLink: trackingLink,
+                  tonicTrackingLink: trackingLink, // May be null initially, poll-tracking-links will update
                   tonicDirectLink: directLink,
+                  trackingLinkPollingStartedAt: new Date(), // Start polling timer
+                  trackingLinkPollingAttempts: 0,
                 },
               });
 
-              logger.success('system', `✅ [CRON] Campaign "${campaign.name}" → Direct launch path: Article approved → Tonic campaign → ARTICLE_APPROVED (ready for process-campaigns)`);
+              logger.success('system', `✅ [CRON] Campaign "${campaign.name}" → Direct launch path: Article approved → Tonic campaign → AWAITING_TRACKING (poll-tracking-links will monitor)`);
 
               results.push({
                 campaignId: campaign.id,
                 campaignName: campaign.name,
                 status: 'approved',
-                action: `Article approved, Tonic campaign created (${tonicCampaignId}), status: ARTICLE_APPROVED (will launch via process-campaigns)`,
+                action: `Article approved, Tonic campaign created (${tonicCampaignId}), status: AWAITING_TRACKING (polling for tracking link)`,
               });
             }
 

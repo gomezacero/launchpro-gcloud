@@ -4050,58 +4050,52 @@ class CampaignOrchestratorService {
     }
 
     // ============================================
-    // STEP 2: Get tracking link (BLOCKING - MUST WAIT)
+    // STEP 2: Get tracking link (NON-BLOCKING - pre-fetched by poll-tracking-links cron)
     // ============================================
-    // CRITICAL: We MUST wait for the tracking link before proceeding to Meta/TikTok
-    // Without a real tracking link, ads will run with invalid URLs and tracking won't work
-    // Tonic typically takes 10-14 minutes to generate tracking links
+    // NOTE: The tracking link is now handled by the poll-tracking-links cron job.
+    // Campaigns reach this point ONLY after their tracking link is ready (status: ARTICLE_APPROVED).
+    // The poll-tracking-links cron moves campaigns from AWAITING_TRACKING to ARTICLE_APPROVED
+    // when the tracking link becomes available from Tonic.
 
     // Verify tonicCampaignId was assigned (should always be true at this point)
     if (!tonicCampaignId) {
       throw new Error('Failed to create or find Tonic campaign - tonicCampaignId is undefined');
     }
 
-    logger.info('tonic', '🔍 Waiting for tracking link (BLOCKING - will poll up to 12 minutes)...');
+    // Get tracking link from campaign (should already be populated by poll-tracking-links cron)
+    let trackingLink: string = campaign.tonicTrackingLink || '';
 
-    // Import the polling utility
-    const { waitForTrackingLink } = await import('@/lib/tracking-link-polling');
-
-    // CRITICAL: Block until tracking link is ready
-    // This is essential - we cannot launch to Meta/TikTok without a valid tracking link
-    const pollingResult = await waitForTrackingLink(credentials, tonicCampaignId.toString(), {
-      maxWaitMinutes: 12, // Tonic takes 10-14 minutes, give it 12 minutes max
-      pollingIntervalSeconds: 30,
-      onProgress: (status, elapsed) => {
-        logger.info('tonic', `⏳ Waiting for tracking link... Status: ${status}, Elapsed: ${elapsed}s`);
-      }
-    });
-
-    let trackingLink: string = '';
-
-    if (!pollingResult.success || !pollingResult.trackingLink) {
-      // CRITICAL: Do NOT proceed with placeholder - fail cleanly
-      // This prevents ads from running with invalid tracking URLs
-      const errorMsg = `Tracking link not available after ${pollingResult.elapsedSeconds}s (${pollingResult.attemptsCount} attempts). ` +
-        `Campaign cannot launch without valid tracking link. Tonic campaign ID: ${tonicCampaignId}`;
-      logger.error('tonic', `❌ ${errorMsg}`);
-      throw new Error(errorMsg);
+    // VALIDATION: Ensure we have a REAL tracking link (not a placeholder)
+    if (!trackingLink || trackingLink.includes('tracking-pending')) {
+      // If tracking link is missing or placeholder, the campaign shouldn't have reached this point
+      // This is a safety check - normally poll-tracking-links cron ensures tracking link is ready
+      logger.error('tonic', `❌ Campaign reached continueCampaignAfterArticle without valid tracking link!`, {
+        campaignId,
+        currentTrackingLink: trackingLink || 'MISSING',
+        tonicCampaignId: tonicCampaignId.toString(),
+      });
+      throw new Error(
+        `Tracking link not ready - campaign should be in AWAITING_TRACKING status. ` +
+        `Current link: "${trackingLink || 'MISSING'}". Tonic campaign ID: ${tonicCampaignId}`
+      );
     }
 
-    // SUCCESS: We have a real tracking link
-    trackingLink = pollingResult.trackingLink.startsWith('http')
-      ? pollingResult.trackingLink
-      : `https://${pollingResult.trackingLink}`;
+    // Ensure tracking link has proper protocol
+    if (!trackingLink.startsWith('http')) {
+      trackingLink = `https://${trackingLink}`;
+    }
 
-    logger.success('tonic', `✅ Tracking link ready after ${pollingResult.elapsedSeconds}s: ${trackingLink}`);
+    logger.info('tonic', `✅ Using pre-fetched tracking link: ${trackingLink}`);
 
-    // Update campaign with Tonic info
-    await prisma.campaign.update({
-      where: { id: campaignId },
-      data: {
-        tonicCampaignId: tonicCampaignId.toString(),
-        tonicTrackingLink: trackingLink,
-      },
-    });
+    // Update campaign with Tonic campaign ID if it was just found/created
+    if (!campaign.tonicCampaignId || campaign.tonicCampaignId !== tonicCampaignId.toString()) {
+      await prisma.campaign.update({
+        where: { id: campaignId },
+        data: {
+          tonicCampaignId: tonicCampaignId.toString(),
+        },
+      });
+    }
 
     // ============================================
     // STEP 2.5: Refresh offer vertical from Tonic CAMPAIGN if needed

@@ -5,6 +5,10 @@
       "schedule": "* * * * *"
     },
     {
+      "path": "/api/cron/poll-tracking-links",
+      "schedule": "* * * * *"
+    },
+    {
       "path": "/api/cron/process-campaigns",
       "schedule": "* * * * *"
     },
@@ -34,6 +38,9 @@
       "maxDuration": 60
     },
     "app/api/cron/check-articles/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/cron/poll-tracking-links/route.ts": {
       "maxDuration": 60
     },
     "app/api/cron/process-campaigns/route.ts": {

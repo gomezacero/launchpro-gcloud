@@ -3,29 +3,36 @@ import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger';
 import { campaignOrchestrator } from '@/services/campaign-orchestrator.service';
 import { emailService } from '@/services/email.service';
-import { CampaignStatus, Prisma } from '@prisma/client';
+import { CampaignStatus, Prisma, Campaign, CampaignPlatform, Offer, Account } from '@prisma/client';
 
 /**
- * Cron Job: Process Approved Campaigns
+ * Cron Job: Process Approved Campaigns (PARALLEL PROCESSING)
  *
  * Runs every minute via Vercel Cron
- * Processes campaigns with ARTICLE_APPROVED status:
- * - Creates Tonic campaign
- * - Gets tracking link
+ * Processes UP TO 3 campaigns with ARTICLE_APPROVED status IN PARALLEL:
  * - Generates AI content
- * - Launches to platforms
+ * - Launches to platforms (Meta/TikTok)
  *
- * SIMPLIFIED APPROACH:
- * - Only process ARTICLE_APPROVED campaigns (no retry of GENERATING_AI)
- * - Validate credentials BEFORE processing (fail fast)
- * - If processing fails, mark as FAILED immediately (no retries)
- * - This prevents orphaned campaigns from blocking the queue
+ * IMPORTANT: This cron ONLY processes campaigns that ALREADY have tracking links ready.
+ * The poll-tracking-links cron handles waiting for tracking links and moves campaigns
+ * to ARTICLE_APPROVED when the tracking link is available.
+ *
+ * PARALLEL PROCESSING APPROACH:
+ * - Uses findMany to get up to 3 campaigns
+ * - Uses Promise.allSettled to process them in parallel
+ * - Each campaign has its own atomic claim to prevent race conditions
+ * - Failures in one campaign don't affect others
  */
 
 // Extend Vercel function timeout to 800 seconds (Pro plan max)
-// Tracking link polling takes 10-14 minutes, so we need maximum timeout
-// The export const maxDuration takes precedence over vercel.json
+// With parallel processing (no tracking link wait), this is plenty of time
 export const maxDuration = 800;
+
+// Type for campaign with includes
+type CampaignWithIncludes = Campaign & {
+  platforms: (CampaignPlatform & { tonicAccount: Account | null })[];
+  offer: Offer;
+};
 
 export async function GET(request: NextRequest) {
   const startTime = Date.now();
@@ -40,7 +47,7 @@ export async function GET(request: NextRequest) {
 
   try {
     // Debug: Log environment info at the start of cron
-    const apiKey = (process.env.ANTHROPIC_API_KEY || '').trim(); // Trim any whitespace
+    const apiKey = (process.env.ANTHROPIC_API_KEY || '').trim();
     const envDebug = {
       anthropicKeyExists: !!apiKey,
       anthropicKeyLength: apiKey.length,
@@ -52,28 +59,45 @@ export async function GET(request: NextRequest) {
       vercelGitCommitSha: process.env.VERCEL_GIT_COMMIT_SHA?.substring(0, 7),
     };
     console.log('[CRON process-campaigns] Environment debug:', JSON.stringify(envDebug));
-    logger.info('system', '🔄 [CRON] Starting process-campaigns job...', envDebug);
+    logger.info('system', '🔄 [CRON] Starting process-campaigns job (PARALLEL MODE)...', envDebug);
 
-    // Find campaigns to process:
-    // 1. ARTICLE_APPROVED - ready for processing
-    // 2. GENERATING_AI stuck for more than 15 minutes (timeout recovery)
-    // IMPORTANT: 15 minutes because tracking link polling can take up to 12 minutes
-    // Using 5 minutes caused duplicate Meta campaigns when polling exceeded 5 min
-    // IMPORTANT: Exclude campaigns that already have ACTIVE platforms (already launched successfully)
+    // VALIDATION: Check Anthropic API key BEFORE processing (fail fast for ALL campaigns)
+    if (!apiKey || apiKey.length < 50 || !apiKey.startsWith('sk-ant-')) {
+      logger.error('system', `❌ [CRON] CRITICAL: Anthropic API key is invalid or missing!`, {
+        keyLength: apiKey.length,
+        keyStart: apiKey.substring(0, 10) || 'EMPTY',
+        startsWithSkAnt: apiKey.startsWith('sk-ant-'),
+      });
+      return NextResponse.json({
+        success: false,
+        error: 'Anthropic API key is invalid or missing. Please check ANTHROPIC_API_KEY environment variable.',
+        systemError: true,
+      }, { status: 500 });
+    }
+
+    // Find MULTIPLE campaigns ready to process (up to 3 for parallel processing)
+    // CRITICAL: Only process campaigns that ALREADY have tracking links
+    // The poll-tracking-links cron handles waiting for tracking links
     const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
 
-    const campaign = await prisma.campaign.findFirst({
+    const campaigns = await prisma.campaign.findMany({
       where: {
         OR: [
-          { status: CampaignStatus.ARTICLE_APPROVED },
           {
+            status: CampaignStatus.ARTICLE_APPROVED,
+            // CRITICAL: Must have a real tracking link (not placeholder)
+            tonicTrackingLink: { not: null },
+            NOT: {
+              tonicTrackingLink: { contains: 'tracking-pending' },
+            },
+          },
+          {
+            // Retry stuck GENERATING_AI campaigns (timeout recovery)
             status: CampaignStatus.GENERATING_AI,
-            updatedAt: { lt: fifteenMinutesAgo }
+            updatedAt: { lt: fifteenMinutesAgo },
           },
         ],
-        // Exclude campaigns that already have platforms in ACTIVE status
-        // OR platforms that already have campaign IDs (meaning they were launched)
-        // This prevents re-processing of campaigns that succeeded on some platforms
+        // Exclude campaigns that already have platforms launched
         NOT: {
           platforms: {
             some: {
@@ -93,29 +117,93 @@ export async function GET(request: NextRequest) {
         offer: true,
       },
       orderBy: { createdAt: 'asc' }, // FIFO
+      take: 3, // Process up to 3 campaigns in parallel
     });
 
-    if (!campaign) {
-      logger.info('system', '✅ [CRON] No campaigns to process');
+    if (campaigns.length === 0) {
+      logger.info('system', '✅ [CRON] No campaigns ready to process');
       return NextResponse.json({
         success: true,
-        message: 'No campaigns to process',
+        message: 'No campaigns ready to process',
         processed: 0,
       });
     }
 
+    logger.info('system', `📋 [CRON] Found ${campaigns.length} campaign(s) ready for PARALLEL processing`, {
+      campaigns: campaigns.map(c => ({ id: c.id, name: c.name, status: c.status })),
+    });
+
+    // Process campaigns IN PARALLEL using Promise.allSettled
+    // Each campaign processes independently - failures don't affect others
+    const results = await Promise.allSettled(
+      campaigns.map(campaign => processSingleCampaign(campaign as CampaignWithIncludes, startTime))
+    );
+
+    // Summarize results
+    const summary = {
+      total: campaigns.length,
+      succeeded: results.filter(r => r.status === 'fulfilled' && (r.value as any).success).length,
+      failed: results.filter(r => r.status === 'rejected' || (r.status === 'fulfilled' && !(r.value as any).success)).length,
+      skipped: results.filter(r => r.status === 'fulfilled' && (r.value as any).skipped).length,
+    };
+
+    const duration = Date.now() - startTime;
+    logger.success('system', `✅ [CRON] process-campaigns completed in ${duration}ms`, {
+      ...summary,
+      campaignResults: results.map((r, i) => ({
+        campaignId: campaigns[i].id,
+        campaignName: campaigns[i].name,
+        status: r.status,
+        result: r.status === 'fulfilled' ? r.value : { error: (r as PromiseRejectedResult).reason?.message },
+      })),
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: `Processed ${summary.total} campaigns: ${summary.succeeded} succeeded, ${summary.failed} failed, ${summary.skipped} skipped`,
+      processed: summary.total,
+      ...summary,
+      duration,
+      results: results.map((r, i) => ({
+        campaignId: campaigns[i].id,
+        campaignName: campaigns[i].name,
+        status: r.status === 'fulfilled' ? (r.value as any).success ? 'success' : 'failed' : 'error',
+        result: r.status === 'fulfilled' ? r.value : { error: (r as PromiseRejectedResult).reason?.message },
+      })),
+    });
+
+  } catch (error: any) {
+    logger.error('system', `❌ [CRON] process-campaigns failed: ${error.message}`, {
+      error: error.message,
+      stack: error.stack,
+    });
+
+    return NextResponse.json({
+      success: false,
+      error: error.message,
+    }, { status: 500 });
+  }
+}
+
+/**
+ * Process a single campaign with atomic claiming and error handling
+ */
+async function processSingleCampaign(
+  campaign: CampaignWithIncludes,
+  cronStartTime: number
+): Promise<{ success: boolean; skipped?: boolean; campaignId: string; message: string; result?: any }> {
+  const campaignStartTime = Date.now();
+
+  try {
     // ============================================
     // SAFETY CHECK: Skip campaigns that already have platform launches
     // ============================================
-    // This prevents re-processing campaigns that succeeded on Meta/TikTok
-    // Check for: metaCampaignId, tiktokCampaignId, or platform status ACTIVE
     const existingPlatformLaunches = campaign.platforms.filter(p =>
       p.metaCampaignId || p.tiktokCampaignId || p.status === 'ACTIVE'
     );
 
     if (existingPlatformLaunches.length > 0) {
-      // Campaign was already launched - fix status and skip reprocessing
-      logger.info('system', `⏭️ [CRON] Campaign "${campaign.name}" already has platform launches, fixing status instead of reprocessing`, {
+      logger.info('system', `⏭️ [CRON] Campaign "${campaign.name}" already has platform launches, fixing status`, {
         platforms: existingPlatformLaunches.map(p => ({
           platform: p.platform,
           metaCampaignId: p.metaCampaignId,
@@ -132,51 +220,21 @@ export async function GET(request: NextRequest) {
         },
       });
 
-      return NextResponse.json({
+      return {
         success: true,
-        message: `Campaign "${campaign.name}" already launched - status fixed to ACTIVE`,
-        campaignId: campaign.id,
         skipped: true,
-        reason: 'already_launched',
-        platforms: existingPlatformLaunches.map(p => p.platform),
-      });
-    }
-
-    // If this is a stuck GENERATING_AI campaign, log it
-    const isRetry = campaign.status === CampaignStatus.GENERATING_AI;
-    if (isRetry) {
-      logger.info('system', `🔄 [CRON] Retrying stuck campaign "${campaign.name}" (was in GENERATING_AI >5min)`);
-    }
-
-    logger.info('system', `📋 [CRON] Processing campaign "${campaign.name}" (${campaign.id})`);
-
-    // VALIDATION: Check Anthropic API key BEFORE processing (fail fast)
-    // This prevents campaigns from getting stuck in GENERATING_AI with 401 errors
-    const anthropicKey = (process.env.ANTHROPIC_API_KEY || '').trim();
-    if (!anthropicKey || anthropicKey.length < 50 || !anthropicKey.startsWith('sk-ant-')) {
-      logger.error('system', `❌ [CRON] CRITICAL: Anthropic API key is invalid or missing!`, {
-        keyLength: anthropicKey.length,
-        keyStart: anthropicKey.substring(0, 10) || 'EMPTY',
-        startsWithSkAnt: anthropicKey.startsWith('sk-ant-'),
-        campaignName: campaign.name,
-      });
-      // Don't mark campaign as failed - this is a system configuration issue
-      // The campaign can be retried once the key is fixed
-      return NextResponse.json({
-        success: false,
-        error: 'Anthropic API key is invalid or missing. Please check ANTHROPIC_API_KEY environment variable.',
         campaignId: campaign.id,
-        systemError: true,
-      }, { status: 500 });
+        message: 'Already launched - status fixed to ACTIVE',
+      };
     }
-    logger.info('system', `✅ [CRON] Anthropic API key validated: ${anthropicKey.substring(0, 10)}...${anthropicKey.slice(-4)} (${anthropicKey.length} chars)`);
 
-    // VALIDATION: Check Tonic credentials BEFORE processing
+    // ============================================
+    // VALIDATION: Check Tonic credentials
+    // ============================================
     const tonicPlatform = campaign.platforms.find(p => p.platform === 'TONIC');
     const tonicAccount = tonicPlatform?.tonicAccount;
 
     if (!tonicAccount?.tonicConsumerKey || !tonicAccount?.tonicConsumerSecret) {
-      // Missing credentials = permanent failure, don't retry
       await prisma.campaign.update({
         where: { id: campaign.id },
         data: {
@@ -189,211 +247,177 @@ export async function GET(request: NextRequest) {
         },
       });
       logger.error('system', `❌ [CRON] Campaign "${campaign.name}" FAILED: Missing Tonic credentials`);
-      return NextResponse.json({
+      return {
         success: false,
-        error: 'Missing Tonic credentials',
         campaignId: campaign.id,
-      });
+        message: 'Missing Tonic credentials',
+      };
     }
 
-    // ATOMIC CLAIM: Use updateMany with status condition to prevent race condition
-    // If another process already claimed this campaign (changed status), the update will affect 0 rows
-    // NOTE: We only check status, not updatedAt, because:
-    // 1. Other operations (media upload, etc.) can update the campaign without claiming it
-    // 2. Database-level atomicity ensures only one UPDATE succeeds per row
-    // 3. The status check is sufficient - if another cron claimed it, status will be GENERATING_AI
+    // ============================================
+    // VALIDATION: Check tracking link is ready
+    // ============================================
+    if (!campaign.tonicTrackingLink || campaign.tonicTrackingLink.includes('tracking-pending')) {
+      logger.warn('system', `⏭️ [CRON] Campaign "${campaign.name}" tracking link not ready, skipping (should be in AWAITING_TRACKING)`);
+      return {
+        success: true,
+        skipped: true,
+        campaignId: campaign.id,
+        message: 'Tracking link not ready - skipping',
+      };
+    }
+
+    // ============================================
+    // ATOMIC CLAIM: Prevent race conditions
+    // ============================================
+    const isRetry = campaign.status === CampaignStatus.GENERATING_AI;
+    if (isRetry) {
+      logger.info('system', `🔄 [CRON] Retrying stuck campaign "${campaign.name}" (was in GENERATING_AI >15min)`);
+    }
+
     const claimed = await prisma.campaign.updateMany({
       where: {
         id: campaign.id,
-        status: campaign.status, // Must still be the same status we found (ARTICLE_APPROVED or GENERATING_AI for retries)
+        status: campaign.status, // Must still be the same status
       },
       data: {
         status: CampaignStatus.GENERATING_AI,
       },
     });
 
-    // If no rows updated, another process already claimed this campaign (status changed)
     if (claimed.count === 0) {
-      logger.info('system', `⏭️ [CRON] Campaign "${campaign.name}" already claimed by another process (status changed), skipping`);
-      return NextResponse.json({
+      logger.info('system', `⏭️ [CRON] Campaign "${campaign.name}" already claimed by another process`);
+      return {
         success: true,
-        message: 'Campaign already being processed by another instance',
-        campaignId: campaign.id,
         skipped: true,
-      });
+        campaignId: campaign.id,
+        message: 'Already claimed by another process',
+      };
     }
 
-    logger.info('system', `🔒 [CRON] Successfully claimed campaign "${campaign.name}" for processing`);
+    logger.info('system', `🔒 [CRON] Claimed campaign "${campaign.name}" for processing`);
 
-    try {
-      // Process the campaign
-      const result = await campaignOrchestrator.continueCampaignAfterArticle(campaign.id);
+    // ============================================
+    // PROCESS THE CAMPAIGN
+    // ============================================
+    const result = await campaignOrchestrator.continueCampaignAfterArticle(campaign.id);
 
-      const duration = Date.now() - startTime;
-      logger.success('system', `✅ [CRON] Campaign "${campaign.name}" processed successfully in ${duration}ms`, {
-        campaignId: campaign.id,
-        platforms: result.platforms,
-      });
-
-      // DEFENSIVE FIX: Ensure errorDetails is cleared for successful launches
-      // This guarantees no stale 401 errors persist in the UI
-      const allPlatformsSuccess = result.platforms.every((p: any) => p.success);
-      if (allPlatformsSuccess) {
-        await prisma.campaign.update({
-          where: { id: campaign.id },
-          data: { errorDetails: Prisma.DbNull },
-        });
-        logger.info('system', `🧹 [CRON] Cleared any stale errorDetails for campaign "${campaign.name}"`);
-      }
-
-      // Get updated campaign for email
-      const updatedCampaign = await prisma.campaign.findUnique({
-        where: { id: campaign.id },
-        include: { platforms: true, offer: true },
-      });
-
-      // Send email notification
-      if (updatedCampaign) {
-        const allSuccess = result.platforms.every((p: any) => p.success);
-        try {
-          if (allSuccess) {
-            await emailService.sendCampaignSuccess(updatedCampaign);
-          } else {
-            const failedPlatforms = result.platforms.filter((p: any) => !p.success);
-            const errorMsg = failedPlatforms.map((p: any) => `${p.platform}: ${p.error || 'Unknown error'}`).join('; ');
-            await emailService.sendCampaignFailed(updatedCampaign, errorMsg);
-          }
-        } catch (emailError) {
-          logger.error('email', `Failed to send campaign email: ${emailError}`);
-        }
-      }
-
-      return NextResponse.json({
-        success: true,
-        message: `Campaign "${campaign.name}" processed successfully`,
-        campaignId: campaign.id,
-        result,
-        duration,
-      });
-
-    } catch (processError: any) {
-      // SAFETY CHECK: Before marking as FAILED, check if campaign was already launched successfully
-      // This prevents race conditions where an error occurs AFTER the campaign was updated to ACTIVE
-      // Also checks campaign-level launch indicators (tonicCampaignId, launchedAt) as additional signals
-      const currentState = await prisma.campaign.findUnique({
-        where: { id: campaign.id },
-        select: {
-          status: true,
-          tonicCampaignId: true,
-          tonicTrackingLink: true,
-          launchedAt: true,
-          platforms: { select: { metaCampaignId: true, tiktokCampaignId: true, status: true } }
-        },
-      });
-
-      // Log full state for debugging
-      logger.info('system', `🔍 [CRON] Safety check - current campaign state for "${campaign.name}":`, {
-        status: currentState?.status,
-        tonicCampaignId: currentState?.tonicCampaignId,
-        tonicTrackingLink: currentState?.tonicTrackingLink ? 'SET' : 'NOT_SET',
-        launchedAt: currentState?.launchedAt?.toISOString() || 'NOT_SET',
-        platforms: currentState?.platforms?.map(p => ({
-          metaCampaignId: p.metaCampaignId,
-          tiktokCampaignId: p.tiktokCampaignId,
-          status: p.status
-        })),
-      });
-
-      // Determine if campaign was successfully launched - expanded conditions:
-      // 1. Campaign status is already ACTIVE
-      // 2. Any platform has metaCampaignId or tiktokCampaignId (platform was created)
-      // 3. Any platform status is ACTIVE
-      // 4. Campaign has launchedAt timestamp (was launched before)
-      // 5. Campaign has real tonicTrackingLink (not a placeholder)
-      const hasPlatformLaunch = currentState?.platforms?.some(p =>
-        p.metaCampaignId || p.tiktokCampaignId || p.status === 'ACTIVE'
-      );
-      const hasRealTrackingLink = currentState?.tonicTrackingLink &&
-        !currentState.tonicTrackingLink.includes('tracking-pending');
-
-      const hasSuccessfulLaunch = currentState?.status === CampaignStatus.ACTIVE ||
-        hasPlatformLaunch ||
-        currentState?.launchedAt !== null ||
-        hasRealTrackingLink;
-
-      logger.info('system', `🔍 [CRON] Safety check results for "${campaign.name}":`, {
-        hasSuccessfulLaunch,
-        isStatusActive: currentState?.status === CampaignStatus.ACTIVE,
-        hasPlatformLaunch,
-        hasLaunchedAt: currentState?.launchedAt !== null,
-        hasRealTrackingLink,
-      });
-
-      if (hasSuccessfulLaunch) {
-        logger.warn('system', `⚠️ [CRON] Error occurred but campaign "${campaign.name}" was already launched successfully - preserving ACTIVE status`, {
-          currentStatus: currentState?.status,
-          error: processError.message,
-          indicators: { hasPlatformLaunch, hasRealTrackingLink, hasLaunchedAt: !!currentState?.launchedAt },
-        });
-
-        // CRITICAL FIX: Clear any stale errorDetails since launch was successful
-        // This prevents the UI from showing old 401 errors for campaigns that actually succeeded
-        await prisma.campaign.update({
-          where: { id: campaign.id },
-          data: {
-            status: CampaignStatus.ACTIVE,
-            errorDetails: Prisma.DbNull,
-          },
-        });
-
-        return NextResponse.json({
-          success: true,
-          message: `Campaign "${campaign.name}" launched successfully (post-launch error ignored, stale errors cleared)`,
-          campaignId: campaign.id,
-          warning: processError.message,
-        });
-      }
-
-      // Processing failed - mark as FAILED immediately (no retries)
-      const failedCampaign = await prisma.campaign.update({
-        where: { id: campaign.id },
-        data: {
-          status: CampaignStatus.FAILED,
-          errorDetails: {
-            step: 'cron-processing',
-            message: processError.message,
-            timestamp: new Date().toISOString(),
-            technicalDetails: processError.stack?.substring(0, 500),
-          },
-        },
-        include: { platforms: true, offer: true },
-      });
-
-      logger.error('system', `❌ [CRON] Campaign "${campaign.name}" FAILED: ${processError.message}`);
-
-      // Send failure email
-      try {
-        await emailService.sendCampaignFailed(failedCampaign, processError.message);
-      } catch (emailError) {
-        logger.error('email', `Failed to send failure email: ${emailError}`);
-      }
-
-      return NextResponse.json({
-        success: false,
-        error: processError.message,
-        campaignId: campaign.id,
-      }, { status: 500 });
-    }
-
-  } catch (error: any) {
-    logger.error('system', `❌ [CRON] process-campaigns failed: ${error.message}`, {
-      error: error.message,
-      stack: error.stack,
+    const duration = Date.now() - campaignStartTime;
+    logger.success('system', `✅ [CRON] Campaign "${campaign.name}" processed in ${duration}ms`, {
+      campaignId: campaign.id,
+      platforms: result.platforms,
     });
 
-    return NextResponse.json({
+    // Clear any stale errors for successful launches
+    const allPlatformsSuccess = result.platforms.every((p: any) => p.success);
+    if (allPlatformsSuccess) {
+      await prisma.campaign.update({
+        where: { id: campaign.id },
+        data: { errorDetails: Prisma.DbNull },
+      });
+    }
+
+    // Send email notification
+    const updatedCampaign = await prisma.campaign.findUnique({
+      where: { id: campaign.id },
+      include: { platforms: true, offer: true },
+    });
+
+    if (updatedCampaign) {
+      try {
+        if (allPlatformsSuccess) {
+          await emailService.sendCampaignSuccess(updatedCampaign);
+        } else {
+          const failedPlatforms = result.platforms.filter((p: any) => !p.success);
+          const errorMsg = failedPlatforms.map((p: any) => `${p.platform}: ${p.error || 'Unknown error'}`).join('; ');
+          await emailService.sendCampaignFailed(updatedCampaign, errorMsg);
+        }
+      } catch (emailError) {
+        logger.error('email', `Failed to send campaign email: ${emailError}`);
+      }
+    }
+
+    return {
+      success: true,
+      campaignId: campaign.id,
+      message: `Processed successfully in ${duration}ms`,
+      result,
+    };
+
+  } catch (processError: any) {
+    // ============================================
+    // ERROR HANDLING: Check if campaign was actually launched
+    // ============================================
+    const currentState = await prisma.campaign.findUnique({
+      where: { id: campaign.id },
+      select: {
+        status: true,
+        tonicCampaignId: true,
+        tonicTrackingLink: true,
+        launchedAt: true,
+        platforms: { select: { metaCampaignId: true, tiktokCampaignId: true, status: true } },
+      },
+    });
+
+    const hasPlatformLaunch = currentState?.platforms?.some(p =>
+      p.metaCampaignId || p.tiktokCampaignId || p.status === 'ACTIVE'
+    );
+    const hasRealTrackingLink = currentState?.tonicTrackingLink &&
+      !currentState.tonicTrackingLink.includes('tracking-pending');
+
+    const hasSuccessfulLaunch = currentState?.status === CampaignStatus.ACTIVE ||
+      hasPlatformLaunch ||
+      currentState?.launchedAt !== null ||
+      hasRealTrackingLink;
+
+    if (hasSuccessfulLaunch) {
+      logger.warn('system', `⚠️ [CRON] Error occurred but campaign "${campaign.name}" was already launched - preserving ACTIVE`, {
+        error: processError.message,
+      });
+
+      await prisma.campaign.update({
+        where: { id: campaign.id },
+        data: {
+          status: CampaignStatus.ACTIVE,
+          errorDetails: Prisma.DbNull,
+        },
+      });
+
+      return {
+        success: true,
+        campaignId: campaign.id,
+        message: 'Already launched (post-launch error ignored)',
+      };
+    }
+
+    // Processing failed - mark as FAILED
+    const failedCampaign = await prisma.campaign.update({
+      where: { id: campaign.id },
+      data: {
+        status: CampaignStatus.FAILED,
+        errorDetails: {
+          step: 'cron-processing',
+          message: processError.message,
+          timestamp: new Date().toISOString(),
+          technicalDetails: processError.stack?.substring(0, 500),
+        },
+      },
+      include: { platforms: true, offer: true },
+    });
+
+    logger.error('system', `❌ [CRON] Campaign "${campaign.name}" FAILED: ${processError.message}`);
+
+    // Send failure email
+    try {
+      await emailService.sendCampaignFailed(failedCampaign, processError.message);
+    } catch (emailError) {
+      logger.error('email', `Failed to send failure email: ${emailError}`);
+    }
+
+    return {
       success: false,
-      error: error.message,
-    }, { status: 500 });
+      campaignId: campaign.id,
+      message: processError.message,
+    };
   }
 }

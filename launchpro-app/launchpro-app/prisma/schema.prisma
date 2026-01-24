@@ -24,6 +24,7 @@ enum CampaignStatus {
   AWAITING_DESIGN    // Sent to DesignFlow, waiting for design team
   PENDING_ARTICLE    // Waiting for Tonic article approval (async)
   ARTICLE_APPROVED   // Article approved, ready to continue processing
+  AWAITING_TRACKING  // Tonic campaign created, waiting for tracking link (10-14 min)
   GENERATING_AI      // AI is generating content
   READY_TO_LAUNCH    // AI content ready, waiting for launch
   LAUNCHING          // In process of launching to platforms
@@ -188,6 +189,10 @@ model Campaign {
 
   // DesignFlow integration
   designFlowTask      DesignFlowTask?
+
+  // Tracking link polling metadata (for parallel campaign processing)
+  trackingLinkPollingStartedAt  DateTime?  // When polling started
+  trackingLinkPollingAttempts   Int        @default(0) // Number of poll attempts
 
   // Metadata
   createdAt         DateTime           @default(now())
