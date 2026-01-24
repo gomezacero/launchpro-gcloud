@@ -153,22 +153,25 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // ATOMIC CLAIM: Use updateMany with conditions to prevent race condition
-    // If another process already claimed this campaign, the update will affect 0 rows
+    // ATOMIC CLAIM: Use updateMany with status condition to prevent race condition
+    // If another process already claimed this campaign (changed status), the update will affect 0 rows
+    // NOTE: We only check status, not updatedAt, because:
+    // 1. Other operations (media upload, etc.) can update the campaign without claiming it
+    // 2. Database-level atomicity ensures only one UPDATE succeeds per row
+    // 3. The status check is sufficient - if another cron claimed it, status will be GENERATING_AI
     const claimed = await prisma.campaign.updateMany({
       where: {
         id: campaign.id,
-        status: campaign.status, // Must still be the same status we found
-        updatedAt: campaign.updatedAt, // Must not have been modified by another process
+        status: campaign.status, // Must still be the same status we found (ARTICLE_APPROVED or GENERATING_AI for retries)
       },
       data: {
         status: CampaignStatus.GENERATING_AI,
       },
     });
 
-    // If no rows updated, another process already claimed this campaign
+    // If no rows updated, another process already claimed this campaign (status changed)
     if (claimed.count === 0) {
-      logger.info('system', `⏭️ [CRON] Campaign "${campaign.name}" already claimed by another process, skipping`);
+      logger.info('system', `⏭️ [CRON] Campaign "${campaign.name}" already claimed by another process (status changed), skipping`);
       return NextResponse.json({
         success: true,
         message: 'Campaign already being processed by another instance',
