@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger';
 import { designflowService } from '@/services/designflow.service';
 import { emailService } from '@/services/email.service';
-import { CampaignStatus } from '@prisma/client';
+import { CampaignStatus, Prisma } from '@prisma/client';
 
 /**
  * Cron Job: Sync DesignFlow Task Status
@@ -173,17 +173,54 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // AUTO-CLEANUP: Fix any campaigns with ACTIVE platforms but stale errorDetails
+    // This handles edge cases where campaigns launched successfully but still have old 401 errors
+    let autoFixedCount = 0;
+    try {
+      const inconsistentCampaigns = await prisma.campaign.findMany({
+        where: {
+          errorDetails: { not: Prisma.DbNull },
+          platforms: {
+            some: {
+              OR: [
+                { metaCampaignId: { not: null } },
+                { tiktokCampaignId: { not: null } },
+                { status: 'ACTIVE' },
+              ],
+            },
+          },
+        },
+        select: { id: true, name: true },
+      });
+
+      if (inconsistentCampaigns.length > 0) {
+        await prisma.campaign.updateMany({
+          where: { id: { in: inconsistentCampaigns.map(c => c.id) } },
+          data: {
+            status: CampaignStatus.ACTIVE,
+            errorDetails: Prisma.DbNull,
+          },
+        });
+        autoFixedCount = inconsistentCampaigns.length;
+        logger.info('system', `🔧 [CRON] Auto-fixed ${autoFixedCount} campaign(s) with stale errorDetails: ${inconsistentCampaigns.map(c => c.name).join(', ')}`);
+      }
+    } catch (cleanupError: any) {
+      logger.error('system', `⚠️ [CRON] Auto-cleanup failed (non-critical): ${cleanupError.message}`);
+    }
+
     const duration = Date.now() - startTime;
     logger.success('system', `✅ [CRON] sync-designflow completed in ${duration}ms`, {
       checked: awaitingDesignCampaigns.length,
       updated: updatedCount,
+      autoFixed: autoFixedCount,
     });
 
     return NextResponse.json({
       success: true,
-      message: `Checked ${awaitingDesignCampaigns.length} campaigns, updated ${updatedCount}`,
+      message: `Checked ${awaitingDesignCampaigns.length} campaigns, updated ${updatedCount}, auto-fixed ${autoFixedCount}`,
       checked: awaitingDesignCampaigns.length,
       updated: updatedCount,
+      autoFixed: autoFixedCount,
       results,
       duration,
     });

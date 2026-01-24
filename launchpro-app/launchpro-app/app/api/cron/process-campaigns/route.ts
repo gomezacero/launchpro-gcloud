@@ -192,6 +192,17 @@ export async function GET(request: NextRequest) {
         platforms: result.platforms,
       });
 
+      // DEFENSIVE FIX: Ensure errorDetails is cleared for successful launches
+      // This guarantees no stale 401 errors persist in the UI
+      const allPlatformsSuccess = result.platforms.every((p: any) => p.success);
+      if (allPlatformsSuccess) {
+        await prisma.campaign.update({
+          where: { id: campaign.id },
+          data: { errorDetails: Prisma.DbNull },
+        });
+        logger.info('system', `🧹 [CRON] Cleared any stale errorDetails for campaign "${campaign.name}"`);
+      }
+
       // Get updated campaign for email
       const updatedCampaign = await prisma.campaign.findUnique({
         where: { id: campaign.id },
@@ -235,13 +246,24 @@ export async function GET(request: NextRequest) {
         currentState?.platforms?.some(p => p.metaCampaignId || p.tiktokCampaignId || p.status === 'ACTIVE');
 
       if (hasSuccessfulLaunch) {
-        logger.warn('system', `⚠️ [CRON] Error occurred but campaign "${campaign.name}" was already launched successfully - NOT overwriting to FAILED`, {
+        logger.warn('system', `⚠️ [CRON] Error occurred but campaign "${campaign.name}" was already launched successfully - clearing stale errorDetails`, {
           currentStatus: currentState?.status,
           error: processError.message,
         });
+
+        // CRITICAL FIX: Clear any stale errorDetails since launch was successful
+        // This prevents the UI from showing old 401 errors for campaigns that actually succeeded
+        await prisma.campaign.update({
+          where: { id: campaign.id },
+          data: {
+            status: CampaignStatus.ACTIVE,
+            errorDetails: Prisma.DbNull,
+          },
+        });
+
         return NextResponse.json({
           success: true,
-          message: `Campaign "${campaign.name}" launched successfully (post-launch error ignored)`,
+          message: `Campaign "${campaign.name}" launched successfully (post-launch error ignored, stale errors cleared)`,
           campaignId: campaign.id,
           warning: processError.message,
         });
