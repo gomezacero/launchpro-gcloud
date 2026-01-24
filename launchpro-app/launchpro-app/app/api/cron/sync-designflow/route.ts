@@ -211,7 +211,9 @@ export async function GET(request: NextRequest) {
 
     // AUTO-UPDATE: Refresh pending tracking links from Tonic
     // This handles cases where the tracking link wasn't ready when the campaign was launched
+    // User reports tracking links take 10-14 minutes to become available from Tonic
     let trackingLinksUpdated = 0;
+    let trackingLinksChecked = 0;
     try {
       const campaignsWithPendingLinks = await prisma.campaign.findMany({
         where: {
@@ -226,9 +228,15 @@ export async function GET(request: NextRequest) {
         },
       });
 
+      logger.info('tonic', `🔍 [CRON] Found ${campaignsWithPendingLinks.length} campaign(s) with pending tracking links`);
+
       for (const campaign of campaignsWithPendingLinks) {
+        trackingLinksChecked++;
         const tonicAccount = campaign.platforms[0]?.tonicAccount;
-        if (!tonicAccount?.tonicConsumerKey || !tonicAccount?.tonicConsumerSecret) continue;
+        if (!tonicAccount?.tonicConsumerKey || !tonicAccount?.tonicConsumerSecret) {
+          logger.warn('tonic', `⚠️ [CRON] Campaign "${campaign.name}" has no Tonic credentials, skipping tracking link check`);
+          continue;
+        }
 
         const credentials = {
           consumer_key: tonicAccount.tonicConsumerKey,
@@ -237,8 +245,16 @@ export async function GET(request: NextRequest) {
 
         try {
           // Try to get the tracking link from Tonic
+          logger.info('tonic', `🔍 [CRON] Checking tracking link for "${campaign.name}" (Tonic ID: ${campaign.tonicCampaignId})`);
           const statusResult = await tonicService.getCampaignStatus(credentials, campaign.tonicCampaignId!);
           const linkData = statusResult['0'] || statusResult;
+
+          logger.info('tonic', `📡 [CRON] Tonic status response for "${campaign.name}":`, {
+            status: statusResult.status,
+            hasLinkData: !!linkData,
+            link: linkData?.link || 'not available',
+            ssl: linkData?.ssl,
+          });
 
           if (linkData?.link) {
             const protocol = linkData.ssl ? 'https://' : 'http://';
@@ -250,15 +266,17 @@ export async function GET(request: NextRequest) {
             });
 
             trackingLinksUpdated++;
-            logger.info('tonic', `🔗 [CRON] Updated tracking link for "${campaign.name}": ${trackingLink}`);
+            logger.success('tonic', `🔗 [CRON] Updated tracking link for "${campaign.name}": ${trackingLink}`);
+          } else {
+            logger.info('tonic', `⏳ [CRON] Tracking link not ready yet for "${campaign.name}" - will check again next cycle`);
           }
         } catch (e: any) {
-          // Silently continue - tracking link might not be ready yet
+          logger.warn('tonic', `⚠️ [CRON] Failed to fetch tracking link for "${campaign.name}": ${e.message}`);
         }
       }
 
-      if (trackingLinksUpdated > 0) {
-        logger.info('system', `🔗 [CRON] Updated ${trackingLinksUpdated} pending tracking link(s)`);
+      if (trackingLinksChecked > 0) {
+        logger.info('system', `🔗 [CRON] Tracking link check: ${trackingLinksChecked} checked, ${trackingLinksUpdated} updated`);
       }
     } catch (trackingError: any) {
       logger.error('system', `⚠️ [CRON] Tracking link update failed (non-critical): ${trackingError.message}`);

@@ -1455,28 +1455,71 @@ class CampaignOrchestratorService {
         // Persist logs to database before updating status
         await campaignLogger.persistToDatabase(campaign.id);
 
-        // Guardar detalles del error en la BD
-        await prisma.campaign.update({
+        // SAFETY CHECK: Before marking as FAILED, check if campaign was already launched successfully
+        // This prevents overwriting ACTIVE status when an error occurs AFTER successful platform launch
+        const currentState = await prisma.campaign.findUnique({
           where: { id: campaign.id },
-          data: {
-            status: CampaignStatus.FAILED,
-            errorDetails: {
-              step: 'launch',
-              message: error.message,
-              timestamp: new Date().toISOString(),
-              technicalDetails: error.stack || error.message,
-            },
+          select: {
+            status: true,
+            platforms: {
+              select: { metaCampaignId: true, tiktokCampaignId: true, status: true }
+            }
           },
         });
+
+        const hasSuccessfulLaunch = currentState?.status === CampaignStatus.ACTIVE ||
+          currentState?.platforms?.some(p => p.metaCampaignId || p.tiktokCampaignId || p.status === 'ACTIVE');
+
+        if (hasSuccessfulLaunch) {
+          logger.warn('system', `⚠️ Error occurred but campaign was already launched successfully - preserving ACTIVE status`, {
+            campaignId: campaign.id,
+            error: error.message,
+            currentStatus: currentState?.status,
+            platforms: currentState?.platforms?.map(p => ({
+              metaCampaignId: p.metaCampaignId,
+              tiktokCampaignId: p.tiktokCampaignId,
+              status: p.status
+            })),
+          });
+          // Clear errorDetails since launch was successful
+          await prisma.campaign.update({
+            where: { id: campaign.id },
+            data: {
+              status: CampaignStatus.ACTIVE,
+              errorDetails: Prisma.DbNull,
+            },
+          });
+        } else {
+          // Only mark as FAILED if no successful launch
+          await prisma.campaign.update({
+            where: { id: campaign.id },
+            data: {
+              status: CampaignStatus.FAILED,
+              errorDetails: {
+                step: 'launch',
+                message: error.message,
+                timestamp: new Date().toISOString(),
+                technicalDetails: error.stack || error.message,
+              },
+            },
+          });
+        }
       }
 
-      // Rollback campaign if it was created
+      // Rollback campaign if it was created - but only if it wasn't successfully launched
       if (campaign?.id) {
-        await this.rollbackCampaign(
-          campaign.id,
-          tonicCampaignId?.toString(),
-          credentials
-        );
+        const currentState = await prisma.campaign.findUnique({
+          where: { id: campaign.id },
+          select: { status: true },
+        });
+        // Only rollback if campaign is in FAILED state (not ACTIVE)
+        if (currentState?.status === CampaignStatus.FAILED) {
+          await this.rollbackCampaign(
+            campaign.id,
+            tonicCampaignId?.toString(),
+            credentials
+          );
+        }
       }
 
       // Throw error with user-friendly message
@@ -3565,19 +3608,55 @@ class CampaignOrchestratorService {
         stack: error.stack,
       });
 
-      // Update campaign status to FAILED with errorDetails
-      await prisma.campaign.update({
+      // SAFETY CHECK: Before marking as FAILED, check if campaign was already launched successfully
+      // This prevents overwriting ACTIVE status when an error occurs AFTER successful platform launch
+      const currentState = await prisma.campaign.findUnique({
         where: { id: campaignId },
-        data: {
-          status: CampaignStatus.FAILED,
-          errorDetails: {
-            step: 'platform-launch',
-            message: error.message,
-            timestamp: new Date().toISOString(),
-            technicalDetails: error.stack || error.message,
-          },
+        select: {
+          status: true,
+          platforms: {
+            select: { metaCampaignId: true, tiktokCampaignId: true, status: true }
+          }
         },
       });
+
+      const hasSuccessfulLaunch = currentState?.status === CampaignStatus.ACTIVE ||
+        currentState?.platforms?.some(p => p.metaCampaignId || p.tiktokCampaignId || p.status === 'ACTIVE');
+
+      if (hasSuccessfulLaunch) {
+        logger.warn('system', `⚠️ Error occurred but campaign was already launched successfully - preserving ACTIVE status`, {
+          campaignId,
+          error: error.message,
+          currentStatus: currentState?.status,
+          platforms: currentState?.platforms?.map(p => ({
+            metaCampaignId: p.metaCampaignId,
+            tiktokCampaignId: p.tiktokCampaignId,
+            status: p.status
+          })),
+        });
+        // Clear errorDetails since launch was successful
+        await prisma.campaign.update({
+          where: { id: campaignId },
+          data: {
+            status: CampaignStatus.ACTIVE,
+            errorDetails: Prisma.DbNull,
+          },
+        });
+      } else {
+        // Only mark as FAILED if no successful launch
+        await prisma.campaign.update({
+          where: { id: campaignId },
+          data: {
+            status: CampaignStatus.FAILED,
+            errorDetails: {
+              step: 'platform-launch',
+              message: error.message,
+              timestamp: new Date().toISOString(),
+              technicalDetails: error.stack || error.message,
+            },
+          },
+        });
+      }
 
       throw new Error(`Failed to launch campaign to platforms: ${error.message} `);
     }
