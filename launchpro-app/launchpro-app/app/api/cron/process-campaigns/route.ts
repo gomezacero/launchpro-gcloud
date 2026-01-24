@@ -236,19 +236,61 @@ export async function GET(request: NextRequest) {
     } catch (processError: any) {
       // SAFETY CHECK: Before marking as FAILED, check if campaign was already launched successfully
       // This prevents race conditions where an error occurs AFTER the campaign was updated to ACTIVE
+      // Also checks campaign-level launch indicators (tonicCampaignId, launchedAt) as additional signals
       const currentState = await prisma.campaign.findUnique({
         where: { id: campaign.id },
-        select: { status: true, platforms: { select: { metaCampaignId: true, tiktokCampaignId: true, status: true } } },
+        select: {
+          status: true,
+          tonicCampaignId: true,
+          tonicTrackingLink: true,
+          launchedAt: true,
+          platforms: { select: { metaCampaignId: true, tiktokCampaignId: true, status: true } }
+        },
       });
 
-      // If campaign is already ACTIVE, or has active platforms with campaign IDs, don't overwrite to FAILED
+      // Log full state for debugging
+      logger.info('system', `🔍 [CRON] Safety check - current campaign state for "${campaign.name}":`, {
+        status: currentState?.status,
+        tonicCampaignId: currentState?.tonicCampaignId,
+        tonicTrackingLink: currentState?.tonicTrackingLink ? 'SET' : 'NOT_SET',
+        launchedAt: currentState?.launchedAt?.toISOString() || 'NOT_SET',
+        platforms: currentState?.platforms?.map(p => ({
+          metaCampaignId: p.metaCampaignId,
+          tiktokCampaignId: p.tiktokCampaignId,
+          status: p.status
+        })),
+      });
+
+      // Determine if campaign was successfully launched - expanded conditions:
+      // 1. Campaign status is already ACTIVE
+      // 2. Any platform has metaCampaignId or tiktokCampaignId (platform was created)
+      // 3. Any platform status is ACTIVE
+      // 4. Campaign has launchedAt timestamp (was launched before)
+      // 5. Campaign has real tonicTrackingLink (not a placeholder)
+      const hasPlatformLaunch = currentState?.platforms?.some(p =>
+        p.metaCampaignId || p.tiktokCampaignId || p.status === 'ACTIVE'
+      );
+      const hasRealTrackingLink = currentState?.tonicTrackingLink &&
+        !currentState.tonicTrackingLink.includes('tracking-pending');
+
       const hasSuccessfulLaunch = currentState?.status === CampaignStatus.ACTIVE ||
-        currentState?.platforms?.some(p => p.metaCampaignId || p.tiktokCampaignId || p.status === 'ACTIVE');
+        hasPlatformLaunch ||
+        currentState?.launchedAt !== null ||
+        hasRealTrackingLink;
+
+      logger.info('system', `🔍 [CRON] Safety check results for "${campaign.name}":`, {
+        hasSuccessfulLaunch,
+        isStatusActive: currentState?.status === CampaignStatus.ACTIVE,
+        hasPlatformLaunch,
+        hasLaunchedAt: currentState?.launchedAt !== null,
+        hasRealTrackingLink,
+      });
 
       if (hasSuccessfulLaunch) {
-        logger.warn('system', `⚠️ [CRON] Error occurred but campaign "${campaign.name}" was already launched successfully - clearing stale errorDetails`, {
+        logger.warn('system', `⚠️ [CRON] Error occurred but campaign "${campaign.name}" was already launched successfully - preserving ACTIVE status`, {
           currentStatus: currentState?.status,
           error: processError.message,
+          indicators: { hasPlatformLaunch, hasRealTrackingLink, hasLaunchedAt: !!currentState?.launchedAt },
         });
 
         // CRITICAL FIX: Clear any stale errorDetails since launch was successful
