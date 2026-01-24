@@ -100,30 +100,48 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    // ============================================
+    // SAFETY CHECK: Skip campaigns that already have platform launches
+    // ============================================
+    // This prevents re-processing campaigns that succeeded on Meta/TikTok
+    // Check for: metaCampaignId, tiktokCampaignId, or platform status ACTIVE
+    const existingPlatformLaunches = campaign.platforms.filter(p =>
+      p.metaCampaignId || p.tiktokCampaignId || p.status === 'ACTIVE'
+    );
+
+    if (existingPlatformLaunches.length > 0) {
+      // Campaign was already launched - fix status and skip reprocessing
+      logger.info('system', `⏭️ [CRON] Campaign "${campaign.name}" already has platform launches, fixing status instead of reprocessing`, {
+        platforms: existingPlatformLaunches.map(p => ({
+          platform: p.platform,
+          metaCampaignId: p.metaCampaignId,
+          tiktokCampaignId: p.tiktokCampaignId,
+          status: p.status,
+        })),
+      });
+
+      await prisma.campaign.update({
+        where: { id: campaign.id },
+        data: {
+          status: CampaignStatus.ACTIVE,
+          errorDetails: Prisma.DbNull,
+        },
+      });
+
+      return NextResponse.json({
+        success: true,
+        message: `Campaign "${campaign.name}" already launched - status fixed to ACTIVE`,
+        campaignId: campaign.id,
+        skipped: true,
+        reason: 'already_launched',
+        platforms: existingPlatformLaunches.map(p => p.platform),
+      });
+    }
+
     // If this is a stuck GENERATING_AI campaign, log it
     const isRetry = campaign.status === CampaignStatus.GENERATING_AI;
     if (isRetry) {
       logger.info('system', `🔄 [CRON] Retrying stuck campaign "${campaign.name}" (was in GENERATING_AI >5min)`);
-
-      // Additional safety check: verify no platforms are active
-      const hasActivePlatforms = campaign.platforms.some(p => p.status === 'ACTIVE');
-      if (hasActivePlatforms) {
-        // This campaign was partially successful - fix it instead of reprocessing
-        logger.info('system', `⚠️ [CRON] Campaign "${campaign.name}" has ACTIVE platforms - fixing status instead of reprocessing`);
-        await prisma.campaign.update({
-          where: { id: campaign.id },
-          data: {
-            status: CampaignStatus.ACTIVE,
-            errorDetails: Prisma.DbNull,
-          },
-        });
-        return NextResponse.json({
-          success: true,
-          message: `Campaign "${campaign.name}" status fixed to ACTIVE (had active platforms)`,
-          campaignId: campaign.id,
-          fixed: true,
-        });
-      }
     }
 
     logger.info('system', `📋 [CRON] Processing campaign "${campaign.name}" (${campaign.id})`);

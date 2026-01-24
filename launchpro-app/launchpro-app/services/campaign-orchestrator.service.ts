@@ -743,65 +743,45 @@ class CampaignOrchestratorService {
       logger.success('tonic', `Tonic campaign created with ID: ${tonicCampaignId}`);
       campaignLogger.completeStep(campaign.id, 'tonic_campaign', 'Campaña creada en Tonic');
 
-      // Get tracking link (NON-BLOCKING for Vercel serverless timeout)
-      // Instead of waiting 15 minutes, we do a quick check and continue if not ready
-      campaignLogger.startStep(campaign.id, 'tracking_link', 'Obteniendo link de tracking...');
-      logger.info('tonic', '🔍 Checking for tracking link (quick check for serverless)...');
+      // ============================================
+      // Get tracking link (BLOCKING - MUST WAIT)
+      // ============================================
+      // CRITICAL: We MUST wait for the tracking link before proceeding to Meta/TikTok
+      // Without a real tracking link, ads will run with invalid URLs and tracking won't work
+      // Tonic typically takes 10-14 minutes to generate tracking links
+      campaignLogger.startStep(campaign.id, 'tracking_link', 'Esperando link de tracking (puede tomar hasta 12 min)...');
+      logger.info('tonic', '🔍 Waiting for tracking link (BLOCKING - will poll up to 12 minutes)...');
+
+      // Import the polling utility
+      const { waitForTrackingLink } = await import('@/lib/tracking-link-polling');
+
+      // CRITICAL: Block until tracking link is ready
+      const pollingResult = await waitForTrackingLink(credentials, tonicCampaignId.toString(), {
+        maxWaitMinutes: 12,
+        pollingIntervalSeconds: 30,
+        onProgress: (status, elapsed) => {
+          logger.info('tonic', `⏳ Waiting for tracking link... Status: ${status}, Elapsed: ${elapsed}s`);
+        }
+      });
 
       let trackingLink: string = '';
-      let trackingLinkObtained = false;
 
-      // First try: check campaign status directly
-      try {
-        const statusResult = await tonicService.getCampaignStatus(credentials, tonicCampaignId.toString());
-        const linkData = statusResult['0'] || statusResult;
-
-        if (linkData?.link) {
-          const protocol = linkData.ssl ? 'https://' : 'http://';
-          trackingLink = linkData.link.startsWith('http') ? linkData.link : `${protocol}${linkData.link}`;
-          trackingLinkObtained = true;
-          logger.success('tonic', `✅ Tracking link from status: ${trackingLink}`);
-        }
-      } catch (e: any) {
-        logger.info('tonic', `Status check returned no link yet: ${e.message}`);
+      if (!pollingResult.success || !pollingResult.trackingLink) {
+        // CRITICAL: Do NOT proceed with placeholder - fail cleanly
+        const errorMsg = `Tracking link not available after ${pollingResult.elapsedSeconds}s (${pollingResult.attemptsCount} attempts). ` +
+          `Campaign cannot launch without valid tracking link. Tonic campaign ID: ${tonicCampaignId}`;
+        logger.error('tonic', `❌ ${errorMsg}`);
+        campaignLogger.failStep(campaign.id, 'tracking_link', 'Link de tracking no disponible');
+        throw new Error(errorMsg);
       }
 
-      // Second try: check campaign list for direct_link
-      if (!trackingLinkObtained) {
-        try {
-          for (const state of ['active', 'pending', 'incomplete'] as const) {
-            const campaignList = await tonicService.getCampaignList(credentials, state);
-            const tonicCampaign = campaignList.find((c: any) => c.id?.toString() === tonicCampaignId?.toString());
+      // SUCCESS: We have a real tracking link
+      trackingLink = pollingResult.trackingLink.startsWith('http')
+        ? pollingResult.trackingLink
+        : `https://${pollingResult.trackingLink}`;
 
-            if (tonicCampaign) {
-              if (tonicCampaign.direct_link) {
-                trackingLink = tonicCampaign.direct_link;
-                trackingLinkObtained = true;
-                logger.success('tonic', `✅ Direct link from ${state} list: ${trackingLink}`);
-                break;
-              } else if (tonicCampaign.link) {
-                trackingLink = tonicCampaign.link.startsWith('http') ? tonicCampaign.link : `https://${tonicCampaign.link}`;
-                trackingLinkObtained = true;
-                logger.success('tonic', `✅ Tracking link from ${state} list: ${trackingLink}`);
-                break;
-              }
-            }
-          }
-        } catch (e: any) {
-          logger.warn('tonic', `Campaign list check failed: ${e.message}`);
-        }
-      }
-
-      // If tracking link obtained, mark step complete
-      if (trackingLinkObtained) {
-        campaignLogger.completeStep(campaign.id, 'tracking_link', 'Link de tracking obtenido');
-      } else {
-        // Use placeholder - campaign can still proceed, tracking link will be updated later
-        trackingLink = `https://tracking-pending.tonic.com/${tonicCampaignId}`;
-        logger.warn('tonic', `⚠️ Tracking link not ready yet, using placeholder. Campaign will continue.`);
-        errors.push('Tracking link pending - Tonic campaign still processing');
-        campaignLogger.completeStep(campaign.id, 'tracking_link', 'Link pendiente (Tonic procesando)');
-      }
+      logger.success('tonic', `✅ Tracking link ready after ${pollingResult.elapsedSeconds}s: ${trackingLink}`);
+      campaignLogger.completeStep(campaign.id, 'tracking_link', 'Link de tracking obtenido');
 
       // Update campaign with Tonic info
       await prisma.campaign.update({
@@ -4070,71 +4050,49 @@ class CampaignOrchestratorService {
     }
 
     // ============================================
-    // STEP 2: Get tracking link (NON-BLOCKING for Vercel timeout)
+    // STEP 2: Get tracking link (BLOCKING - MUST WAIT)
     // ============================================
+    // CRITICAL: We MUST wait for the tracking link before proceeding to Meta/TikTok
+    // Without a real tracking link, ads will run with invalid URLs and tracking won't work
+    // Tonic typically takes 10-14 minutes to generate tracking links
 
     // Verify tonicCampaignId was assigned (should always be true at this point)
     if (!tonicCampaignId) {
       throw new Error('Failed to create or find Tonic campaign - tonicCampaignId is undefined');
     }
 
-    logger.info('tonic', '🔍 Checking for tracking link (single attempt for Vercel timeout)...');
+    logger.info('tonic', '🔍 Waiting for tracking link (BLOCKING - will poll up to 12 minutes)...');
 
-    // Instead of waiting up to 15 minutes, we do a SINGLE check
-    // If tracking link not ready, we continue with placeholder and
-    // the campaign can still launch (tracking link can be updated later)
+    // Import the polling utility
+    const { waitForTrackingLink } = await import('@/lib/tracking-link-polling');
+
+    // CRITICAL: Block until tracking link is ready
+    // This is essential - we cannot launch to Meta/TikTok without a valid tracking link
+    const pollingResult = await waitForTrackingLink(credentials, tonicCampaignId.toString(), {
+      maxWaitMinutes: 12, // Tonic takes 10-14 minutes, give it 12 minutes max
+      pollingIntervalSeconds: 30,
+      onProgress: (status, elapsed) => {
+        logger.info('tonic', `⏳ Waiting for tracking link... Status: ${status}, Elapsed: ${elapsed}s`);
+      }
+    });
+
     let trackingLink: string = '';
-    let trackingLinkObtained = false;
 
-    try {
-      // First try: check campaign status directly
-      const statusResult = await tonicService.getCampaignStatus(credentials, tonicCampaignId.toString());
-      const linkData = statusResult['0'] || statusResult;
-
-      if (linkData?.link) {
-        const protocol = linkData.ssl ? 'https://' : 'http://';
-        trackingLink = linkData.link.startsWith('http') ? linkData.link : `${protocol}${linkData.link}`;
-        trackingLinkObtained = true;
-        logger.success('tonic', `✅ Tracking link from status: ${trackingLink}`);
-      }
-    } catch (e: any) {
-      logger.info('tonic', `Status check returned no link yet: ${e.message}`);
+    if (!pollingResult.success || !pollingResult.trackingLink) {
+      // CRITICAL: Do NOT proceed with placeholder - fail cleanly
+      // This prevents ads from running with invalid tracking URLs
+      const errorMsg = `Tracking link not available after ${pollingResult.elapsedSeconds}s (${pollingResult.attemptsCount} attempts). ` +
+        `Campaign cannot launch without valid tracking link. Tonic campaign ID: ${tonicCampaignId}`;
+      logger.error('tonic', `❌ ${errorMsg}`);
+      throw new Error(errorMsg);
     }
 
-    // Second try: check campaign list for direct_link
-    if (!trackingLinkObtained) {
-      try {
-        // Try multiple states since campaign might be pending or active
-        for (const state of ['active', 'pending', 'incomplete'] as const) {
-          const campaignList = await tonicService.getCampaignList(credentials, state);
-          const tonicCampaign = campaignList.find((c: any) => c.id?.toString() === tonicCampaignId.toString());
+    // SUCCESS: We have a real tracking link
+    trackingLink = pollingResult.trackingLink.startsWith('http')
+      ? pollingResult.trackingLink
+      : `https://${pollingResult.trackingLink}`;
 
-          if (tonicCampaign) {
-            if (tonicCampaign.direct_link) {
-              trackingLink = tonicCampaign.direct_link;
-              trackingLinkObtained = true;
-              logger.success('tonic', `✅ Direct link from ${state} list: ${trackingLink}`);
-              break;
-            } else if (tonicCampaign.link) {
-              trackingLink = tonicCampaign.link.startsWith('http') ? tonicCampaign.link : `https://${tonicCampaign.link}`;
-              trackingLinkObtained = true;
-              logger.success('tonic', `✅ Tracking link from ${state} list: ${trackingLink}`);
-              break;
-            }
-          }
-        }
-      } catch (e: any) {
-        logger.warn('tonic', `Campaign list check failed: ${e.message}`);
-      }
-    }
-
-    // If still no tracking link, use placeholder - campaign can still proceed
-    // Tracking link will be available later and can be fetched when needed
-    if (!trackingLinkObtained) {
-      trackingLink = `https://tracking-pending.tonic.com/${tonicCampaignId}`;
-      logger.warn('tonic', `⚠️ Tracking link not ready yet, using placeholder. Campaign will continue.`);
-      errors.push('Tracking link pending - Tonic campaign still processing');
-    }
+    logger.success('tonic', `✅ Tracking link ready after ${pollingResult.elapsedSeconds}s: ${trackingLink}`);
 
     // Update campaign with Tonic info
     await prisma.campaign.update({
