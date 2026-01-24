@@ -22,9 +22,10 @@ import { CampaignStatus, Prisma } from '@prisma/client';
  * - This prevents orphaned campaigns from blocking the queue
  */
 
-// Extend Vercel function timeout to 120 seconds (Pro plan supports up to 300s)
-// Neural Engine + Meta launch requires ~50-60s, so 120s gives comfortable margin
-export const maxDuration = 120;
+// Extend Vercel function timeout to 800 seconds (Pro plan max)
+// Tracking link polling takes 10-14 minutes, so we need maximum timeout
+// The export const maxDuration takes precedence over vercel.json
+export const maxDuration = 800;
 
 export async function GET(request: NextRequest) {
   const startTime = Date.now();
@@ -39,11 +40,12 @@ export async function GET(request: NextRequest) {
 
   try {
     // Debug: Log environment info at the start of cron
+    const apiKey = (process.env.ANTHROPIC_API_KEY || '').trim(); // Trim any whitespace
     const envDebug = {
-      anthropicKeyExists: !!process.env.ANTHROPIC_API_KEY,
-      anthropicKeyLength: (process.env.ANTHROPIC_API_KEY || '').length,
-      anthropicKeyPreview: process.env.ANTHROPIC_API_KEY
-        ? `${(process.env.ANTHROPIC_API_KEY || '').substring(0, 10)}...${(process.env.ANTHROPIC_API_KEY || '').substring(-4)}`
+      anthropicKeyExists: !!apiKey,
+      anthropicKeyLength: apiKey.length,
+      anthropicKeyPreview: apiKey
+        ? `${apiKey.substring(0, 10)}...${apiKey.slice(-4)}`
         : 'MISSING',
       nodeEnv: process.env.NODE_ENV,
       vercelEnv: process.env.VERCEL_ENV,
