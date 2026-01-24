@@ -223,6 +223,30 @@ export async function GET(request: NextRequest) {
       });
 
     } catch (processError: any) {
+      // SAFETY CHECK: Before marking as FAILED, check if campaign was already launched successfully
+      // This prevents race conditions where an error occurs AFTER the campaign was updated to ACTIVE
+      const currentState = await prisma.campaign.findUnique({
+        where: { id: campaign.id },
+        select: { status: true, platforms: { select: { metaCampaignId: true, tiktokCampaignId: true, status: true } } },
+      });
+
+      // If campaign is already ACTIVE, or has active platforms with campaign IDs, don't overwrite to FAILED
+      const hasSuccessfulLaunch = currentState?.status === CampaignStatus.ACTIVE ||
+        currentState?.platforms?.some(p => p.metaCampaignId || p.tiktokCampaignId || p.status === 'ACTIVE');
+
+      if (hasSuccessfulLaunch) {
+        logger.warn('system', `⚠️ [CRON] Error occurred but campaign "${campaign.name}" was already launched successfully - NOT overwriting to FAILED`, {
+          currentStatus: currentState?.status,
+          error: processError.message,
+        });
+        return NextResponse.json({
+          success: true,
+          message: `Campaign "${campaign.name}" launched successfully (post-launch error ignored)`,
+          campaignId: campaign.id,
+          warning: processError.message,
+        });
+      }
+
       // Processing failed - mark as FAILED immediately (no retries)
       const failedCampaign = await prisma.campaign.update({
         where: { id: campaign.id },
