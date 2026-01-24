@@ -56,9 +56,11 @@ export async function GET(request: NextRequest) {
 
     // Find campaigns to process:
     // 1. ARTICLE_APPROVED - ready for processing
-    // 2. GENERATING_AI stuck for more than 5 minutes (timeout recovery)
+    // 2. GENERATING_AI stuck for more than 15 minutes (timeout recovery)
+    // IMPORTANT: 15 minutes because tracking link polling can take up to 12 minutes
+    // Using 5 minutes caused duplicate Meta campaigns when polling exceeded 5 min
     // IMPORTANT: Exclude campaigns that already have ACTIVE platforms (already launched successfully)
-    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+    const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
 
     const campaign = await prisma.campaign.findFirst({
       where: {
@@ -66,7 +68,7 @@ export async function GET(request: NextRequest) {
           { status: CampaignStatus.ARTICLE_APPROVED },
           {
             status: CampaignStatus.GENERATING_AI,
-            updatedAt: { lt: fiveMinutesAgo }
+            updatedAt: { lt: fifteenMinutesAgo }
           },
         ],
         // Exclude campaigns that already have platforms in ACTIVE status
