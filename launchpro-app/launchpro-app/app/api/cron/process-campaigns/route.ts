@@ -68,11 +68,16 @@ export async function GET(request: NextRequest) {
           },
         ],
         // Exclude campaigns that already have platforms in ACTIVE status
+        // OR platforms that already have campaign IDs (meaning they were launched)
         // This prevents re-processing of campaigns that succeeded on some platforms
         NOT: {
           platforms: {
             some: {
-              status: 'ACTIVE',
+              OR: [
+                { status: CampaignStatus.ACTIVE },
+                { metaCampaignId: { not: null } },
+                { tiktokCampaignId: { not: null } },
+              ],
             },
           },
         },

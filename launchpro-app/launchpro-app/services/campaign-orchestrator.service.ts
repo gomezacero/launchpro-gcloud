@@ -3434,6 +3434,31 @@ class CampaignOrchestratorService {
 
       for (const platformConfig of campaign.platforms) {
         try {
+          // SAFETY CHECK: Skip platforms that were already launched successfully
+          // This prevents duplicate campaigns in Meta/TikTok due to race conditions
+          if (platformConfig.platform === Platform.META && platformConfig.metaCampaignId) {
+            logger.info('system', `⏭️ Skipping META - already launched (campaignId: ${platformConfig.metaCampaignId})`);
+            platformResults.push({
+              platform: platformConfig.platform,
+              success: true,
+              campaignId: platformConfig.metaCampaignId,
+              skipped: true,
+              message: 'Already launched',
+            });
+            continue;
+          }
+          if (platformConfig.platform === Platform.TIKTOK && platformConfig.tiktokCampaignId) {
+            logger.info('system', `⏭️ Skipping TIKTOK - already launched (campaignId: ${platformConfig.tiktokCampaignId})`);
+            platformResults.push({
+              platform: platformConfig.platform,
+              success: true,
+              campaignId: platformConfig.tiktokCampaignId,
+              skipped: true,
+              message: 'Already launched',
+            });
+            continue;
+          }
+
           logger.info('system', `Launching to ${platformConfig.platform}...`);
 
           // Convert database platform config to the format expected by launch methods
