@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger';
 import { designflowService } from '@/services/designflow.service';
 import { emailService } from '@/services/email.service';
+import { tonicService } from '@/services/tonic.service';
 import { CampaignStatus, Prisma } from '@prisma/client';
 
 /**
@@ -208,19 +209,76 @@ export async function GET(request: NextRequest) {
       logger.error('system', `⚠️ [CRON] Auto-cleanup failed (non-critical): ${cleanupError.message}`);
     }
 
+    // AUTO-UPDATE: Refresh pending tracking links from Tonic
+    // This handles cases where the tracking link wasn't ready when the campaign was launched
+    let trackingLinksUpdated = 0;
+    try {
+      const campaignsWithPendingLinks = await prisma.campaign.findMany({
+        where: {
+          tonicTrackingLink: { contains: 'tracking-pending.tonic.com' },
+          tonicCampaignId: { not: null },
+        },
+        include: {
+          platforms: {
+            where: { platform: 'TONIC' },
+            include: { tonicAccount: true },
+          },
+        },
+      });
+
+      for (const campaign of campaignsWithPendingLinks) {
+        const tonicAccount = campaign.platforms[0]?.tonicAccount;
+        if (!tonicAccount?.tonicConsumerKey || !tonicAccount?.tonicConsumerSecret) continue;
+
+        const credentials = {
+          consumer_key: tonicAccount.tonicConsumerKey,
+          consumer_secret: tonicAccount.tonicConsumerSecret,
+        };
+
+        try {
+          // Try to get the tracking link from Tonic
+          const statusResult = await tonicService.getCampaignStatus(credentials, campaign.tonicCampaignId!);
+          const linkData = statusResult['0'] || statusResult;
+
+          if (linkData?.link) {
+            const protocol = linkData.ssl ? 'https://' : 'http://';
+            const trackingLink = linkData.link.startsWith('http') ? linkData.link : `${protocol}${linkData.link}`;
+
+            await prisma.campaign.update({
+              where: { id: campaign.id },
+              data: { tonicTrackingLink: trackingLink },
+            });
+
+            trackingLinksUpdated++;
+            logger.info('tonic', `🔗 [CRON] Updated tracking link for "${campaign.name}": ${trackingLink}`);
+          }
+        } catch (e: any) {
+          // Silently continue - tracking link might not be ready yet
+        }
+      }
+
+      if (trackingLinksUpdated > 0) {
+        logger.info('system', `🔗 [CRON] Updated ${trackingLinksUpdated} pending tracking link(s)`);
+      }
+    } catch (trackingError: any) {
+      logger.error('system', `⚠️ [CRON] Tracking link update failed (non-critical): ${trackingError.message}`);
+    }
+
     const duration = Date.now() - startTime;
     logger.success('system', `✅ [CRON] sync-designflow completed in ${duration}ms`, {
       checked: awaitingDesignCampaigns.length,
       updated: updatedCount,
       autoFixed: autoFixedCount,
+      trackingLinksUpdated,
     });
 
     return NextResponse.json({
       success: true,
-      message: `Checked ${awaitingDesignCampaigns.length} campaigns, updated ${updatedCount}, auto-fixed ${autoFixedCount}`,
+      message: `Checked ${awaitingDesignCampaigns.length} campaigns, updated ${updatedCount}, auto-fixed ${autoFixedCount}, tracking links updated ${trackingLinksUpdated}`,
       checked: awaitingDesignCampaigns.length,
       updated: updatedCount,
       autoFixed: autoFixedCount,
+      trackingLinksUpdated,
       results,
       duration,
     });
