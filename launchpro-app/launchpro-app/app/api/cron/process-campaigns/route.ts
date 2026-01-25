@@ -7,7 +7,7 @@ import { CampaignStatus, Prisma, Campaign, CampaignPlatform, Offer, Account } fr
 
 // DEPLOYMENT VERSION - Used to verify which code version is running
 // This helps identify if old Vercel instances are executing stale code
-const CODE_VERSION = 'v2.4.0-fresh-client-2026-01-25';
+const CODE_VERSION = 'v2.5.0-restore-quick-flow-2026-01-25';
 
 /**
  * Cron Job: Process Approved Campaigns (PARALLEL PROCESSING)

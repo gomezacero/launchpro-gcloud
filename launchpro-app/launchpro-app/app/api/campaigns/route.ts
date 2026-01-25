@@ -144,9 +144,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create campaign in QUEUED status (queue system - returns immediately)
-    // The process-queue cron will handle starting the campaign when it's its turn
-    const result = await campaignOrchestrator.createCampaignQueued({
+    // Create campaign and submit article to Tonic (SYNC mode - waits for article generation)
+    // This executes AI in HTTP context where env vars are properly available
+    // v2.5.0: Restored from queue system which caused 401 errors in cron context
+    const result = await campaignOrchestrator.createCampaignQuick({
       name: body.name,
       campaignType: body.campaignType,
       tonicAccountId: body.tonicAccountId,
@@ -209,19 +210,19 @@ export async function POST(request: NextRequest) {
     });
 
     const duration = Date.now() - startTime;
-    logger.success('api', `Campaign queued: ${body.name}`, {
+    logger.success('api', `Campaign created: ${body.name}`, {
       campaignId: result.campaignId,
       status: result.status,
-      queuePosition: result.queuePosition,
+      articleRequestId: result.articleRequestId,
     }, duration);
 
-    // Return immediately with queued status
+    // Return with campaign status (PENDING_ARTICLE for RSOC, ARTICLE_APPROVED for Display)
     return NextResponse.json({
       success: true,
       data: {
         campaignId: result.campaignId,
         status: result.status,
-        queuePosition: result.queuePosition,
+        articleRequestId: result.articleRequestId,
         message: result.message,
       },
     });
