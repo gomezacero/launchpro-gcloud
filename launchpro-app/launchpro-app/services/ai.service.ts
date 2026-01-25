@@ -695,38 +695,75 @@ class AIService {
     apiCall: () => Promise<T>
   ): Promise<T> {
     const startTime = Date.now();
-    const apiKey = process.env.ANTHROPIC_API_KEY || '';
+    const rawApiKey = process.env.ANTHROPIC_API_KEY || '';
+    const cleanApiKey = this.getCleanApiKey();
 
-    // Log pre-call diagnostics
+    // DETAILED DEBUG: Log pre-call diagnostics with both raw and clean key info
+    console.log(`[AIService.callAnthropicWithDiagnostics] 🚀 Starting ${operation}:`, {
+      rawKeyLength: rawApiKey.length,
+      cleanKeyLength: cleanApiKey.length,
+      rawKeyStart: rawApiKey.substring(0, 15),
+      cleanKeyStart: cleanApiKey.substring(0, 15),
+      rawKeyEnd: rawApiKey.substring(rawApiKey.length - 6),
+      cleanKeyEnd: cleanApiKey.substring(cleanApiKey.length - 6),
+      keysMatch: rawApiKey === cleanApiKey,
+      startsWithSkAnt: cleanApiKey.startsWith('sk-ant-'),
+      envVarDefined: typeof process.env.ANTHROPIC_API_KEY !== 'undefined',
+      timestamp: new Date().toISOString(),
+    });
+
     logger.info('ai', `[Anthropic] Starting ${operation}`, {
-      keyPreview: apiKey ? `${apiKey.substring(0, 10)}...${apiKey.substring(apiKey.length - 4)}` : 'MISSING',
-      keyLength: apiKey.length,
+      keyPreview: cleanApiKey ? `${cleanApiKey.substring(0, 10)}...${cleanApiKey.substring(cleanApiKey.length - 4)}` : 'MISSING',
+      keyLength: cleanApiKey.length,
     });
 
     try {
       const result = await apiCall();
       const duration = Date.now() - startTime;
+      console.log(`[AIService.callAnthropicWithDiagnostics] ✅ ${operation} succeeded in ${duration}ms`);
       logger.info('ai', `[Anthropic] ${operation} completed successfully`, { durationMs: duration });
       return result;
     } catch (error: any) {
       const duration = Date.now() - startTime;
 
-      // Enhanced error logging
+      // DETAILED DEBUG: Enhanced error logging
+      console.error(`[AIService.callAnthropicWithDiagnostics] ❌ ${operation} FAILED:`, {
+        durationMs: duration,
+        errorType: error.constructor?.name,
+        errorMessage: error.message,
+        statusCode: error.status || error.statusCode || 'N/A',
+        errorBody: JSON.stringify(error.error || error.body || 'N/A'),
+        errorHeaders: JSON.stringify(error.headers || 'N/A'),
+        rawKeyLength: rawApiKey.length,
+        cleanKeyLength: cleanApiKey.length,
+        keysMatch: rawApiKey === cleanApiKey,
+        keyStart: cleanApiKey.substring(0, 15),
+        keyEnd: cleanApiKey.substring(cleanApiKey.length - 6),
+      });
+
       logger.error('ai', `[Anthropic] ${operation} FAILED`, {
         durationMs: duration,
         errorType: error.constructor?.name,
         errorMessage: error.message,
         statusCode: error.status || error.statusCode || 'N/A',
         errorBody: error.error || error.body || 'N/A',
-        keyPreview: apiKey ? `${apiKey.substring(0, 10)}...${apiKey.substring(apiKey.length - 4)}` : 'MISSING',
-        keyLength: apiKey.length,
+        keyPreview: cleanApiKey ? `${cleanApiKey.substring(0, 10)}...${cleanApiKey.substring(cleanApiKey.length - 4)}` : 'MISSING',
+        keyLength: cleanApiKey.length,
       });
 
       // Check if this is an authentication error
       if (error.status === 401 || error.message?.includes('authentication') || error.message?.includes('api-key')) {
+        console.error(`[AIService.callAnthropicWithDiagnostics] 🔐 AUTHENTICATION ERROR DETECTED:`, {
+          suggestion: 'API key may be invalid, expired, or corrupted',
+          rawKeyLength: rawApiKey.length,
+          cleanKeyLength: cleanApiKey.length,
+          keyStart: cleanApiKey.substring(0, 15),
+          keyEnd: cleanApiKey.substring(cleanApiKey.length - 6),
+          startsWithSkAnt: cleanApiKey.startsWith('sk-ant-'),
+        });
         logger.error('ai', `[Anthropic] AUTHENTICATION ERROR - This indicates the API key may be invalid, expired, or corrupted`, {
           suggestion: 'Please verify ANTHROPIC_API_KEY in environment variables',
-          currentKeyStart: apiKey.substring(0, 15),
+          currentKeyStart: cleanApiKey.substring(0, 15),
         });
       }
 

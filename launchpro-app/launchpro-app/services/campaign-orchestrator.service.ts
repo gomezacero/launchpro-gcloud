@@ -4327,15 +4327,25 @@ class CampaignOrchestratorService {
     logger.info('ai', 'Generating AI content...');
 
     // Debug: Check environment before calling AI service
+    // DETAILED DEBUG: Log environment info with clean key comparison
+    const rawKey = process.env.ANTHROPIC_API_KEY || '';
+    const cleanKey = rawKey.split('').filter(c => c.charCodeAt(0) >= 33 && c.charCodeAt(0) <= 126).join('');
     const envDebug = {
-      anthropicKeyExists: !!process.env.ANTHROPIC_API_KEY,
-      anthropicKeyLength: (process.env.ANTHROPIC_API_KEY || '').length,
-      anthropicKeyStart: (process.env.ANTHROPIC_API_KEY || '').substring(0, 15),
+      anthropicKeyExists: !!rawKey,
+      rawKeyLength: rawKey.length,
+      cleanKeyLength: cleanKey.length,
+      keysMatch: rawKey === cleanKey,
+      rawKeyStart: rawKey.substring(0, 15),
+      cleanKeyStart: cleanKey.substring(0, 15),
+      rawKeyEnd: rawKey.substring(rawKey.length - 6),
+      cleanKeyEnd: cleanKey.substring(cleanKey.length - 6),
+      startsWithSkAnt: cleanKey.startsWith('sk-ant-'),
       nodeEnv: process.env.NODE_ENV,
       vercelEnv: process.env.VERCEL_ENV,
+      timestamp: new Date().toISOString(),
     };
     logger.info('ai', `[CampaignOrchestrator] Environment check before AI calls:`, envDebug);
-    console.log(`[CampaignOrchestrator] Environment check:`, JSON.stringify(envDebug));
+    console.log(`[CampaignOrchestrator] 🔍 DETAILED ENV CHECK for campaign ${campaignId}:`, JSON.stringify(envDebug));
 
     const aiContentResult: any = {};
 

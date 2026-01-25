@@ -73,6 +73,10 @@ function initializeClient(): void {
   }
 }
 
+// Track instance for debugging
+const INSTANCE_ID = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+console.log(`[AnthropicClient] 🆕 Module loaded - Instance ID: ${INSTANCE_ID}`);
+
 // Initialize on module load
 initializeClient();
 
@@ -81,23 +85,42 @@ initializeClient();
  * @throws Error if client initialization failed
  */
 export function getAnthropicClient(): Anthropic {
+  // DETAILED DEBUG: Log every time client is requested
+  const currentApiKey = getCleanApiKey();
+  console.log(`[AnthropicClient.getAnthropicClient] 📋 Client requested:`, {
+    instanceId: INSTANCE_ID,
+    hasClient: !!_client,
+    hasError: !!_initError,
+    currentKeyLength: currentApiKey.length,
+    currentKeyStart: currentApiKey.substring(0, 15),
+    currentKeyEnd: currentApiKey.substring(currentApiKey.length - 6),
+    timestamp: new Date().toISOString(),
+    processEnvDefined: typeof process.env.ANTHROPIC_API_KEY !== 'undefined',
+    rawEnvLength: (process.env.ANTHROPIC_API_KEY || '').length,
+  });
+
   if (_initError) {
+    console.error(`[AnthropicClient.getAnthropicClient] ❌ Throwing init error:`, _initError.message);
     throw _initError;
   }
 
   if (!_client) {
     // Try to initialize again (in case of lazy loading)
+    console.log(`[AnthropicClient.getAnthropicClient] 🔄 Client not found, re-initializing...`);
     initializeClient();
 
     if (_initError) {
+      console.error(`[AnthropicClient.getAnthropicClient] ❌ Re-init failed:`, _initError.message);
       throw _initError;
     }
 
     if (!_client) {
+      console.error(`[AnthropicClient.getAnthropicClient] ❌ Client still null after re-init`);
       throw new Error('[AnthropicClient] Client not initialized');
     }
   }
 
+  console.log(`[AnthropicClient.getAnthropicClient] ✅ Returning singleton client from instance ${INSTANCE_ID}`);
   return _client;
 }
 
