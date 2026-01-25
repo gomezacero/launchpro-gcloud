@@ -109,9 +109,11 @@ export function getAnthropicClient(): Anthropic {
     console.log(`[AnthropicClient.getAnthropicClient] 🔄 Client not found, re-initializing...`);
     initializeClient();
 
-    if (_initError) {
-      console.error(`[AnthropicClient.getAnthropicClient] ❌ Re-init failed:`, _initError.message);
-      throw _initError;
+    // Re-check after initialization (use local var to help TypeScript)
+    const errorAfterInit = _initError;
+    if (errorAfterInit) {
+      console.error(`[AnthropicClient.getAnthropicClient] ❌ Re-init failed:`, errorAfterInit.message);
+      throw errorAfterInit;
     }
 
     if (!_client) {
