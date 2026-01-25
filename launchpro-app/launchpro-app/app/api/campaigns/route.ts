@@ -223,7 +223,7 @@ export async function POST(request: NextRequest) {
         campaignId: result.campaignId,
         status: result.status,
         articleRequestId: result.articleRequestId,
-        message: result.message,
+        message: `Campaign created with status ${result.status}`,
       },
     });
   } catch (error: any) {
