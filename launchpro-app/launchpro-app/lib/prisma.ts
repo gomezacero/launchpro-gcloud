@@ -1,8 +1,6 @@
 import { PrismaClient, Prisma } from '@prisma/client';
 
-// PrismaClient singleton for Next.js
-const globalForPrisma = global as unknown as { prisma: PrismaClient };
-
+// Create a new PrismaClient with audit middleware
 const createPrismaClient = () => {
   const client = new PrismaClient({
     log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
@@ -28,7 +26,6 @@ const createPrismaClient = () => {
 
       // Then log to database (fire and forget - don't block)
       try {
-        // Use a raw query to avoid triggering this middleware recursively
         await client.$executeRaw`
           INSERT INTO "CampaignAuditLog" (id, "campaignId", "newStatus", action, caller, timestamp)
           VALUES (
@@ -41,7 +38,6 @@ const createPrismaClient = () => {
           )
         `;
       } catch (auditError) {
-        // Don't let audit failures break the main operation
         console.error('[AUDIT] Failed to log:', auditError);
       }
 
@@ -54,10 +50,13 @@ const createPrismaClient = () => {
   return client;
 };
 
-export const prisma = globalForPrisma.prisma || createPrismaClient();
+// In production: ALWAYS create fresh client to ensure middleware is attached
+// In development: Cache to prevent connection exhaustion during hot reload
+const globalForPrisma = global as unknown as { prisma?: PrismaClient };
 
-if (process.env.NODE_ENV !== 'production') {
-  globalForPrisma.prisma = prisma;
-}
+export const prisma =
+  process.env.NODE_ENV === 'production'
+    ? createPrismaClient()  // Always fresh in production
+    : (globalForPrisma.prisma ?? (globalForPrisma.prisma = createPrismaClient()));
 
 export default prisma;
