@@ -6,6 +6,7 @@ import { env } from '@/lib/env';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger';
 import { getStorage } from '@/lib/gcs';
+import { getAnthropicClient, getApiKeyDebugInfo } from '@/lib/anthropic-client';
 
 /**
  * AI Service
@@ -670,26 +671,19 @@ class AIService {
   }
 
   /**
-   * Get Anthropic client - ALWAYS creates fresh instance
-   * Never caches to avoid stale instances in serverless
+   * Get Anthropic client - uses SINGLETON instance
+   * This fixes the 401 "invalid x-api-key" error that occurs when multiple
+   * campaigns are processed in parallel and each creates its own client.
    */
   private get anthropic(): Anthropic {
-    const apiKey = this.getCleanApiKey();
-
-    // DETAILED DEBUG: Log exactly what key we're using
-    console.log('[AIService.anthropic getter] Creating new Anthropic client:', {
-      keyLength: apiKey.length,
-      keyStart: apiKey.substring(0, 20),
-      keyEnd: apiKey.substring(apiKey.length - 10),
-      rawEnvLength: (process.env.ANTHROPIC_API_KEY || '').length,
-      rawEnvStart: (process.env.ANTHROPIC_API_KEY || '').substring(0, 20),
+    // Log debug info (doesn't expose full key)
+    const debugInfo = getApiKeyDebugInfo();
+    console.log('[AIService.anthropic getter] Using singleton client:', {
+      ...debugInfo,
       timestamp: new Date().toISOString(),
     });
 
-    if (!apiKey) {
-      throw new Error('ANTHROPIC_API_KEY not configured');
-    }
-    return new Anthropic({ apiKey });
+    return getAnthropicClient();
   }
 
   /**
