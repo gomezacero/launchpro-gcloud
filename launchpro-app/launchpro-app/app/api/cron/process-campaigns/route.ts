@@ -5,6 +5,10 @@ import { campaignOrchestrator } from '@/services/campaign-orchestrator.service';
 import { emailService } from '@/services/email.service';
 import { CampaignStatus, Prisma, Campaign, CampaignPlatform, Offer, Account } from '@prisma/client';
 
+// DEPLOYMENT VERSION - Used to verify which code version is running
+// This helps identify if old Vercel instances are executing stale code
+const CODE_VERSION = 'v2.2.0-audit-middleware-2026-01-25';
+
 /**
  * Cron Job: Process Approved Campaigns (PARALLEL PROCESSING)
  *
@@ -38,6 +42,7 @@ export async function GET(request: NextRequest) {
   // ====== ULTRA DEBUG: First thing in the function ======
   const cronInstanceId = `PC-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
   console.log(`\n\n========== [process-campaigns] CRON INVOKED ==========`);
+  console.log(`[process-campaigns] CODE_VERSION: ${CODE_VERSION}`);
   console.log(`[process-campaigns] Instance ID: ${cronInstanceId}`);
   console.log(`[process-campaigns] Timestamp: ${new Date().toISOString()}`);
   console.log(`[process-campaigns] ENV CHECK: ANTHROPIC_API_KEY length=${(process.env.ANTHROPIC_API_KEY || '').length}`);

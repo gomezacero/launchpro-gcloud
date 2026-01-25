@@ -6,6 +6,9 @@ import { designflowService } from '@/services/designflow.service';
 import { emailService } from '@/services/email.service';
 import { CampaignStatus } from '@prisma/client';
 
+// DEPLOYMENT VERSION - Used to verify which code version is running
+const CODE_VERSION = 'v2.2.0-audit-middleware-2026-01-25';
+
 /**
  * Cron Job: Check Article Approval Status
  *
@@ -29,7 +32,8 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    logger.info('system', '🔄 [CRON] Starting check-articles job...');
+    console.log(`[check-articles] CODE_VERSION: ${CODE_VERSION}`);
+    logger.info('system', `🔄 [CRON] Starting check-articles job... (${CODE_VERSION})`);
 
     // Find all campaigns waiting for article approval
     const pendingCampaigns = await prisma.campaign.findMany({

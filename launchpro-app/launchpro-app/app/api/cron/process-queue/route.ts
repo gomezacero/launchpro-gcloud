@@ -4,6 +4,9 @@ import { logger } from '@/lib/logger';
 import { campaignOrchestrator } from '@/services/campaign-orchestrator.service';
 import { CampaignStatus } from '@prisma/client';
 
+// DEPLOYMENT VERSION - Used to verify which code version is running
+const CODE_VERSION = 'v2.2.0-audit-middleware-2026-01-25';
+
 /**
  * Cron Job: Process Campaign Queue
  *
@@ -44,7 +47,8 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    logger.info('system', '🔄 [CRON] Starting process-queue job...');
+    console.log(`[process-queue] CODE_VERSION: ${CODE_VERSION}`);
+    logger.info('system', `🔄 [CRON] Starting process-queue job... (${CODE_VERSION})`);
 
     // ============================================
     // Step 1: Check if ANY campaign is currently being processed
