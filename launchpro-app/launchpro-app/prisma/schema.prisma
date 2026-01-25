@@ -20,6 +20,7 @@ enum Platform {
 }
 
 enum CampaignStatus {
+  QUEUED             // NEW: Campaign saved, waiting in queue for processing
   DRAFT              // Initial creation, not yet launched
   AWAITING_DESIGN    // Sent to DesignFlow, waiting for design team
   PENDING_ARTICLE    // Waiting for Tonic article approval (async)
@@ -193,6 +194,10 @@ model Campaign {
   // Tracking link polling metadata (for parallel campaign processing)
   trackingLinkPollingStartedAt  DateTime?  // When polling started
   trackingLinkPollingAttempts   Int        @default(0) // Number of poll attempts
+
+  // Queue system metadata
+  queuedAt          DateTime?          // When campaign was added to queue
+  queueOrder        Int?               // Optional priority order (lower = higher priority, FIFO by default)
 
   // Metadata
   createdAt         DateTime           @default(now())

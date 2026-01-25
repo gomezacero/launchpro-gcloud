@@ -1,6 +1,10 @@
 {
   "crons": [
     {
+      "path": "/api/cron/process-queue",
+      "schedule": "* * * * *"
+    },
+    {
       "path": "/api/cron/check-articles",
       "schedule": "* * * * *"
     },
@@ -35,6 +39,9 @@
   ],
   "functions": {
     "app/api/campaigns/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/cron/process-queue/route.ts": {
       "maxDuration": 60
     },
     "app/api/cron/check-articles/route.ts": {

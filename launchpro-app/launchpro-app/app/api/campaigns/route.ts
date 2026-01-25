@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger';
 import { requireAuth, isSuperAdmin } from '@/lib/auth-utils';
 import { isCountryAllowed, isWorldwide } from '@/lib/allowed-countries';
+import { CampaignStatus } from '@prisma/client';
 
 /**
  * GET /api/campaigns
@@ -143,8 +144,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create campaign quickly (async mode - returns immediately)
-    const result = await campaignOrchestrator.createCampaignQuick({
+    // Create campaign in QUEUED status (queue system - returns immediately)
+    // The process-queue cron will handle starting the campaign when it's its turn
+    const result = await campaignOrchestrator.createCampaignQueued({
       name: body.name,
       campaignType: body.campaignType,
       tonicAccountId: body.tonicAccountId,
@@ -207,22 +209,20 @@ export async function POST(request: NextRequest) {
     });
 
     const duration = Date.now() - startTime;
-    logger.success('api', `Campaign created (async): ${body.name}`, {
+    logger.success('api', `Campaign queued: ${body.name}`, {
       campaignId: result.campaignId,
       status: result.status,
-      articleRequestId: result.articleRequestId,
+      queuePosition: result.queuePosition,
     }, duration);
 
-    // Return immediately with pending status
+    // Return immediately with queued status
     return NextResponse.json({
       success: true,
       data: {
         campaignId: result.campaignId,
         status: result.status,
-        articleRequestId: result.articleRequestId,
-        message: result.status === 'PENDING_ARTICLE'
-          ? 'Campaña creada. Esperando aprobación de artículo en Tonic...'
-          : 'Campaña creada. Procesando en background...',
+        queuePosition: result.queuePosition,
+        message: result.message,
       },
     });
   } catch (error: any) {
