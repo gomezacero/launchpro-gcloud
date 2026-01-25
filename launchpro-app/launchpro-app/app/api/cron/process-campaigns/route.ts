@@ -297,10 +297,16 @@ async function processSingleCampaign(
 
     logger.info('system', `🔒 [CRON] Claimed campaign "${campaign.name}" for processing`);
 
+    // DEBUG: Log ANTHROPIC_API_KEY status before processing
+    const apiKey = (process.env.ANTHROPIC_API_KEY || '').trim();
+    logger.info('system', `🔑 [CRON] ANTHROPIC_API_KEY check BEFORE continueCampaignAfterArticle: length=${apiKey.length}, starts_with_sk-ant=${apiKey.startsWith('sk-ant-')}, preview=${apiKey.substring(0,15)}...${apiKey.substring(apiKey.length-6)}`);
+
     // ============================================
     // PROCESS THE CAMPAIGN
     // ============================================
+    logger.info('system', `🚀 [CRON] CALLING continueCampaignAfterArticle for "${campaign.name}" NOW...`);
     const result = await campaignOrchestrator.continueCampaignAfterArticle(campaign.id);
+    logger.info('system', `✅ [CRON] continueCampaignAfterArticle RETURNED for "${campaign.name}"`)
 
     const duration = Date.now() - campaignStartTime;
     logger.success('system', `✅ [CRON] Campaign "${campaign.name}" processed in ${duration}ms`, {

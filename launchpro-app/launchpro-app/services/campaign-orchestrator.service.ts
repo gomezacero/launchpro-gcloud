@@ -4091,7 +4091,10 @@ class CampaignOrchestratorService {
    * Handles: Tonic campaign creation, tracking link, AI content, platform launch.
    */
   async continueCampaignAfterArticle(campaignId: string): Promise<LaunchResult> {
-    logger.info('system', `🔄 Continuing campaign after article approval: ${campaignId}`);
+    // DEBUG: First thing - log that we entered this function
+    const apiKeyCheck = (process.env.ANTHROPIC_API_KEY || '').trim();
+    logger.info('system', `🔄 [Orchestrator] ENTERED continueCampaignAfterArticle for ${campaignId}`);
+    logger.info('system', `🔑 [Orchestrator] ANTHROPIC_API_KEY at function entry: length=${apiKeyCheck.length}, valid_format=${apiKeyCheck.startsWith('sk-ant-')}, preview=${apiKeyCheck.substring(0,15)}...${apiKeyCheck.substring(apiKeyCheck.length-6)}`);
 
     // Get campaign with all related data
     const campaign = await prisma.campaign.findUnique({
