@@ -5,7 +5,7 @@ import { campaignOrchestrator } from '@/services/campaign-orchestrator.service';
 import { CampaignStatus } from '@prisma/client';
 
 // DEPLOYMENT VERSION - Used to verify which code version is running
-const CODE_VERSION = 'v2.2.0-audit-middleware-2026-01-25';
+const CODE_VERSION = 'v2.3.0-singleton-fix-2026-01-25';
 
 /**
  * Cron Job: Process Campaign Queue

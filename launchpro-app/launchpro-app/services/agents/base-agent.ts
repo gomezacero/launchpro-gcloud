@@ -14,6 +14,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk';
+import { getAnthropicClient } from '@/lib/anthropic-client';
 import {
   Tool,
   ToolResult,
@@ -29,38 +30,15 @@ export abstract class BaseAgent {
   protected toolHandlers: Map<string, (input: any) => Promise<ToolResult>>;
 
   /**
-   * Get clean Anthropic API key from environment
-   * Handles: whitespace, newlines, copy/paste issues, and surrounding quotes
-   */
-  private getCleanApiKey(): string {
-    const rawKey = process.env.ANTHROPIC_API_KEY || '';
-    // Remove ALL non-printable characters (handles copy/paste issues)
-    let cleanedKey = rawKey.split('').filter(c => c.charCodeAt(0) >= 33 && c.charCodeAt(0) <= 126).join('');
-    // Remove surrounding quotes if present (common Vercel env var issue)
-    if ((cleanedKey.startsWith('"') && cleanedKey.endsWith('"')) ||
-        (cleanedKey.startsWith("'") && cleanedKey.endsWith("'"))) {
-      cleanedKey = cleanedKey.slice(1, -1);
-    }
-    return cleanedKey;
-  }
-
-  /**
-   * Get Anthropic client - ALWAYS creates fresh instance
-   * Never caches to avoid stale instances in serverless (fixes 401 errors)
+   * Get Anthropic client - uses singleton from anthropic-client.ts
+   * This fixes the 401 "invalid x-api-key" error caused by creating multiple instances
    */
   protected get anthropic(): Anthropic {
-    const apiKey = this.getCleanApiKey();
-    if (!apiKey) {
-      throw new Error('[BaseAgent] ANTHROPIC_API_KEY not configured');
-    }
-    if (!apiKey.startsWith('sk-ant-')) {
-      console.warn('[BaseAgent] ⚠️ ANTHROPIC_API_KEY has unexpected format');
-    }
-    return new Anthropic({ apiKey });
+    return getAnthropicClient();
   }
 
   constructor(config: Partial<AgentConfig> = {}) {
-    // No Anthropic initialization needed - client is created fresh on each call via getter
+    // No Anthropic initialization needed - client comes from singleton
 
     this.config = {
       model: config.model || 'claude-sonnet-4-20250514',
