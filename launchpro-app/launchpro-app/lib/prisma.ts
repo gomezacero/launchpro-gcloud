@@ -1,8 +1,15 @@
 import { PrismaClient, Prisma } from '@prisma/client';
 
+// VERSION: Increment this to force recreation of Prisma client
+// This ensures all warm function instances get the new middleware
+const PRISMA_CLIENT_VERSION = 'v2.2.0-audit-2026-01-25';
+
 // PrismaClient is attached to the `global` object in development to prevent
 // exhausting database connections due to hot reloading in Next.js
-const globalForPrisma = global as unknown as { prisma: PrismaClient };
+const globalForPrisma = global as unknown as {
+  prisma: PrismaClient;
+  prismaVersion?: string;
+};
 
 const prismaClientSingleton = () => {
   const client = new PrismaClient({
@@ -63,8 +70,19 @@ const prismaClientSingleton = () => {
   return client;
 };
 
-export const prisma = globalForPrisma.prisma || prismaClientSingleton();
+// Force recreation if version doesn't match (ensures middleware is applied after deployments)
+const needsRecreation = globalForPrisma.prismaVersion !== PRISMA_CLIENT_VERSION;
 
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
+if (needsRecreation && globalForPrisma.prisma) {
+  console.log(`[PRISMA] Version mismatch (${globalForPrisma.prismaVersion} -> ${PRISMA_CLIENT_VERSION}), recreating client with middleware`);
+  // Disconnect old client to clean up connections
+  globalForPrisma.prisma.$disconnect().catch(() => {});
+}
+
+export const prisma = (!needsRecreation && globalForPrisma.prisma) || prismaClientSingleton();
+
+// Cache in global with version
+globalForPrisma.prisma = prisma;
+globalForPrisma.prismaVersion = PRISMA_CLIENT_VERSION;
 
 export default prisma;
