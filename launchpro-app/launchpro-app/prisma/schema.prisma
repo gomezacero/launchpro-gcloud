@@ -191,6 +191,9 @@ model Campaign {
   // DesignFlow integration
   designFlowTask      DesignFlowTask?
 
+  // Audit logs
+  auditLogs           CampaignAuditLog[]
+
   // Tracking link polling metadata (for parallel campaign processing)
   trackingLinkPollingStartedAt  DateTime?  // When polling started
   trackingLinkPollingAttempts   Int        @default(0) // Number of poll attempts
@@ -738,4 +741,19 @@ model DesignFlowTask {
   @@index([campaignId])
   @@index([designflowTaskId])
   @@index([status])
+}
+
+// Audit log for tracking campaign status changes
+model CampaignAuditLog {
+  id          String   @id @default(cuid())
+  campaignId  String
+  campaign    Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  oldStatus   String?
+  newStatus   String
+  action      String   // 'update' or 'updateMany'
+  caller      String?  // Stack trace snippet
+  timestamp   DateTime @default(now())
+  
+  @@index([campaignId])
+  @@index([timestamp])
 }
