@@ -12,6 +12,8 @@ const globalForPrisma = global as unknown as {
 };
 
 const prismaClientSingleton = () => {
+  console.log(`[PRISMA] 🆕 Creating NEW PrismaClient with middleware (version: ${PRISMA_CLIENT_VERSION})`);
+
   const client = new PrismaClient({
     log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
   });
@@ -20,6 +22,11 @@ const prismaClientSingleton = () => {
   // AUDIT MIDDLEWARE: Track all Campaign status changes
   // ============================================
   client.$use(async (params: Prisma.MiddlewareParams, next) => {
+    // DEBUG: Log ALL Campaign operations to verify middleware is active
+    if (params.model === 'Campaign') {
+      console.log(`[PRISMA-MW] Campaign operation: action=${params.action}, hasStatus=${!!params.args?.data?.status}`);
+    }
+
     // Only intercept Campaign updates
     if (params.model === 'Campaign' && (params.action === 'update' || params.action === 'updateMany')) {
       const newStatus = params.args?.data?.status;
@@ -71,15 +78,24 @@ const prismaClientSingleton = () => {
 };
 
 // Force recreation if version doesn't match (ensures middleware is applied after deployments)
+console.log(`[PRISMA] Module loaded. Global version: ${globalForPrisma.prismaVersion || 'NONE'}, Current version: ${PRISMA_CLIENT_VERSION}`);
+
 const needsRecreation = globalForPrisma.prismaVersion !== PRISMA_CLIENT_VERSION;
+const hasExistingClient = !!globalForPrisma.prisma;
+
+console.log(`[PRISMA] needsRecreation=${needsRecreation}, hasExistingClient=${hasExistingClient}`);
 
 if (needsRecreation && globalForPrisma.prisma) {
-  console.log(`[PRISMA] Version mismatch (${globalForPrisma.prismaVersion} -> ${PRISMA_CLIENT_VERSION}), recreating client with middleware`);
+  console.log(`[PRISMA] ⚠️ Version mismatch! Recreating client with middleware...`);
   // Disconnect old client to clean up connections
   globalForPrisma.prisma.$disconnect().catch(() => {});
 }
 
-export const prisma = (!needsRecreation && globalForPrisma.prisma) || prismaClientSingleton();
+// ALWAYS create new client if version mismatch, even if no existing client
+const shouldCreateNew = needsRecreation || !globalForPrisma.prisma;
+console.log(`[PRISMA] shouldCreateNew=${shouldCreateNew}`);
+
+export const prisma = shouldCreateNew ? prismaClientSingleton() : globalForPrisma.prisma;
 
 // Cache in global with version
 globalForPrisma.prisma = prisma;
