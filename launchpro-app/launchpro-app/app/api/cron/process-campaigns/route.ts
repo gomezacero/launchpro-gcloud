@@ -35,6 +35,16 @@ type CampaignWithIncludes = Campaign & {
 };
 
 export async function GET(request: NextRequest) {
+  // ====== ULTRA DEBUG: First thing in the function ======
+  const cronInstanceId = `PC-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  console.log(`\n\n========== [process-campaigns] CRON INVOKED ==========`);
+  console.log(`[process-campaigns] Instance ID: ${cronInstanceId}`);
+  console.log(`[process-campaigns] Timestamp: ${new Date().toISOString()}`);
+  console.log(`[process-campaigns] ENV CHECK: ANTHROPIC_API_KEY length=${(process.env.ANTHROPIC_API_KEY || '').length}`);
+  console.log(`[process-campaigns] ENV CHECK: CRON_SECRET exists=${!!process.env.CRON_SECRET}`);
+  console.log(`=======================================================\n\n`);
+  // ====== END ULTRA DEBUG ======
+
   const startTime = Date.now();
 
   // Verify cron secret (Vercel sends this header)
@@ -120,7 +130,14 @@ export async function GET(request: NextRequest) {
       take: 3, // Process up to 3 campaigns in parallel
     });
 
+    // ULTRA DEBUG: Log query result
+    console.log(`[process-campaigns] Query result: found ${campaigns.length} campaigns`);
+    campaigns.forEach((c, i) => {
+      console.log(`[process-campaigns] Campaign ${i + 1}: id=${c.id}, name="${c.name}", status=${c.status}`);
+    });
+
     if (campaigns.length === 0) {
+      console.log(`[process-campaigns] No campaigns found, returning early`);
       logger.info('system', '✅ [CRON] No campaigns ready to process');
       return NextResponse.json({
         success: true,
@@ -129,6 +146,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    console.log(`[process-campaigns] About to process ${campaigns.length} campaign(s)`);
     logger.info('system', `📋 [CRON] Found ${campaigns.length} campaign(s) ready for PARALLEL processing`, {
       campaigns: campaigns.map(c => ({ id: c.id, name: c.name, status: c.status })),
     });
@@ -192,6 +210,16 @@ async function processSingleCampaign(
   campaign: CampaignWithIncludes,
   cronStartTime: number
 ): Promise<{ success: boolean; skipped?: boolean; campaignId: string; message: string; result?: any }> {
+  // ULTRA DEBUG: Entry to processSingleCampaign
+  const processId = `PSC-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  console.log(`\n[processSingleCampaign] ======== ENTERED ========`);
+  console.log(`[processSingleCampaign] Process ID: ${processId}`);
+  console.log(`[processSingleCampaign] Campaign: "${campaign.name}" (${campaign.id})`);
+  console.log(`[processSingleCampaign] Status: ${campaign.status}`);
+  console.log(`[processSingleCampaign] Tracking Link: ${campaign.tonicTrackingLink || 'NONE'}`);
+  console.log(`[processSingleCampaign] ANTHROPIC_API_KEY length: ${(process.env.ANTHROPIC_API_KEY || '').length}`);
+  console.log(`[processSingleCampaign] ===========================\n`);
+
   const campaignStartTime = Date.now();
 
   try {
@@ -295,17 +323,31 @@ async function processSingleCampaign(
       };
     }
 
+    // ULTRA DEBUG: Claimed successfully
+    console.log(`\n[processSingleCampaign] ✅ CLAIMED campaign "${campaign.name}" for processing`);
+    console.log(`[processSingleCampaign] Status set to GENERATING_AI`);
     logger.info('system', `🔒 [CRON] Claimed campaign "${campaign.name}" for processing`);
 
     // DEBUG: Log ANTHROPIC_API_KEY status before processing
     const apiKey = (process.env.ANTHROPIC_API_KEY || '').trim();
+    console.log(`\n[processSingleCampaign] 🔑 API KEY CHECK:`);
+    console.log(`[processSingleCampaign]   - Length: ${apiKey.length}`);
+    console.log(`[processSingleCampaign]   - Starts with sk-ant-: ${apiKey.startsWith('sk-ant-')}`);
+    console.log(`[processSingleCampaign]   - Preview: ${apiKey.substring(0, 15)}...${apiKey.substring(apiKey.length - 6)}`);
     logger.info('system', `🔑 [CRON] ANTHROPIC_API_KEY check BEFORE continueCampaignAfterArticle: length=${apiKey.length}, starts_with_sk-ant=${apiKey.startsWith('sk-ant-')}, preview=${apiKey.substring(0,15)}...${apiKey.substring(apiKey.length-6)}`);
 
     // ============================================
     // PROCESS THE CAMPAIGN
     // ============================================
+    console.log(`\n[processSingleCampaign] 🚀 ABOUT TO CALL continueCampaignAfterArticle...`);
+    console.log(`[processSingleCampaign] Campaign ID: ${campaign.id}`);
+    console.log(`[processSingleCampaign] Timestamp: ${new Date().toISOString()}`);
     logger.info('system', `🚀 [CRON] CALLING continueCampaignAfterArticle for "${campaign.name}" NOW...`);
+
     const result = await campaignOrchestrator.continueCampaignAfterArticle(campaign.id);
+
+    console.log(`\n[processSingleCampaign] ✅ continueCampaignAfterArticle RETURNED`);
+    console.log(`[processSingleCampaign] Result:`, JSON.stringify(result, null, 2));
     logger.info('system', `✅ [CRON] continueCampaignAfterArticle RETURNED for "${campaign.name}"`)
 
     const duration = Date.now() - campaignStartTime;
