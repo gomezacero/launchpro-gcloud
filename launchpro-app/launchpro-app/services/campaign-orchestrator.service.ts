@@ -4351,7 +4351,8 @@ class CampaignOrchestratorService {
 
     // Generate Copy Master if not set
     if (!campaign.copyMaster) {
-      logger.info('ai', `[CampaignOrchestrator] Calling aiService.generateCopyMaster for campaign ${campaignId}...`);
+      logger.info('system', `🤖 [AI] ABOUT TO CALL Anthropic generateCopyMaster for "${campaign.name}" (${campaignId})`);
+      logger.info('system', `🔑 [AI] API Key: length=${cleanKey.length}, starts_with_sk-ant=${cleanKey.startsWith('sk-ant-')}, preview=${cleanKey.substring(0,15)}...${cleanKey.substring(cleanKey.length-6)}`);
       try {
         aiContentResult.copyMaster = await aiService.generateCopyMaster({
           offerName: campaign.offer.name,
@@ -4360,13 +4361,15 @@ class CampaignOrchestratorService {
           country: campaign.country,
           language: campaign.language,
         });
+        logger.success('system', `✅ [AI] Anthropic generateCopyMaster SUCCESS for "${campaign.name}"`);
       } catch (copyMasterError: any) {
-        logger.error('ai', `❌ [CampaignOrchestrator] FAILED to generate Copy Master for campaign ${campaignId}`, {
+        logger.error('system', `❌ [AI] Anthropic generateCopyMaster FAILED for "${campaign.name}": ${copyMasterError.message}`, {
           errorStatus: copyMasterError.status,
+          errorStatusCode: copyMasterError.statusCode,
           errorMessage: copyMasterError.message,
           errorType: copyMasterError.constructor?.name,
-          campaignName: campaign.name,
-          anthropicKeyPreview: `${(process.env.ANTHROPIC_API_KEY || '').substring(0, 10)}...`,
+          apiKeyLength: cleanKey.length,
+          apiKeyPreview: `${cleanKey.substring(0, 15)}...${cleanKey.substring(cleanKey.length - 6)}`,
         });
         throw new Error(`AI Copy Master generation failed: ${copyMasterError.message}`);
       }
@@ -4381,7 +4384,7 @@ class CampaignOrchestratorService {
 
     // Generate Keywords if not set
     if (!campaign.keywords || campaign.keywords.length === 0) {
-      logger.info('ai', `[CampaignOrchestrator] Calling aiService.generateKeywords for campaign ${campaignId}...`);
+      logger.info('system', `🤖 [AI] ABOUT TO CALL Anthropic generateKeywords for "${campaign.name}" (${campaignId})`);
       try {
         aiContentResult.keywords = await aiService.generateKeywords({
           offerName: campaign.offer.name,
@@ -4389,13 +4392,15 @@ class CampaignOrchestratorService {
           count: 6,
           country: campaign.country,
         });
+        logger.success('system', `✅ [AI] Anthropic generateKeywords SUCCESS for "${campaign.name}"`);
       } catch (keywordsError: any) {
-        logger.error('ai', `❌ [CampaignOrchestrator] FAILED to generate Keywords for campaign ${campaignId}`, {
+        logger.error('system', `❌ [AI] Anthropic generateKeywords FAILED for "${campaign.name}": ${keywordsError.message}`, {
           errorStatus: keywordsError.status,
+          errorStatusCode: keywordsError.statusCode,
           errorMessage: keywordsError.message,
           errorType: keywordsError.constructor?.name,
-          campaignName: campaign.name,
-          anthropicKeyPreview: `${(process.env.ANTHROPIC_API_KEY || '').substring(0, 10)}...`,
+          apiKeyLength: cleanKey.length,
+          apiKeyPreview: `${cleanKey.substring(0, 15)}...${cleanKey.substring(cleanKey.length - 6)}`,
         });
         throw new Error(`AI Keywords generation failed: ${keywordsError.message}`);
       }
@@ -4465,17 +4470,29 @@ class CampaignOrchestratorService {
       // TikTok only allows videos - enforce this
       const effectiveMediaType = platformConfig.platform === 'TIKTOK' ? 'VIDEO' : mediaType;
 
-      logger.info('ai', `🎨 Generating UGC media for ${platformConfig.platform}: ${mediaCount}x ${effectiveMediaType}`);
+      logger.info('system', `🎨 Generating UGC media for ${platformConfig.platform}: ${mediaCount}x ${effectiveMediaType}`);
 
       // Generate Ad Copy specific to platform (needed for text overlays)
-      const adCopy = await aiService.generateAdCopy({
-        offerName: campaign.offer.name,
-        copyMaster: aiContentResult.copyMaster,
-        platform: platformConfig.platform as 'META' | 'TIKTOK',
-        adFormat: effectiveMediaType === 'VIDEO' ? 'VIDEO' : 'IMAGE',
-        country: campaign.country,
-        language: campaign.language,
-      });
+      logger.info('system', `🤖 [AI] ABOUT TO CALL Anthropic generateAdCopy for "${campaign.name}" platform=${platformConfig.platform}`);
+      let adCopy;
+      try {
+        adCopy = await aiService.generateAdCopy({
+          offerName: campaign.offer.name,
+          copyMaster: aiContentResult.copyMaster,
+          platform: platformConfig.platform as 'META' | 'TIKTOK',
+          adFormat: effectiveMediaType === 'VIDEO' ? 'VIDEO' : 'IMAGE',
+          country: campaign.country,
+          language: campaign.language,
+        });
+        logger.success('system', `✅ [AI] Anthropic generateAdCopy SUCCESS for "${campaign.name}" platform=${platformConfig.platform}`);
+      } catch (adCopyError: any) {
+        logger.error('system', `❌ [AI] Anthropic generateAdCopy FAILED for "${campaign.name}": ${adCopyError.message}`, {
+          errorStatus: adCopyError.status,
+          errorMessage: adCopyError.message,
+          platform: platformConfig.platform,
+        });
+        throw adCopyError;
+      }
 
       try {
         // ============================================
