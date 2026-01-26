@@ -156,6 +156,7 @@ model Campaign {
   communicationAngle String?
   keywords          String[]           @default([])
   contentGenerationPhrases String[]    @default([])  // RSOC content generation phrases
+  preGeneratedAdCopy Json?             // Pre-generated ad copy per platform { "META": {...}, "TIKTOK": {...} }
 
   // Platform associations
   platforms         CampaignPlatform[]

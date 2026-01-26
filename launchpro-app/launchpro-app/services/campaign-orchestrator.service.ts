@@ -4059,6 +4059,60 @@ class CampaignOrchestratorService {
       logger.success('ai', `✅ Pre-generated ${generatedKeywords.length} keywords in HTTP context`, { keywords: generatedKeywords });
     }
 
+    // ============================================
+    // PRE-GENERATE AD COPY FOR ALL PLATFORMS
+    // ============================================
+    // Generate ad copy NOW (in HTTP context) so that continueCampaignAfterArticle
+    // doesn't need to call Anthropic. This fixes the 401 error that occurs when
+    // the cron tries to call Anthropic in a different execution context.
+    logger.info('ai', '📝 Pre-generating Ad Copy for all platforms in HTTP context...');
+
+    const preGeneratedAdCopy: Record<string, any> = {};
+
+    // Get copyMaster for ad copy generation (either provided or just generated)
+    const copyMasterForAdCopy = params.copyMaster || (await prisma.campaign.findUnique({
+      where: { id: campaign.id },
+      select: { copyMaster: true },
+    }))?.copyMaster || `Discover ${offer.name}`;
+
+    for (const platform of params.platforms) {
+      // Skip TONIC platform (no ad copy needed)
+      if (platform.platform === 'TONIC') continue;
+
+      const mediaType = platform.aiMediaType || (platform.platform === 'TIKTOK' ? 'VIDEO' : 'IMAGE');
+      const effectiveMediaType = platform.platform === 'TIKTOK' ? 'VIDEO' : mediaType;
+
+      try {
+        logger.info('ai', `📝 Pre-generating Ad Copy for ${platform.platform}...`);
+        const adCopy = await aiService.generateAdCopy({
+          offerName: offer.name,
+          copyMaster: copyMasterForAdCopy,
+          platform: platform.platform as 'META' | 'TIKTOK',
+          adFormat: effectiveMediaType === 'VIDEO' ? 'VIDEO' : 'IMAGE',
+          country: params.country,
+          language: params.language,
+          apiKey: process.env.ANTHROPIC_API_KEY,
+        });
+
+        preGeneratedAdCopy[platform.platform] = adCopy;
+        logger.success('ai', `✅ Pre-generated Ad Copy for ${platform.platform}`);
+      } catch (adCopyError: any) {
+        logger.warn('ai', `⚠️ Failed to pre-generate Ad Copy for ${platform.platform}: ${adCopyError.message}`);
+        // Continue with other platforms - fallback will generate in cron context
+      }
+    }
+
+    // Save all pre-generated ad copies to campaign
+    if (Object.keys(preGeneratedAdCopy).length > 0) {
+      await prisma.campaign.update({
+        where: { id: campaign.id },
+        data: {
+          preGeneratedAdCopy: preGeneratedAdCopy,
+        },
+      });
+      logger.success('ai', `✅ Pre-generated Ad Copy saved for ${Object.keys(preGeneratedAdCopy).length} platform(s)`);
+    }
+
     // For RSOC campaigns, handle article (new or existing)
     let articleRequestId: number | undefined;
 
@@ -4578,26 +4632,37 @@ class CampaignOrchestratorService {
       logger.info('system', `🎨 Generating UGC media for ${platformConfig.platform}: ${mediaCount}x ${effectiveMediaType}`);
 
       // Generate Ad Copy specific to platform (needed for text overlays)
-      logger.info('system', `🤖 [AI] ABOUT TO CALL Anthropic generateAdCopy for "${campaign.name}" platform=${platformConfig.platform}`);
+      // FIRST: Check if ad copy was pre-generated in HTTP context (to avoid 401 errors)
       let adCopy;
-      try {
-        adCopy = await aiService.generateAdCopy({
-          offerName: campaign.offer.name,
-          copyMaster: aiContentResult.copyMaster,
-          platform: platformConfig.platform as 'META' | 'TIKTOK',
-          adFormat: effectiveMediaType === 'VIDEO' ? 'VIDEO' : 'IMAGE',
-          country: campaign.country,
-          language: campaign.language,
-          apiKey: process.env.ANTHROPIC_API_KEY,
-        });
-        logger.success('system', `✅ [AI] Anthropic generateAdCopy SUCCESS for "${campaign.name}" platform=${platformConfig.platform}`);
-      } catch (adCopyError: any) {
-        logger.error('system', `❌ [AI] Anthropic generateAdCopy FAILED for "${campaign.name}": ${adCopyError.message}`, {
-          errorStatus: adCopyError.status,
-          errorMessage: adCopyError.message,
-          platform: platformConfig.platform,
-        });
-        throw adCopyError;
+      const preGeneratedCopy = campaign.preGeneratedAdCopy as Record<string, any> | null;
+
+      if (preGeneratedCopy && preGeneratedCopy[platformConfig.platform]) {
+        // USE PRE-GENERATED AD COPY (avoids calling Anthropic in cron context)
+        adCopy = preGeneratedCopy[platformConfig.platform];
+        logger.info('system', `✅ Using pre-generated Ad Copy for "${campaign.name}" platform=${platformConfig.platform} (avoiding cron 401 issue)`);
+      } else {
+        // FALLBACK: Generate in cron context (may fail with 401)
+        logger.warn('system', `⚠️ No pre-generated Ad Copy found for ${platformConfig.platform}, generating in cron context...`);
+        logger.info('system', `🤖 [AI] ABOUT TO CALL Anthropic generateAdCopy for "${campaign.name}" platform=${platformConfig.platform}`);
+        try {
+          adCopy = await aiService.generateAdCopy({
+            offerName: campaign.offer.name,
+            copyMaster: aiContentResult.copyMaster,
+            platform: platformConfig.platform as 'META' | 'TIKTOK',
+            adFormat: effectiveMediaType === 'VIDEO' ? 'VIDEO' : 'IMAGE',
+            country: campaign.country,
+            language: campaign.language,
+            apiKey: process.env.ANTHROPIC_API_KEY,
+          });
+          logger.success('system', `✅ [AI] Anthropic generateAdCopy SUCCESS for "${campaign.name}" platform=${platformConfig.platform}`);
+        } catch (adCopyError: any) {
+          logger.error('system', `❌ [AI] Anthropic generateAdCopy FAILED for "${campaign.name}": ${adCopyError.message}`, {
+            errorStatus: adCopyError.status,
+            errorMessage: adCopyError.message,
+            platform: platformConfig.platform,
+          });
+          throw adCopyError;
+        }
       }
 
       try {
