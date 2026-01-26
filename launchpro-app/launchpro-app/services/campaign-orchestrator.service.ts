@@ -1695,6 +1695,7 @@ class CampaignOrchestratorService {
         adFormat: adFormat,
         country: campaign.country,
         language: campaign.language,
+        apiKey: process.env.ANTHROPIC_API_KEY,
       });
     }
 
@@ -1768,6 +1769,7 @@ class CampaignOrchestratorService {
       offerName: campaign.offer.name,
       copyMaster: aiContent.copyMaster,
       platform: 'META',
+      apiKey: process.env.ANTHROPIC_API_KEY,
     });
 
     logger.info('meta', 'AI Targeting Suggestions:', targetingSuggestions);

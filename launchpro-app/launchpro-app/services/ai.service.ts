@@ -2273,6 +2273,7 @@ Return JSON:
     copyMaster: string;    // Copy master for video text overlay
     offerName?: string;    // Specific offer name for better context
     vertical?: string;     // Vertical from Tonic for classification
+    apiKey?: string;
   }): Promise<{
     images: { url: string; gcsPath: string; prompt: string }[];
     videos: { url: string; gcsPath: string; prompt: string; thumbnailUrl?: string; thumbnailGcsPath?: string }[];
