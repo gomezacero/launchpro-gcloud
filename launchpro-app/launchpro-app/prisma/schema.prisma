@@ -743,17 +743,41 @@ model DesignFlowTask {
   @@index([status])
 }
 
-// Audit log for tracking campaign status changes
+// ============================================
+// CAMPAIGN AUDIT LOGS
+// ============================================
+
+// Comprehensive audit trail for campaign lifecycle - persists to DB for debugging
 model CampaignAuditLog {
-  id          String   @id @default(cuid())
-  campaignId  String
-  campaign    Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  oldStatus   String?
-  newStatus   String
-  action      String   // 'update' or 'updateMany'
-  caller      String?  // Stack trace snippet
-  timestamp   DateTime @default(now())
-  
+  id              String    @id @default(cuid())
+  campaignId      String
+  campaign        Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  // Event details
+  event           String    // e.g., "STATUS_CHANGE", "API_CALL", "ERROR", "CRON_PROCESS"
+  source          String    // e.g., "POST /api/campaigns", "cron/check-articles", "campaign-orchestrator"
+
+  // Status tracking
+  previousStatus  String?   // CampaignStatus before change
+  newStatus       String?   // CampaignStatus after change
+
+  // Details
+  message         String    @db.Text  // Human-readable description
+  details         Json?     // Additional context (API responses, error stacks, etc.)
+
+  // Error tracking
+  isError         Boolean   @default(false)
+  errorCode       String?   // e.g., "401", "TIMEOUT", "VALIDATION_ERROR"
+  errorStack      String?   @db.Text  // Stack trace for debugging
+
+  // Timing
+  durationMs      Int?      // How long the operation took
+
+  createdAt       DateTime  @default(now())
+
   @@index([campaignId])
-  @@index([timestamp])
+  @@index([event])
+  @@index([isError])
+  @@index([createdAt])
+  @@index([campaignId, createdAt])
 }

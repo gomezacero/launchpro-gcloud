@@ -4,6 +4,7 @@ import { logger } from '@/lib/logger';
 import { tonicService } from '@/services/tonic.service';
 import { designflowService } from '@/services/designflow.service';
 import { emailService } from '@/services/email.service';
+import { campaignAudit } from '@/services/campaign-audit.service';
 import { CampaignStatus } from '@prisma/client';
 
 // DEPLOYMENT VERSION - Used to verify which code version is running
@@ -263,6 +264,16 @@ export async function GET(request: NextRequest) {
 
               logger.success('system', `✅ [CRON] Campaign "${campaign.name}" → Direct launch path: Article approved → Tonic campaign → AWAITING_TRACKING (poll-tracking-links will monitor)`);
 
+              // AUDIT LOG: Article approved, now awaiting tracking link
+              await campaignAudit.logStatusChange(
+                campaign.id,
+                'cron/check-articles',
+                'PENDING_ARTICLE',
+                'AWAITING_TRACKING',
+                `Article approved by Tonic (headline_id: ${articleStatus.headline_id}), Tonic campaign created (${tonicCampaignId}), now waiting for tracking link`,
+                { tonicCampaignId, headlineId: articleStatus.headline_id, trackingLink, directLink }
+              );
+
               results.push({
                 campaignId: campaign.id,
                 campaignName: campaign.name,
@@ -345,6 +356,16 @@ export async function GET(request: NextRequest) {
               },
             },
           });
+
+          // AUDIT LOG: Article rejected
+          await campaignAudit.logStatusChange(
+            campaign.id,
+            'cron/check-articles',
+            'PENDING_ARTICLE',
+            'FAILED',
+            `Article rejected by Tonic: ${articleStatus.rejection_reason || 'No reason provided'}`,
+            { rejectionReason: articleStatus.rejection_reason }
+          );
 
           logger.warn('system', `❌ [CRON] Campaign "${campaign.name}" article rejected: ${articleStatus.rejection_reason}`);
 

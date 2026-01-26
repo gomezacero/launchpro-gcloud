@@ -6,6 +6,7 @@ import { tonicService } from './tonic.service';
 import { metaService } from './meta.service';
 import { tiktokService } from './tiktok.service';
 import { aiService } from './ai.service';
+import { campaignAudit } from './campaign-audit.service';
 import { getNeuralEngineOrchestrator } from './neural-engine';
 import type { NeuralEngineInput, CreativePackage } from './neural-engine/types';
 // NOTE: videoConverterService removed - TikTok requires direct video upload
@@ -3843,10 +3844,14 @@ class CampaignOrchestratorService {
     status: CampaignStatus;
     articleRequestId?: number;
   }> {
+    const startTime = Date.now();
     logger.info('system', '🚀 Creating campaign (quick async mode)...', {
       name: params.name,
       country: params.country,
     });
+
+    // Will be set after campaign creation
+    let campaignId: string | null = null;
 
     // Get Tonic credentials
     const tonicAccount = await prisma.account.findUnique({
@@ -3981,6 +3986,17 @@ class CampaignOrchestratorService {
     }
 
     logger.success('system', `Campaign created in DB: ${campaign.id}`);
+    campaignId = campaign.id;
+
+    // Audit log: Campaign created
+    await campaignAudit.logStatusChange(
+      campaign.id,
+      'createCampaignQuick',
+      null,
+      CampaignStatus.DRAFT,
+      `Campaign "${params.name}" created in database`,
+      { name: params.name, country: params.country, language: params.language, campaignType: campaignType }
+    );
 
     // For RSOC campaigns, handle article (new or existing)
     let articleRequestId: number | undefined;
@@ -4056,6 +4072,17 @@ class CampaignOrchestratorService {
 
       logger.success('tonic', `Article request created: ${articleRequestId}`);
 
+      // Audit log: Article request created
+      await campaignAudit.logApiCall(
+        campaign.id,
+        'createCampaignQuick',
+        'Tonic',
+        'createArticleRequest',
+        true,
+        Date.now() - startTime,
+        { articleRequestId, rsocDomain }
+      );
+
       // Update campaign with article request ID and set to PENDING
       await prisma.campaign.update({
         where: { id: campaign.id },
@@ -4064,6 +4091,16 @@ class CampaignOrchestratorService {
           tonicArticleRequestId: articleRequestId.toString(),
         },
       });
+
+      // Audit log: Status changed to PENDING_ARTICLE
+      await campaignAudit.logStatusChange(
+        campaign.id,
+        'createCampaignQuick',
+        CampaignStatus.DRAFT,
+        CampaignStatus.PENDING_ARTICLE,
+        `Article request ${articleRequestId} submitted to Tonic - awaiting approval`,
+        { articleRequestId, durationMs: Date.now() - startTime }
+      );
 
       return {
         campaignId: campaign.id,

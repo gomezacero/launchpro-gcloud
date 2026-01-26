@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger';
 import { tonicService } from '@/services/tonic.service';
+import { campaignAudit } from '@/services/campaign-audit.service';
 import { CampaignStatus } from '@prisma/client';
 
 // DEPLOYMENT VERSION - Used to verify which code version is running
@@ -120,6 +121,17 @@ export async function GET(request: NextRequest) {
             });
 
             logger.success('tonic', `✅ Campaign "${campaign.name}" tracking link ready: ${trackingLink}`);
+
+            // AUDIT LOG: Tracking link ready, moving to ARTICLE_APPROVED
+            await campaignAudit.logStatusChange(
+              campaign.id,
+              'cron/poll-tracking-links',
+              'AWAITING_TRACKING',
+              'ARTICLE_APPROVED',
+              `Tracking link received from Tonic: ${trackingLink} - Campaign ready for AI generation`,
+              { trackingLink, pollingAttempts: campaign.trackingLinkPollingAttempts + 1 }
+            );
+
             return { campaignId: campaign.id, ready: true, trackingLink };
           }
 
@@ -145,6 +157,17 @@ export async function GET(request: NextRequest) {
               });
 
               logger.error('tonic', `❌ Campaign "${campaign.name}" TIMEOUT - tracking link not available after ${elapsedMinutes} min`);
+
+              // AUDIT LOG: Tracking link timeout
+              await campaignAudit.logStatusChange(
+                campaign.id,
+                'cron/poll-tracking-links',
+                'AWAITING_TRACKING',
+                'FAILED',
+                `Tracking link timeout after ${elapsedMinutes} minutes - Tonic campaign may have an issue`,
+                { elapsedMinutes, pollingAttempts: campaign.trackingLinkPollingAttempts + 1, tonicCampaignId: campaign.tonicCampaignId }
+              );
+
               return { campaignId: campaign.id, timeout: true, elapsedMinutes };
             }
 

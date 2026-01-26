@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger';
 import { campaignOrchestrator } from '@/services/campaign-orchestrator.service';
 import { emailService } from '@/services/email.service';
+import { campaignAudit } from '@/services/campaign-audit.service';
 import { CampaignStatus, Prisma, Campaign, CampaignPlatform, Offer, Account } from '@prisma/client';
 
 // DEPLOYMENT VERSION - Used to verify which code version is running
@@ -331,6 +332,16 @@ async function processSingleCampaign(
     // ULTRA DEBUG: Claimed successfully
     console.log(`\n[processSingleCampaign] ✅ CLAIMED campaign "${campaign.name}" for processing`);
     console.log(`[processSingleCampaign] Status set to GENERATING_AI`);
+
+    // AUDIT LOG: Starting AI generation
+    await campaignAudit.logStatusChange(
+      campaign.id,
+      'cron/process-campaigns',
+      'ARTICLE_APPROVED',
+      'GENERATING_AI',
+      `Campaign claimed for processing - starting AI content generation`,
+      { processId, trackingLink: campaign.tonicTrackingLink }
+    );
     logger.info('system', `🔒 [CRON] Claimed campaign "${campaign.name}" for processing`);
 
     // DEBUG: Log ANTHROPIC_API_KEY status before processing
@@ -368,6 +379,26 @@ async function processSingleCampaign(
         where: { id: campaign.id },
         data: { errorDetails: Prisma.DbNull },
       });
+
+      // AUDIT LOG: Campaign launched successfully
+      await campaignAudit.logStatusChange(
+        campaign.id,
+        'cron/process-campaigns',
+        'GENERATING_AI',
+        'ACTIVE',
+        `Campaign successfully launched to ${result.platforms.map((p: any) => p.platform).join(', ')}`,
+        { durationMs: duration, platforms: result.platforms }
+      );
+    } else {
+      // AUDIT LOG: Partial success
+      const failedPlatforms = result.platforms.filter((p: any) => !p.success);
+      await campaignAudit.logError(
+        campaign.id,
+        'cron/process-campaigns',
+        new Error(`Some platforms failed: ${failedPlatforms.map((p: any) => p.platform).join(', ')}`),
+        'Partial launch failure',
+        { durationMs: duration, platforms: result.platforms }
+      );
     }
 
     // Send email notification
@@ -459,6 +490,19 @@ async function processSingleCampaign(
     });
 
     logger.error('system', `❌ [CRON] Campaign "${campaign.name}" FAILED: ${processError.message}`);
+
+    // AUDIT LOG: Campaign processing failed
+    await campaignAudit.logError(
+      campaign.id,
+      'cron/process-campaigns',
+      processError,
+      'Campaign processing failed during AI generation or platform launch',
+      {
+        durationMs: Date.now() - campaignStartTime,
+        errorStatus: processError.status,
+        errorType: processError.constructor?.name,
+      }
+    );
 
     // Send failure email
     try {
