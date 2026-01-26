@@ -109,8 +109,13 @@ export async function GET(request: NextRequest) {
           },
           {
             // Retry stuck GENERATING_AI campaigns (timeout recovery)
+            // CRITICAL: Must ALSO have tracking link to retry
             status: CampaignStatus.GENERATING_AI,
             updatedAt: { lt: fifteenMinutesAgo },
+            tonicTrackingLink: { not: null },
+            NOT: {
+              tonicTrackingLink: { contains: 'tracking-pending' },
+            },
           },
         ],
         // Exclude campaigns that already have platforms launched
