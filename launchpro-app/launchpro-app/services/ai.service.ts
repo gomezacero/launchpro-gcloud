@@ -7,11 +7,24 @@ import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger';
 import { getStorage } from '@/lib/gcs';
 import { getAnthropicClient, getApiKeyDebugInfo } from '@/lib/anthropic-client';
+import { campaignAudit } from '@/services/campaign-audit.service';
 
 // VERSION MARKER - Used to verify which code version is deployed
-const AI_SERVICE_VERSION = 'v2.7.4-ANTHROPIC-TRACE-2026-01-26';
+const AI_SERVICE_VERSION = 'v2.7.5-DB-TRACE-2026-01-26';
 console.log(`[AIService] Module loaded - VERSION: ${AI_SERVICE_VERSION}`);
-console.log(`[AIService] 🚨🚨🚨 THIS VERSION HAS ANTHROPIC CALL TRACING 🚨🚨🚨`);
+console.log(`[AIService] 🚨🚨🚨 THIS VERSION LOGS ANTHROPIC CALLS TO DATABASE 🚨🚨🚨`);
+
+// Global variable to track the current campaign being processed
+// This allows us to log Anthropic calls to the correct campaign's audit trail
+let _currentCampaignId: string | null = null;
+
+export function setCurrentCampaignId(campaignId: string | null): void {
+  _currentCampaignId = campaignId;
+}
+
+export function getCurrentCampaignId(): string | null {
+  return _currentCampaignId;
+}
 
 /**
  * AI Service v2.7.0 - FULL GEMINI MIGRATION
@@ -705,22 +718,45 @@ class AIService {
    * campaigns are processed in parallel and each creates its own client.
    */
   private getAnthropic(apiKey?: string): Anthropic {
-    // 🚨 ANTHROPIC CALL TRACER - v2.7.4 🚨
+    // 🚨 ANTHROPIC CALL TRACER - v2.7.5 🚨
     // This should NEVER be called in cron context if Gemini migration is complete
-    const stackTrace = new Error().stack;
-    console.log(`\n${'🚨'.repeat(40)}`);
-    console.log(`🚨🚨🚨 ANTHROPIC CLIENT REQUESTED - VERSION: ${AI_SERVICE_VERSION} 🚨🚨🚨`);
-    console.log(`🚨🚨🚨 This call should NOT happen in cron context! 🚨🚨🚨`);
-    console.log(`🚨🚨🚨 Timestamp: ${new Date().toISOString()} 🚨🚨🚨`);
-    console.log(`🚨🚨🚨 Stack trace:\n${stackTrace} 🚨🚨🚨`);
-    console.log(`${'🚨'.repeat(40)}\n`);
+    const stackTrace = new Error().stack || 'No stack trace available';
+    const timestamp = new Date().toISOString();
+
+    // Extract the calling function from stack trace
+    const stackLines = stackTrace.split('\n');
+    const callerLine = stackLines[2] || 'Unknown caller'; // [0]=Error, [1]=getAnthropic, [2]=actual caller
+
+    // Console log for Vercel logs
+    console.log(`\n🚨🚨🚨 ANTHROPIC CALLED - ${AI_SERVICE_VERSION} 🚨🚨🚨`);
+    console.log(`🚨 Caller: ${callerLine.trim()}`);
+    console.log(`🚨 Campaign: ${_currentCampaignId || 'UNKNOWN'}`);
+    console.log(`🚨 Time: ${timestamp}`);
+
+    // Write to database audit log if we have a campaign ID
+    if (_currentCampaignId) {
+      // Fire and forget - don't await to avoid blocking
+      campaignAudit.log(_currentCampaignId, {
+        event: 'ANTHROPIC_CALL_DETECTED',
+        source: 'ai.service.getAnthropic',
+        message: `🚨 ANTHROPIC API CALLED (should use Gemini!) - Caller: ${callerLine.trim()}`,
+        isError: true,
+        errorCode: 'ANTHROPIC_CALL_IN_CRON',
+        details: {
+          version: AI_SERVICE_VERSION,
+          caller: callerLine.trim(),
+          fullStackTrace: stackTrace.substring(0, 2000), // Limit to 2000 chars
+          timestamp,
+        },
+      }).catch(err => console.error('Failed to log Anthropic call to DB:', err));
+    }
 
     // Log debug info (doesn't expose full key)
     const debugInfo = getApiKeyDebugInfo();
-    console.log('[AIService.anthropic getter] Using singleton client:', {
+    console.log('[AIService.anthropic getter] Client info:', {
       ...debugInfo,
       isExplicitKey: !!apiKey,
-      timestamp: new Date().toISOString(),
+      campaignId: _currentCampaignId,
     });
 
     return getAnthropicClient(apiKey);

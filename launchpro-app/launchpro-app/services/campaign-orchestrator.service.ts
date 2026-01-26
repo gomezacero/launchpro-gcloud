@@ -5,7 +5,7 @@ import { env } from '@/lib/env';
 import { tonicService } from './tonic.service';
 import { metaService } from './meta.service';
 import { tiktokService } from './tiktok.service';
-import { aiService } from './ai.service';
+import { aiService, setCurrentCampaignId } from './ai.service';
 import { campaignAudit } from './campaign-audit.service';
 import { getNeuralEngineOrchestrator } from './neural-engine';
 import type { NeuralEngineInput, CreativePackage } from './neural-engine/types';
@@ -4301,20 +4301,24 @@ class CampaignOrchestratorService {
    */
   async continueCampaignAfterArticle(campaignId: string): Promise<LaunchResult> {
     // VERSION MARKER - Critical for debugging which code is running
-    // v2.7.4: Added Anthropic call tracing - any Anthropic calls will show stack trace in logs
-    const ORCHESTRATOR_VERSION = 'v2.7.4-ANTHROPIC-TRACE';
+    // v2.7.5: Anthropic calls now logged to DATABASE for full visibility
+    const ORCHESTRATOR_VERSION = 'v2.7.5-DB-TRACE';
+
+    // Set the current campaign ID so any Anthropic calls get logged to this campaign's audit trail
+    setCurrentCampaignId(campaignId);
+
     console.log(`\n\n🔍🔍🔍 [continueCampaignAfterArticle] VERSION: ${ORCHESTRATOR_VERSION} 🔍🔍🔍`);
-    console.log(`🔍🔍🔍 v2.7.4: Anthropic call tracing enabled - watch for 🚨 in logs 🔍🔍🔍\n\n`);
+    console.log(`🔍🔍🔍 v2.7.5: Anthropic calls logged to DB audit trail 🔍🔍🔍\n\n`);
 
     logger.info('system', `🔄 [Orchestrator] ENTERED continueCampaignAfterArticle for ${campaignId} - VERSION: ${ORCHESTRATOR_VERSION}`);
-    logger.info('system', `🔍 [Orchestrator] v2.7.4: If you see 🚨🚨🚨 in logs, Anthropic is being called`);
+    logger.info('system', `🔍 [Orchestrator] v2.7.5: Any Anthropic calls will appear in campaign audit logs`);
 
     // Log to DB for visibility
     await campaignAudit.log(campaignId, {
       event: 'CRON_PROCESS',
       source: 'campaign-orchestrator.continueCampaignAfterArticle',
-      message: `🚀 STARTED processing - VERSION: ${ORCHESTRATOR_VERSION} - Anthropic call tracing enabled`,
-      details: { version: ORCHESTRATOR_VERSION, aiProvider: 'GEMINI_EXPECTED', anthropicTracing: true },
+      message: `🚀 STARTED processing - VERSION: ${ORCHESTRATOR_VERSION} - Anthropic calls logged to DB`,
+      details: { version: ORCHESTRATOR_VERSION, aiProvider: 'GEMINI_EXPECTED', dbTracing: true },
     });
 
     // Get campaign with all related data

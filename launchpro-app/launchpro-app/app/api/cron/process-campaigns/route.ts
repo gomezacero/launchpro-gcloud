@@ -8,14 +8,14 @@ import { CampaignStatus, Prisma, Campaign, CampaignPlatform, Offer, Account } fr
 
 // DEPLOYMENT VERSION - Used to verify which code version is running
 // This helps identify if old Vercel instances are executing stale code
-// v2.7.4: Added Anthropic call tracing to identify the source of 401 errors
-const CODE_VERSION = 'v2.7.4-ANTHROPIC-TRACE-2026-01-26';
+// v2.7.5: Anthropic calls now logged to DATABASE for full visibility
+const CODE_VERSION = 'v2.7.5-DB-TRACE-2026-01-26';
 
 // MODULE LOAD LOG - This executes when the module is imported
 console.log(`\n\n${'='.repeat(80)}`);
 console.log(`🔍🔍🔍 CRON MODULE LOADED - VERSION: ${CODE_VERSION} 🔍🔍🔍`);
-console.log(`🔍🔍🔍 This version has ANTHROPIC CALL TRACING enabled! 🔍🔍🔍`);
-console.log(`🔍🔍🔍 Any Anthropic calls will show a stack trace in logs 🔍🔍🔍`);
+console.log(`🔍🔍🔍 Anthropic calls logged to campaign audit trail in DB 🔍🔍🔍`);
+console.log(`🔍🔍🔍 Check /api/campaigns/{id}/audit-logs for details 🔍🔍🔍`);
 console.log(`${'='.repeat(80)}\n\n`);
 
 /**
