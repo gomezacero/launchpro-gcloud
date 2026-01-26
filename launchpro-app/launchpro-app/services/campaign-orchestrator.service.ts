@@ -567,6 +567,7 @@ class CampaignOrchestratorService {
             keywords: params.keywords || [],
             country: params.country,
             language: params.language,
+            apiKey: process.env.ANTHROPIC_API_KEY,
           });
           articleHeadline = articleContent.headline;
         } else {
@@ -578,6 +579,7 @@ class CampaignOrchestratorService {
             keywords: params.keywords || [],
             country: params.country,
             language: params.language,
+            apiKey: process.env.ANTHROPIC_API_KEY,
           });
           finalContentPhrases = articleContent.contentGenerationPhrases;
           articleHeadline = articleContent.headline;
@@ -817,6 +819,7 @@ class CampaignOrchestratorService {
           vertical: offer.vertical,
           country: params.country,
           language: params.language,
+          apiKey: process.env.ANTHROPIC_API_KEY,
         });
 
         await prisma.campaign.update({
@@ -837,6 +840,7 @@ class CampaignOrchestratorService {
           copyMaster: aiContentResult.copyMaster,
           count: 6,
           country: params.country,
+          apiKey: process.env.ANTHROPIC_API_KEY,
         });
 
         await prisma.campaign.update({
@@ -921,6 +925,7 @@ class CampaignOrchestratorService {
           adFormat: effectiveMediaType === 'VIDEO' ? 'VIDEO' : 'IMAGE',
           country: params.country,
           language: params.language,
+          apiKey: process.env.ANTHROPIC_API_KEY,
         });
 
         // ============================================
@@ -984,6 +989,7 @@ class CampaignOrchestratorService {
             copyMaster: aiContentResult.copyMaster, // Used for video text overlay
             offerName: offer.name, // Pass offer name for better vertical classification
             vertical: offer.vertical, // Pass vertical from Tonic for accurate template selection
+            apiKey: process.env.ANTHROPIC_API_KEY,
           });
         }
 
@@ -4024,6 +4030,7 @@ class CampaignOrchestratorService {
           vertical: offer.vertical,
           country: params.country,
           language: params.language,
+          apiKey: process.env.ANTHROPIC_API_KEY,
         });
 
         // Save copyMaster to campaign
@@ -4094,6 +4101,7 @@ class CampaignOrchestratorService {
           keywords: params.keywords || [],
           country: params.country,
           language: params.language,
+          apiKey: process.env.ANTHROPIC_API_KEY,
         });
         contentPhrases = articleContent.contentGenerationPhrases;
         headline = articleContent.headline;
@@ -4105,6 +4113,7 @@ class CampaignOrchestratorService {
           keywords: params.keywords || [],
           country: params.country,
           language: params.language,
+          apiKey: process.env.ANTHROPIC_API_KEY,
         });
         headline = articleContent.headline;
       }
@@ -4898,6 +4907,7 @@ class CampaignOrchestratorService {
           keywords: campaign.keywords || [],
           country: campaign.country,
           language: campaign.language,
+          apiKey: process.env.ANTHROPIC_API_KEY,
         });
         contentPhrases = articleContent.contentGenerationPhrases;
         headline = articleContent.headline;
@@ -4909,6 +4919,7 @@ class CampaignOrchestratorService {
           keywords: campaign.keywords || [],
           country: campaign.country,
           language: campaign.language,
+          apiKey: process.env.ANTHROPIC_API_KEY,
         });
         headline = articleContent.headline;
       }
