@@ -8,7 +8,15 @@ import { CampaignStatus, Prisma, Campaign, CampaignPlatform, Offer, Account } fr
 
 // DEPLOYMENT VERSION - Used to verify which code version is running
 // This helps identify if old Vercel instances are executing stale code
-const CODE_VERSION = 'v2.7.2-CRON-AUDIT-2026-01-26';
+// FORCED REDEPLOY - If you see this comment in Vercel, the deploy worked
+const CODE_VERSION = 'v2.7.3-FORCED-REDEPLOY-2026-01-26';
+
+// MODULE LOAD LOG - This executes when the module is imported
+console.log(`\n\n${'='.repeat(80)}`);
+console.log(`🚨🚨🚨 CRON MODULE LOADED - VERSION: ${CODE_VERSION} 🚨🚨🚨`);
+console.log(`🚨🚨🚨 If you see this, the NEW CODE is running! 🚨🚨🚨`);
+console.log(`🚨🚨🚨 This version uses GEMINI, NOT Anthropic! 🚨🚨🚨`);
+console.log(`${'='.repeat(80)}\n\n`);
 
 /**
  * Cron Job: Process Approved Campaigns (PARALLEL PROCESSING)
