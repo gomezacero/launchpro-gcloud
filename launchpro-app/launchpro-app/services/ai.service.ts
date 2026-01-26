@@ -9,8 +9,9 @@ import { getStorage } from '@/lib/gcs';
 import { getAnthropicClient, getApiKeyDebugInfo } from '@/lib/anthropic-client';
 
 // VERSION MARKER - Used to verify which code version is deployed
-const AI_SERVICE_VERSION = 'v2.7.1-AUDIT-LOGGING-2026-01-26';
+const AI_SERVICE_VERSION = 'v2.7.4-ANTHROPIC-TRACE-2026-01-26';
 console.log(`[AIService] Module loaded - VERSION: ${AI_SERVICE_VERSION}`);
+console.log(`[AIService] 🚨🚨🚨 THIS VERSION HAS ANTHROPIC CALL TRACING 🚨🚨🚨`);
 
 /**
  * AI Service v2.7.0 - FULL GEMINI MIGRATION
@@ -704,6 +705,16 @@ class AIService {
    * campaigns are processed in parallel and each creates its own client.
    */
   private getAnthropic(apiKey?: string): Anthropic {
+    // 🚨 ANTHROPIC CALL TRACER - v2.7.4 🚨
+    // This should NEVER be called in cron context if Gemini migration is complete
+    const stackTrace = new Error().stack;
+    console.log(`\n${'🚨'.repeat(40)}`);
+    console.log(`🚨🚨🚨 ANTHROPIC CLIENT REQUESTED - VERSION: ${AI_SERVICE_VERSION} 🚨🚨🚨`);
+    console.log(`🚨🚨🚨 This call should NOT happen in cron context! 🚨🚨🚨`);
+    console.log(`🚨🚨🚨 Timestamp: ${new Date().toISOString()} 🚨🚨🚨`);
+    console.log(`🚨🚨🚨 Stack trace:\n${stackTrace} 🚨🚨🚨`);
+    console.log(`${'🚨'.repeat(40)}\n`);
+
     // Log debug info (doesn't expose full key)
     const debugInfo = getApiKeyDebugInfo();
     console.log('[AIService.anthropic getter] Using singleton client:', {

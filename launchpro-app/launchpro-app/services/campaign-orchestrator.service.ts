@@ -4301,19 +4301,20 @@ class CampaignOrchestratorService {
    */
   async continueCampaignAfterArticle(campaignId: string): Promise<LaunchResult> {
     // VERSION MARKER - Critical for debugging which code is running
-    const ORCHESTRATOR_VERSION = 'v2.7.1-AUDIT-LOGGING';
-    console.log(`\n\n🚀🚀🚀 [continueCampaignAfterArticle] VERSION: ${ORCHESTRATOR_VERSION} 🚀🚀🚀`);
-    console.log(`🚀🚀🚀 v2.7.1: ALL AI calls use GEMINI + Audit logging to DB 🚀🚀🚀\n\n`);
+    // v2.7.4: Added Anthropic call tracing - any Anthropic calls will show stack trace in logs
+    const ORCHESTRATOR_VERSION = 'v2.7.4-ANTHROPIC-TRACE';
+    console.log(`\n\n🔍🔍🔍 [continueCampaignAfterArticle] VERSION: ${ORCHESTRATOR_VERSION} 🔍🔍🔍`);
+    console.log(`🔍🔍🔍 v2.7.4: Anthropic call tracing enabled - watch for 🚨 in logs 🔍🔍🔍\n\n`);
 
     logger.info('system', `🔄 [Orchestrator] ENTERED continueCampaignAfterArticle for ${campaignId} - VERSION: ${ORCHESTRATOR_VERSION}`);
-    logger.info('system', `🔑 [Orchestrator] v2.7.1: ALL AI generation uses GEMINI - Anthropic completely removed from flow`);
+    logger.info('system', `🔍 [Orchestrator] v2.7.4: If you see 🚨🚨🚨 in logs, Anthropic is being called`);
 
     // Log to DB for visibility
     await campaignAudit.log(campaignId, {
       event: 'CRON_PROCESS',
       source: 'campaign-orchestrator.continueCampaignAfterArticle',
-      message: `🚀 STARTED processing - VERSION: ${ORCHESTRATOR_VERSION} - Using GEMINI for all AI`,
-      details: { version: ORCHESTRATOR_VERSION, aiProvider: 'GEMINI', anthropicRemoved: true },
+      message: `🚀 STARTED processing - VERSION: ${ORCHESTRATOR_VERSION} - Anthropic call tracing enabled`,
+      details: { version: ORCHESTRATOR_VERSION, aiProvider: 'GEMINI_EXPECTED', anthropicTracing: true },
     });
 
     // Get campaign with all related data
