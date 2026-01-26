@@ -4021,16 +4021,16 @@ class CampaignOrchestratorService {
       logger.info('ai', '🔑 Pre-generating keywords in HTTP context (to avoid cron 401 issues)...');
 
       // Generate copyMaster first if not provided (needed for keywords)
+      // v2.7.0: Uses Gemini instead of Anthropic to avoid stale connection 401 errors
       let copyMasterForKeywords = params.copyMaster;
       if (!copyMasterForKeywords) {
-        logger.info('ai', 'Generating Copy Master for keywords...');
-        copyMasterForKeywords = await aiService.generateCopyMaster({
+        logger.info('ai', '🤖 Generating Copy Master with Gemini for keywords...');
+        copyMasterForKeywords = await aiService.generateCopyMasterWithGemini({
           offerName: offer.name,
           offerDescription: offer.description || undefined,
           vertical: offer.vertical,
           country: params.country,
           language: params.language,
-          apiKey: process.env.ANTHROPIC_API_KEY,
         });
 
         // Save copyMaster to campaign
@@ -4038,16 +4038,16 @@ class CampaignOrchestratorService {
           where: { id: campaign.id },
           data: { copyMaster: copyMasterForKeywords },
         });
-        logger.success('ai', 'Copy Master generated and saved');
+        logger.success('ai', '✅ Copy Master generated with Gemini and saved');
       }
 
       // Generate keywords
-      generatedKeywords = await aiService.generateKeywords({
+      // v2.7.0: Uses Gemini instead of Anthropic to avoid stale connection 401 errors
+      generatedKeywords = await aiService.generateKeywordsWithGemini({
         offerName: offer.name,
         copyMaster: copyMasterForKeywords,
         count: 10,
         country: params.country,
-        apiKey: process.env.ANTHROPIC_API_KEY,
       });
 
       // Save keywords to campaign
@@ -4083,19 +4083,19 @@ class CampaignOrchestratorService {
       const effectiveMediaType = platform.platform === 'TIKTOK' ? 'VIDEO' : mediaType;
 
       try {
-        logger.info('ai', `📝 Pre-generating Ad Copy for ${platform.platform}...`);
-        const adCopy = await aiService.generateAdCopy({
+        // v2.7.0: Uses Gemini instead of Anthropic to avoid stale connection 401 errors
+        logger.info('ai', `🤖 Pre-generating Ad Copy for ${platform.platform} with Gemini...`);
+        const adCopy = await aiService.generateAdCopyWithGemini({
           offerName: offer.name,
           copyMaster: copyMasterForAdCopy,
           platform: platform.platform as 'META' | 'TIKTOK',
           adFormat: effectiveMediaType === 'VIDEO' ? 'VIDEO' : 'IMAGE',
           country: params.country,
           language: params.language,
-          apiKey: process.env.ANTHROPIC_API_KEY,
         });
 
         preGeneratedAdCopy[platform.platform] = adCopy;
-        logger.success('ai', `✅ Pre-generated Ad Copy for ${platform.platform}`);
+        logger.success('ai', `✅ Pre-generated Ad Copy for ${platform.platform} with Gemini`);
       } catch (adCopyError: any) {
         logger.warn('ai', `⚠️ Failed to pre-generate Ad Copy for ${platform.platform}: ${adCopyError.message}`);
         // Continue with other platforms - fallback will generate in cron context
@@ -4149,25 +4149,25 @@ class CampaignOrchestratorService {
 
       if (contentPhrases.length === 0) {
         // Generate article content with AI (includes headline and phrases)
-        const articleContent = await aiService.generateArticle({
+        // v2.7.0: Uses Gemini instead of Anthropic to avoid stale connection 401 errors
+        const articleContent = await aiService.generateArticleWithGemini({
           offerName: offer.name,
           copyMaster: params.copyMaster || `Discover the best deals on ${offer.name}`,
           keywords: params.keywords || [],
           country: params.country,
           language: params.language,
-          apiKey: process.env.ANTHROPIC_API_KEY,
         });
         contentPhrases = articleContent.contentGenerationPhrases;
         headline = articleContent.headline;
       } else {
         // Manual phrases provided, just generate headline
-        const articleContent = await aiService.generateArticle({
+        // v2.7.0: Uses Gemini instead of Anthropic to avoid stale connection 401 errors
+        const articleContent = await aiService.generateArticleWithGemini({
           offerName: offer.name,
           copyMaster: params.copyMaster || `Discover the best deals on ${offer.name}`,
           keywords: params.keywords || [],
           country: params.country,
           language: params.language,
-          apiKey: process.env.ANTHROPIC_API_KEY,
         });
         headline = articleContent.headline;
       }
@@ -4246,12 +4246,12 @@ class CampaignOrchestratorService {
    */
   async continueCampaignAfterArticle(campaignId: string): Promise<LaunchResult> {
     // VERSION MARKER - Critical for debugging which code is running
-    const ORCHESTRATOR_VERSION = 'v2.6.1-GEMINI-MIGRATION';
+    const ORCHESTRATOR_VERSION = 'v2.7.0-FULL-GEMINI-MIGRATION';
     console.log(`\n\n🚀🚀🚀 [continueCampaignAfterArticle] VERSION: ${ORCHESTRATOR_VERSION} 🚀🚀🚀`);
-    console.log(`🚀🚀🚀 This version uses GEMINI for AI generation, NOT Anthropic 🚀🚀🚀\n\n`);
+    console.log(`🚀🚀🚀 v2.7.0: ALL AI calls use GEMINI - No Anthropic calls anywhere 🚀🚀🚀\n\n`);
 
     logger.info('system', `🔄 [Orchestrator] ENTERED continueCampaignAfterArticle for ${campaignId} - VERSION: ${ORCHESTRATOR_VERSION}`);
-    logger.info('system', `🔑 [Orchestrator] Note: This version uses GEMINI for AI, Anthropic key is only for HTTP context`);
+    logger.info('system', `🔑 [Orchestrator] v2.7.0: ALL AI generation uses GEMINI - Anthropic completely removed from flow`);
 
     // Get campaign with all related data
     const campaign = await prisma.campaign.findUnique({

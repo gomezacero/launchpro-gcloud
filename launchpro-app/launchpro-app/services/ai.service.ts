@@ -9,21 +9,22 @@ import { getStorage } from '@/lib/gcs';
 import { getAnthropicClient, getApiKeyDebugInfo } from '@/lib/anthropic-client';
 
 // VERSION MARKER - Used to verify which code version is deployed
-const AI_SERVICE_VERSION = 'v2.6.1-gemini-migration-2026-01-26';
+const AI_SERVICE_VERSION = 'v2.7.0-FULL-GEMINI-MIGRATION-2026-01-26';
 console.log(`[AIService] Module loaded - VERSION: ${AI_SERVICE_VERSION}`);
 
 /**
- * AI Service v2.6.1 - GEMINI MIGRATION
+ * AI Service v2.7.0 - FULL GEMINI MIGRATION
  *
- * Cron context uses GEMINI to avoid Anthropic 401 stale connection issues:
+ * ALL AI generation now uses GEMINI to avoid Anthropic 401 stale connection issues.
+ * Gemini functions (used everywhere):
  * - generateCopyMasterWithGemini
  * - generateKeywordsWithGemini
  * - generateAdCopyWithGemini
  * - generateArticleWithGemini
  * - generateTargetingSuggestionsWithGemini
  *
- * HTTP context still uses Anthropic (works fine):
- * - generateCopyMaster, generateKeywords, generateAdCopy, generateArticle
+ * Anthropic functions are DEPRECATED and should NOT be called anymore.
+ * They remain in code for reference but the orchestrator uses Gemini exclusively.
  */
 
 // Initialize clients
