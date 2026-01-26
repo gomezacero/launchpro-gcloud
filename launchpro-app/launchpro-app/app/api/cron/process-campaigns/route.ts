@@ -8,7 +8,7 @@ import { CampaignStatus, Prisma, Campaign, CampaignPlatform, Offer, Account } fr
 
 // DEPLOYMENT VERSION - Used to verify which code version is running
 // This helps identify if old Vercel instances are executing stale code
-const CODE_VERSION = 'v2.8.0-http-launch-fix-401-2026-01-26';
+const CODE_VERSION = 'v2.8.1-hardcoded-prod-url-2026-01-26';
 
 /**
  * Cron Job: Process Approved Campaigns (PARALLEL PROCESSING)
@@ -354,23 +354,32 @@ async function processSingleCampaign(
     console.log(`[processSingleCampaign] Timestamp: ${new Date().toISOString()}`);
     logger.info('system', `🚀 [CRON] LAUNCHING "${campaign.name}" via HTTP endpoint (${CODE_VERSION})`);
 
-    // Determine the base URL for the HTTP call
-    const baseUrl = process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
-      : process.env.NEXTAUTH_URL || 'https://launchproquick.vercel.app';
-
+    // ALWAYS use the production URL - VERCEL_URL points to preview deployments which may have old code
+    const baseUrl = 'https://launchproquick.vercel.app';
     const launchUrl = `${baseUrl}/api/campaigns/${campaign.id}/launch`;
+
     console.log(`[processSingleCampaign] Launch URL: ${launchUrl}`);
+    console.log(`[processSingleCampaign] VERCEL_URL was: ${process.env.VERCEL_URL || 'undefined'}`);
     logger.info('system', `🌐 [CRON] Calling launch endpoint: ${launchUrl}`);
 
-    const httpResponse = await fetch(launchUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
+    let httpResponse;
+    let result;
 
-    const result = await httpResponse.json();
+    try {
+      httpResponse = await fetch(launchUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      result = await httpResponse.json();
+    } catch (fetchError: any) {
+      console.log(`\n[processSingleCampaign] ❌ FETCH FAILED`);
+      console.log(`[processSingleCampaign] Fetch Error: ${fetchError.message}`);
+      logger.error('system', `❌ [CRON] Fetch failed: ${fetchError.message}`);
+      throw new Error(`Fetch failed: ${fetchError.message}`);
+    }
 
     if (!httpResponse.ok) {
       console.log(`\n[processSingleCampaign] ❌ HTTP launch FAILED`);
