@@ -97,7 +97,7 @@ export async function GET(request: NextRequest) {
     const campaignsWithErrors = await prisma.campaign.findMany({
       where: {
         createdById: user!.id,
-        errorDetails: { not: null },
+        errorDetails: { not: Prisma.DbNull },
       },
       select: {
         id: true,
