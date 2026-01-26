@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/auth-utils';
-import { CampaignStatus } from '@prisma/client';
+import { CampaignStatus, Prisma } from '@prisma/client';
 
 /**
  * POST /api/campaigns/clear-errors
@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
     const result = await prisma.campaign.updateMany({
       where: whereClause,
       data: {
-        errorDetails: null,
+        errorDetails: Prisma.DbNull,
         status: resetStatus as CampaignStatus,
       },
     });
