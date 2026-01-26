@@ -8,7 +8,7 @@ import { CampaignStatus, Prisma, Campaign, CampaignPlatform, Offer, Account } fr
 
 // DEPLOYMENT VERSION - Used to verify which code version is running
 // This helps identify if old Vercel instances are executing stale code
-const CODE_VERSION = 'v2.5.0-restore-quick-flow-2026-01-25';
+const CODE_VERSION = 'v2.6.0-force-fresh-deploy-2026-01-26';
 
 /**
  * Cron Job: Process Approved Campaigns (PARALLEL PROCESSING)
@@ -348,9 +348,11 @@ async function processSingleCampaign(
     // PROCESS THE CAMPAIGN
     // ============================================
     console.log(`\n[processSingleCampaign] 🚀 ABOUT TO CALL continueCampaignAfterArticle...`);
+    console.log(`[processSingleCampaign] CODE_VERSION: ${CODE_VERSION}`);
     console.log(`[processSingleCampaign] Campaign ID: ${campaign.id}`);
     console.log(`[processSingleCampaign] Timestamp: ${new Date().toISOString()}`);
-    logger.info('system', `🚀 [CRON] CALLING continueCampaignAfterArticle for "${campaign.name}" NOW...`);
+    console.log(`[processSingleCampaign] API Key Preview: ${apiKey.substring(0, 20)}...${apiKey.substring(apiKey.length - 6)}`);
+    logger.info('system', `🚀 [CRON] CALLING continueCampaignAfterArticle for "${campaign.name}" NOW... (${CODE_VERSION})`);
 
     const result = await campaignOrchestrator.continueCampaignAfterArticle(campaign.id);
 
