@@ -5,7 +5,7 @@ import { env } from '@/lib/env';
 import { tonicService } from './tonic.service';
 import { metaService } from './meta.service';
 import { tiktokService } from './tiktok.service';
-import { aiService, setCurrentCampaignId } from './ai.service';
+import { aiService } from './ai.service';
 import { campaignAudit } from './campaign-audit.service';
 import { getNeuralEngineOrchestrator } from './neural-engine';
 import type { NeuralEngineInput, CreativePackage } from './neural-engine/types';
@@ -1699,12 +1699,12 @@ class CampaignOrchestratorService {
       await campaignAudit.log(campaign.id, {
         event: 'AI_CALL',
         source: 'launchToMeta.generateAdCopy',
-        message: `📤 CALLING aiService.generateAdCopyWithGemini (NOT Anthropic!)`,
-        details: { function: 'generateAdCopyWithGemini', provider: 'GEMINI', platform: 'META' },
+        message: `📤 CALLING aiService.generateAdCopy (NOT Anthropic!)`,
+        details: { function: 'generateAdCopy', provider: 'GEMINI', platform: 'META' },
       });
       const adCopyStartTime = Date.now();
       try {
-        adCopy = await aiService.generateAdCopyWithGemini({
+        adCopy = await aiService.generateAdCopy({
           offerName: campaign.offer.name,
           copyMaster: aiContent.copyMaster,
           platform: 'META',
@@ -1715,19 +1715,19 @@ class CampaignOrchestratorService {
         await campaignAudit.log(campaign.id, {
           event: 'AI_CALL',
           source: 'launchToMeta.generateAdCopy',
-          message: `✅ SUCCESS generateAdCopyWithGemini`,
+          message: `✅ SUCCESS generateAdCopy`,
           durationMs: Date.now() - adCopyStartTime,
-          details: { function: 'generateAdCopyWithGemini', provider: 'GEMINI', success: true },
+          details: { function: 'generateAdCopy', provider: 'GEMINI', success: true },
         });
       } catch (adCopyError: any) {
         await campaignAudit.log(campaign.id, {
           event: 'AI_CALL',
           source: 'launchToMeta.generateAdCopy',
-          message: `❌ FAILED generateAdCopyWithGemini: ${adCopyError.message}`,
+          message: `❌ FAILED generateAdCopy: ${adCopyError.message}`,
           isError: true,
           errorCode: adCopyError.status || 'UNKNOWN',
           durationMs: Date.now() - adCopyStartTime,
-          details: { function: 'generateAdCopyWithGemini', provider: 'GEMINI', error: adCopyError.message },
+          details: { function: 'generateAdCopy', provider: 'GEMINI', error: adCopyError.message },
         });
         throw adCopyError;
       }
@@ -1803,13 +1803,13 @@ class CampaignOrchestratorService {
     await campaignAudit.log(campaign.id, {
       event: 'AI_CALL',
       source: 'launchToMeta.generateTargeting',
-      message: `📤 CALLING aiService.generateTargetingSuggestionsWithGemini (NOT Anthropic!)`,
-      details: { function: 'generateTargetingSuggestionsWithGemini', provider: 'GEMINI', platform: 'META' },
+      message: `📤 CALLING aiService.generateTargetingSuggestions (NOT Anthropic!)`,
+      details: { function: 'generateTargetingSuggestions', provider: 'GEMINI', platform: 'META' },
     });
     const targetingStartTime = Date.now();
     let targetingSuggestions;
     try {
-      targetingSuggestions = await aiService.generateTargetingSuggestionsWithGemini({
+      targetingSuggestions = await aiService.generateTargetingSuggestions({
         offerName: campaign.offer.name,
         copyMaster: aiContent.copyMaster,
         platform: 'META',
@@ -1817,19 +1817,19 @@ class CampaignOrchestratorService {
       await campaignAudit.log(campaign.id, {
         event: 'AI_CALL',
         source: 'launchToMeta.generateTargeting',
-        message: `✅ SUCCESS generateTargetingSuggestionsWithGemini`,
+        message: `✅ SUCCESS generateTargetingSuggestions`,
         durationMs: Date.now() - targetingStartTime,
-        details: { function: 'generateTargetingSuggestionsWithGemini', provider: 'GEMINI', success: true },
+        details: { function: 'generateTargetingSuggestions', provider: 'GEMINI', success: true },
       });
     } catch (targetingError: any) {
       await campaignAudit.log(campaign.id, {
         event: 'AI_CALL',
         source: 'launchToMeta.generateTargeting',
-        message: `❌ FAILED generateTargetingSuggestionsWithGemini: ${targetingError.message}`,
+        message: `❌ FAILED generateTargetingSuggestions: ${targetingError.message}`,
         isError: true,
         errorCode: targetingError.status || 'UNKNOWN',
         durationMs: Date.now() - targetingStartTime,
-        details: { function: 'generateTargetingSuggestionsWithGemini', provider: 'GEMINI', error: targetingError.message },
+        details: { function: 'generateTargetingSuggestions', provider: 'GEMINI', error: targetingError.message },
       });
       throw targetingError;
     }
@@ -2752,7 +2752,7 @@ class CampaignOrchestratorService {
 
     // Generate ad copy specific to TikTok
     // v2.6.0: Uses Gemini instead of Anthropic to avoid stale connection 401 errors
-    const adCopy = await aiService.generateAdCopyWithGemini({
+    const adCopy = await aiService.generateAdCopy({
       offerName: campaign.offer.name,
       copyMaster: aiContent.copyMaster,
       platform: 'TIKTOK',
@@ -2836,7 +2836,7 @@ class CampaignOrchestratorService {
     // Generate targeting suggestions from AI
     // v2.6.0: Uses Gemini instead of Anthropic to avoid stale connection 401 errors
     logger.info('tiktok', 'Generating AI targeting suggestions with Gemini...');
-    const targetingSuggestions = await aiService.generateTargetingSuggestionsWithGemini({
+    const targetingSuggestions = await aiService.generateTargetingSuggestions({
       offerName: campaign.offer.name,
       copyMaster: aiContent.copyMaster,
       platform: 'TIKTOK',
@@ -4080,7 +4080,7 @@ class CampaignOrchestratorService {
       let copyMasterForKeywords = params.copyMaster;
       if (!copyMasterForKeywords) {
         logger.info('ai', '🤖 Generating Copy Master with Gemini for keywords...');
-        copyMasterForKeywords = await aiService.generateCopyMasterWithGemini({
+        copyMasterForKeywords = await aiService.generateCopyMaster({
           offerName: offer.name,
           offerDescription: offer.description || undefined,
           vertical: offer.vertical,
@@ -4098,7 +4098,7 @@ class CampaignOrchestratorService {
 
       // Generate keywords
       // v2.7.0: Uses Gemini instead of Anthropic to avoid stale connection 401 errors
-      generatedKeywords = await aiService.generateKeywordsWithGemini({
+      generatedKeywords = await aiService.generateKeywords({
         offerName: offer.name,
         copyMaster: copyMasterForKeywords,
         count: 10,
@@ -4140,7 +4140,7 @@ class CampaignOrchestratorService {
       try {
         // v2.7.0: Uses Gemini instead of Anthropic to avoid stale connection 401 errors
         logger.info('ai', `🤖 Pre-generating Ad Copy for ${platform.platform} with Gemini...`);
-        const adCopy = await aiService.generateAdCopyWithGemini({
+        const adCopy = await aiService.generateAdCopy({
           offerName: offer.name,
           copyMaster: copyMasterForAdCopy,
           platform: platform.platform as 'META' | 'TIKTOK',
@@ -4205,7 +4205,7 @@ class CampaignOrchestratorService {
       if (contentPhrases.length === 0) {
         // Generate article content with AI (includes headline and phrases)
         // v2.7.0: Uses Gemini instead of Anthropic to avoid stale connection 401 errors
-        const articleContent = await aiService.generateArticleWithGemini({
+        const articleContent = await aiService.generateArticle({
           offerName: offer.name,
           copyMaster: params.copyMaster || `Discover the best deals on ${offer.name}`,
           keywords: params.keywords || [],
@@ -4217,7 +4217,7 @@ class CampaignOrchestratorService {
       } else {
         // Manual phrases provided, just generate headline
         // v2.7.0: Uses Gemini instead of Anthropic to avoid stale connection 401 errors
-        const articleContent = await aiService.generateArticleWithGemini({
+        const articleContent = await aiService.generateArticle({
           offerName: offer.name,
           copyMaster: params.copyMaster || `Discover the best deals on ${offer.name}`,
           keywords: params.keywords || [],
@@ -4301,17 +4301,14 @@ class CampaignOrchestratorService {
    */
   async continueCampaignAfterArticle(campaignId: string): Promise<LaunchResult> {
     // VERSION MARKER - Critical for debugging which code is running
-    // v2.7.5: Anthropic calls now logged to DATABASE for full visibility
-    const ORCHESTRATOR_VERSION = 'v2.7.5-DB-TRACE';
-
-    // Set the current campaign ID so any Anthropic calls get logged to this campaign's audit trail
-    setCurrentCampaignId(campaignId);
+    // v2.8.0: All AI uses Gemini exclusively - no more Anthropic
+    const ORCHESTRATOR_VERSION = 'v2.8.0-GEMINI-ONLY';
 
     console.log(`\n\n🔍🔍🔍 [continueCampaignAfterArticle] VERSION: ${ORCHESTRATOR_VERSION} 🔍🔍🔍`);
-    console.log(`🔍🔍🔍 v2.7.5: Anthropic calls logged to DB audit trail 🔍🔍🔍\n\n`);
+    console.log(`🔍🔍🔍 v2.8.0: All AI generation uses GEMINI 🔍🔍🔍\n\n`);
 
     logger.info('system', `🔄 [Orchestrator] ENTERED continueCampaignAfterArticle for ${campaignId} - VERSION: ${ORCHESTRATOR_VERSION}`);
-    logger.info('system', `🔍 [Orchestrator] v2.7.5: Any Anthropic calls will appear in campaign audit logs`);
+    logger.info('system', `🔍 [Orchestrator] v2.8.0: Using Gemini for all AI generation`);
 
     // Log to DB for visibility
     await campaignAudit.log(campaignId, {
@@ -4580,16 +4577,16 @@ class CampaignOrchestratorService {
     // Generate Copy Master if not set
     // v2.7.1: Uses Gemini instead of Anthropic to avoid stale connection 401 errors in cron context
     if (!campaign.copyMaster) {
-      logger.info('system', `🤖 [AI] ABOUT TO CALL Gemini generateCopyMasterWithGemini for "${campaign.name}" (${campaignId})`);
+      logger.info('system', `🤖 [AI] ABOUT TO CALL Gemini generateCopyMaster for "${campaign.name}" (${campaignId})`);
       await campaignAudit.log(campaignId, {
         event: 'AI_CALL',
         source: 'continueCampaignAfterArticle.generateCopyMaster',
-        message: `📤 CALLING aiService.generateCopyMasterWithGemini (NOT Anthropic!)`,
-        details: { function: 'generateCopyMasterWithGemini', provider: 'GEMINI', offerName: campaign.offer.name },
+        message: `📤 CALLING aiService.generateCopyMaster (NOT Anthropic!)`,
+        details: { function: 'generateCopyMaster', provider: 'GEMINI', offerName: campaign.offer.name },
       });
       const copyMasterStartTime = Date.now();
       try {
-        aiContentResult.copyMaster = await aiService.generateCopyMasterWithGemini({
+        aiContentResult.copyMaster = await aiService.generateCopyMaster({
           offerName: campaign.offer.name,
           offerDescription: campaign.offer.description || undefined,
           vertical: campaign.offer.vertical,
@@ -4599,22 +4596,22 @@ class CampaignOrchestratorService {
         await campaignAudit.log(campaignId, {
           event: 'AI_CALL',
           source: 'continueCampaignAfterArticle.generateCopyMaster',
-          message: `✅ SUCCESS generateCopyMasterWithGemini`,
+          message: `✅ SUCCESS generateCopyMaster`,
           durationMs: Date.now() - copyMasterStartTime,
-          details: { function: 'generateCopyMasterWithGemini', provider: 'GEMINI', success: true },
+          details: { function: 'generateCopyMaster', provider: 'GEMINI', success: true },
         });
-        logger.success('system', `✅ [AI] Gemini generateCopyMasterWithGemini SUCCESS for "${campaign.name}"`);
+        logger.success('system', `✅ [AI] Gemini generateCopyMaster SUCCESS for "${campaign.name}"`);
       } catch (copyMasterError: any) {
         await campaignAudit.log(campaignId, {
           event: 'AI_CALL',
           source: 'continueCampaignAfterArticle.generateCopyMaster',
-          message: `❌ FAILED generateCopyMasterWithGemini: ${copyMasterError.message}`,
+          message: `❌ FAILED generateCopyMaster: ${copyMasterError.message}`,
           isError: true,
           errorCode: copyMasterError.status || 'UNKNOWN',
           durationMs: Date.now() - copyMasterStartTime,
-          details: { function: 'generateCopyMasterWithGemini', provider: 'GEMINI', error: copyMasterError.message },
+          details: { function: 'generateCopyMaster', provider: 'GEMINI', error: copyMasterError.message },
         });
-        logger.error('system', `❌ [AI] Gemini generateCopyMasterWithGemini FAILED for "${campaign.name}": ${copyMasterError.message}`, {
+        logger.error('system', `❌ [AI] Gemini generateCopyMaster FAILED for "${campaign.name}": ${copyMasterError.message}`, {
           errorMessage: copyMasterError.message,
           errorType: copyMasterError.constructor?.name,
         });
@@ -4632,17 +4629,17 @@ class CampaignOrchestratorService {
     // Generate Keywords if not set
     // v2.6.0: Uses Gemini instead of Anthropic to avoid stale connection 401 errors in cron context
     if (!campaign.keywords || campaign.keywords.length === 0) {
-      logger.info('system', `🤖 [AI] ABOUT TO CALL Gemini generateKeywordsWithGemini for "${campaign.name}" (${campaignId})`);
+      logger.info('system', `🤖 [AI] ABOUT TO CALL Gemini generateKeywords for "${campaign.name}" (${campaignId})`);
       try {
-        aiContentResult.keywords = await aiService.generateKeywordsWithGemini({
+        aiContentResult.keywords = await aiService.generateKeywords({
           offerName: campaign.offer.name,
           copyMaster: aiContentResult.copyMaster,
           count: 6,
           country: campaign.country,
         });
-        logger.success('system', `✅ [AI] Gemini generateKeywordsWithGemini SUCCESS for "${campaign.name}"`);
+        logger.success('system', `✅ [AI] Gemini generateKeywords SUCCESS for "${campaign.name}"`);
       } catch (keywordsError: any) {
-        logger.error('system', `❌ [AI] Gemini generateKeywordsWithGemini FAILED for "${campaign.name}": ${keywordsError.message}`, {
+        logger.error('system', `❌ [AI] Gemini generateKeywords FAILED for "${campaign.name}": ${keywordsError.message}`, {
           errorMessage: keywordsError.message,
           errorType: keywordsError.constructor?.name,
         });
@@ -4729,9 +4726,9 @@ class CampaignOrchestratorService {
         // FALLBACK: Generate with Gemini in cron context
         // v2.6.0: Uses Gemini instead of Anthropic to avoid stale connection 401 errors
         logger.warn('system', `⚠️ No pre-generated Ad Copy found for ${platformConfig.platform}, generating with Gemini...`);
-        logger.info('system', `🤖 [AI] ABOUT TO CALL Gemini generateAdCopyWithGemini for "${campaign.name}" platform=${platformConfig.platform}`);
+        logger.info('system', `🤖 [AI] ABOUT TO CALL Gemini generateAdCopy for "${campaign.name}" platform=${platformConfig.platform}`);
         try {
-          adCopy = await aiService.generateAdCopyWithGemini({
+          adCopy = await aiService.generateAdCopy({
             offerName: campaign.offer.name,
             copyMaster: aiContentResult.copyMaster,
             platform: platformConfig.platform as 'META' | 'TIKTOK',
@@ -4739,9 +4736,9 @@ class CampaignOrchestratorService {
             country: campaign.country,
             language: campaign.language,
           });
-          logger.success('system', `✅ [AI] Gemini generateAdCopyWithGemini SUCCESS for "${campaign.name}" platform=${platformConfig.platform}`);
+          logger.success('system', `✅ [AI] Gemini generateAdCopy SUCCESS for "${campaign.name}" platform=${platformConfig.platform}`);
         } catch (adCopyError: any) {
-          logger.error('system', `❌ [AI] Gemini generateAdCopyWithGemini FAILED for "${campaign.name}": ${adCopyError.message}`, {
+          logger.error('system', `❌ [AI] Gemini generateAdCopy FAILED for "${campaign.name}": ${adCopyError.message}`, {
             errorMessage: adCopyError.message,
             platform: platformConfig.platform,
           });
@@ -5051,7 +5048,7 @@ class CampaignOrchestratorService {
       if (contentPhrases.length === 0) {
         // Generate article content with AI (includes headline and phrases)
         // v2.6.0: Uses Gemini instead of Anthropic to avoid stale connection 401 errors in cron context
-        const articleContent = await aiService.generateArticleWithGemini({
+        const articleContent = await aiService.generateArticle({
           offerName: campaign.offer.name,
           copyMaster: campaign.copyMaster || `Discover the best deals on ${campaign.offer.name}`,
           keywords: campaign.keywords || [],
@@ -5063,7 +5060,7 @@ class CampaignOrchestratorService {
       } else {
         // Manual phrases provided, just generate headline
         // v2.6.0: Uses Gemini instead of Anthropic to avoid stale connection 401 errors in cron context
-        const articleContent = await aiService.generateArticleWithGemini({
+        const articleContent = await aiService.generateArticle({
           offerName: campaign.offer.name,
           copyMaster: campaign.copyMaster || `Discover the best deals on ${campaign.offer.name}`,
           keywords: campaign.keywords || [],

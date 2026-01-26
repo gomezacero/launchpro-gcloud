@@ -1,4 +1,3 @@
-import Anthropic from '@anthropic-ai/sdk';
 import { v1, helpers } from '@google-cloud/aiplatform';
 import { Storage } from '@google-cloud/storage';
 import { GoogleGenAI } from '@google/genai';
@@ -6,39 +5,17 @@ import { env } from '@/lib/env';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger';
 import { getStorage } from '@/lib/gcs';
-import { getAnthropicClient, getApiKeyDebugInfo } from '@/lib/anthropic-client';
-import { campaignAudit } from '@/services/campaign-audit.service';
 
 // VERSION MARKER - Used to verify which code version is deployed
-const AI_SERVICE_VERSION = 'v2.7.5-DB-TRACE-2026-01-26';
+const AI_SERVICE_VERSION = 'v2.8.0-GEMINI-ONLY';
 console.log(`[AIService] Module loaded - VERSION: ${AI_SERVICE_VERSION}`);
-console.log(`[AIService] 🚨🚨🚨 THIS VERSION LOGS ANTHROPIC CALLS TO DATABASE 🚨🚨🚨`);
-
-// Global variable to track the current campaign being processed
-// This allows us to log Anthropic calls to the correct campaign's audit trail
-let _currentCampaignId: string | null = null;
-
-export function setCurrentCampaignId(campaignId: string | null): void {
-  _currentCampaignId = campaignId;
-}
-
-export function getCurrentCampaignId(): string | null {
-  return _currentCampaignId;
-}
+console.log(`[AIService] All AI generation uses GEMINI exclusively`);
 
 /**
- * AI Service v2.7.0 - FULL GEMINI MIGRATION
+ * AI Service v2.8.0 - GEMINI ONLY
  *
- * ALL AI generation now uses GEMINI to avoid Anthropic 401 stale connection issues.
- * Gemini functions (used everywhere):
- * - generateCopyMasterWithGemini
- * - generateKeywordsWithGemini
- * - generateAdCopyWithGemini
- * - generateArticleWithGemini
- * - generateTargetingSuggestionsWithGemini
- *
- * Anthropic functions are DEPRECATED and should NOT be called anymore.
- * They remain in code for reference but the orchestrator uses Gemini exclusively.
+ * ALL AI generation now uses GEMINI exclusively.
+ * This eliminates all Anthropic dependencies and the 401 errors from stale Vercel instances.
  */
 
 // Initialize clients
@@ -658,22 +635,6 @@ class AIService {
   private storage: Storage;
 
   /**
-   * Get clean Anthropic API key from environment
-   * Handles: whitespace, newlines, copy/paste issues, and surrounding quotes
-   */
-  private getCleanApiKey(): string {
-    const rawKey = process.env.ANTHROPIC_API_KEY || '';
-    // Remove ALL non-printable characters (handles copy/paste issues)
-    let cleanedKey = rawKey.split('').filter(c => c.charCodeAt(0) >= 33 && c.charCodeAt(0) <= 126).join('');
-    // Remove surrounding quotes if present (common Vercel env var issue)
-    if ((cleanedKey.startsWith('"') && cleanedKey.endsWith('"')) ||
-      (cleanedKey.startsWith("'") && cleanedKey.endsWith("'"))) {
-      cleanedKey = cleanedKey.slice(1, -1);
-    }
-    return cleanedKey;
-  }
-
-  /**
    * Get language name and instruction based on language code
    * Supports: en, es, pt, it, fr, de, nl, pl and any other language
    */
@@ -712,144 +673,8 @@ class AIService {
     };
   }
 
-  /**
-   * Get Anthropic client - uses SINGLETON instance
-   * This fixes the 401 "invalid x-api-key" error that occurs when multiple
-   * campaigns are processed in parallel and each creates its own client.
-   */
-  private getAnthropic(apiKey?: string): Anthropic {
-    // 🚨 ANTHROPIC CALL TRACER - v2.7.5 🚨
-    // This should NEVER be called in cron context if Gemini migration is complete
-    const stackTrace = new Error().stack || 'No stack trace available';
-    const timestamp = new Date().toISOString();
-
-    // Extract the calling function from stack trace
-    const stackLines = stackTrace.split('\n');
-    const callerLine = stackLines[2] || 'Unknown caller'; // [0]=Error, [1]=getAnthropic, [2]=actual caller
-
-    // Console log for Vercel logs
-    console.log(`\n🚨🚨🚨 ANTHROPIC CALLED - ${AI_SERVICE_VERSION} 🚨🚨🚨`);
-    console.log(`🚨 Caller: ${callerLine.trim()}`);
-    console.log(`🚨 Campaign: ${_currentCampaignId || 'UNKNOWN'}`);
-    console.log(`🚨 Time: ${timestamp}`);
-
-    // Write to database audit log if we have a campaign ID
-    if (_currentCampaignId) {
-      // Fire and forget - don't await to avoid blocking
-      campaignAudit.log(_currentCampaignId, {
-        event: 'ANTHROPIC_CALL_DETECTED',
-        source: 'ai.service.getAnthropic',
-        message: `🚨 ANTHROPIC API CALLED (should use Gemini!) - Caller: ${callerLine.trim()}`,
-        isError: true,
-        errorCode: 'ANTHROPIC_CALL_IN_CRON',
-        details: {
-          version: AI_SERVICE_VERSION,
-          caller: callerLine.trim(),
-          fullStackTrace: stackTrace.substring(0, 2000), // Limit to 2000 chars
-          timestamp,
-        },
-      }).catch(err => console.error('Failed to log Anthropic call to DB:', err));
-    }
-
-    // Log debug info (doesn't expose full key)
-    const debugInfo = getApiKeyDebugInfo();
-    console.log('[AIService.anthropic getter] Client info:', {
-      ...debugInfo,
-      isExplicitKey: !!apiKey,
-      campaignId: _currentCampaignId,
-    });
-
-    return getAnthropicClient(apiKey);
-  }
-
-  /**
-   * Enhanced wrapper for Anthropic API calls with detailed error logging
-   * Helps debug issues like the "invalid x-api-key" error
-   */
-  private async callAnthropicWithDiagnostics<T>(
-    operation: string,
-    apiCall: () => Promise<T>,
-    apiKey?: string
-  ): Promise<T> {
-    const startTime = Date.now();
-    const rawApiKey = apiKey || process.env.ANTHROPIC_API_KEY || '';
-    const cleanApiKey = apiKey ? apiKey : this.getCleanApiKey(); // If passed explicitly, assume it's clean-ish but still worth checking types
-
-    // DETAILED DEBUG: Log pre-call diagnostics with both raw and clean key info
-    console.log(`[AIService.callAnthropicWithDiagnostics] 🚀 Starting ${operation}:`, {
-      rawKeyLength: rawApiKey.length,
-      cleanKeyLength: cleanApiKey.length,
-      rawKeyStart: rawApiKey.substring(0, 15),
-      cleanKeyStart: cleanApiKey.substring(0, 15),
-      rawKeyEnd: rawApiKey.substring(rawApiKey.length - 6),
-      cleanKeyEnd: cleanApiKey.substring(cleanApiKey.length - 6),
-      keysMatch: rawApiKey === cleanApiKey,
-      startsWithSkAnt: cleanApiKey.startsWith('sk-ant-'),
-      envVarDefined: typeof process.env.ANTHROPIC_API_KEY !== 'undefined',
-      timestamp: new Date().toISOString(),
-    });
-
-    logger.info('ai', `[Anthropic] Starting ${operation}`, {
-      keyPreview: cleanApiKey ? `${cleanApiKey.substring(0, 10)}...${cleanApiKey.substring(cleanApiKey.length - 4)}` : 'MISSING',
-      keyLength: cleanApiKey.length,
-    });
-
-    try {
-      const result = await apiCall();
-      const duration = Date.now() - startTime;
-      console.log(`[AIService.callAnthropicWithDiagnostics] ✅ ${operation} succeeded in ${duration}ms`);
-      logger.info('ai', `[Anthropic] ${operation} completed successfully`, { durationMs: duration });
-      return result;
-    } catch (error: any) {
-      const duration = Date.now() - startTime;
-
-      // DETAILED DEBUG: Enhanced error logging
-      console.error(`[AIService.callAnthropicWithDiagnostics] ❌ ${operation} FAILED:`, {
-        durationMs: duration,
-        errorType: error.constructor?.name,
-        errorMessage: error.message,
-        statusCode: error.status || error.statusCode || 'N/A',
-        errorBody: JSON.stringify(error.error || error.body || 'N/A'),
-        errorHeaders: JSON.stringify(error.headers || 'N/A'),
-        rawKeyLength: rawApiKey.length,
-        cleanKeyLength: cleanApiKey.length,
-        keysMatch: rawApiKey === cleanApiKey,
-        keyStart: cleanApiKey.substring(0, 15),
-        keyEnd: cleanApiKey.substring(cleanApiKey.length - 6),
-      });
-
-      logger.error('ai', `[Anthropic] ${operation} FAILED`, {
-        durationMs: duration,
-        errorType: error.constructor?.name,
-        errorMessage: error.message,
-        statusCode: error.status || error.statusCode || 'N/A',
-        errorBody: error.error || error.body || 'N/A',
-        keyPreview: cleanApiKey ? `${cleanApiKey.substring(0, 10)}...${cleanApiKey.substring(cleanApiKey.length - 4)}` : 'MISSING',
-        keyLength: cleanApiKey.length,
-      });
-
-      // Check if this is an authentication error
-      if (error.status === 401 || error.message?.includes('authentication') || error.message?.includes('api-key')) {
-        console.error(`[AIService.callAnthropicWithDiagnostics] 🔐 AUTHENTICATION ERROR DETECTED:`, {
-          suggestion: 'API key may be invalid, expired, or corrupted',
-          rawKeyLength: rawApiKey.length,
-          cleanKeyLength: cleanApiKey.length,
-          keyStart: cleanApiKey.substring(0, 15),
-          keyEnd: cleanApiKey.substring(cleanApiKey.length - 6),
-          startsWithSkAnt: cleanApiKey.startsWith('sk-ant-'),
-        });
-        logger.error('ai', `[Anthropic] AUTHENTICATION ERROR - This indicates the API key may be invalid, expired, or corrupted`, {
-          suggestion: 'Please verify ANTHROPIC_API_KEY in environment variables',
-          currentKeyStart: cleanApiKey.substring(0, 15),
-        });
-      }
-
-      throw error;
-    }
-  }
-
   constructor() {
-    console.log('[AIService] Constructor called - Anthropic will be initialized on first use');
+    console.log('[AIService] Constructor called - v2.8.0 GEMINI ONLY');
 
     // Initialize Gemini client for image generation (Nano Banana Pro)
     this.geminiClient = new GoogleGenAI({
@@ -880,621 +705,13 @@ class AIService {
   }
 
   // ============================================
-  // TEXT GENERATION (Anthropic Claude)
+  // TEXT GENERATION (Google Gemini)
   // ============================================
 
   /**
    * Generate Copy Master - the main communication angle aligned with the offer
    */
   async generateCopyMaster(params: GenerateCopyMasterParams): Promise<string> {
-    // Determine the base language from the language parameter
-    const lang = params.language.toLowerCase();
-    const isEnglish = lang === 'en' || lang === 'english';
-    const isPortuguese = lang === 'pt' || lang === 'portuguese';
-    const isSpanish = lang === 'es' || lang === 'spanish' || (!isEnglish && !isPortuguese);
-
-    // Map countries to their specific dialect rules (Spanish)
-    const spanishDialectRules: Record<string, string> = {
-      'MX': 'Mexican Spanish: Use "tú/usted" forms. Never use "vos" or Argentine forms.',
-      'CO': 'Colombian Spanish: Use "tú/usted" forms. Formal and clear.',
-      'AR': 'Argentine Spanish: Use "vos" forms (e.g., "querés", "podés").',
-      'ES': 'European Spanish: Use "tú/vosotros" forms.',
-      'CL': 'Chilean Spanish: Use "tú" forms.',
-      'PE': 'Peruvian Spanish: Use "tú/usted" forms.',
-      'VE': 'Venezuelan Spanish: Use "tú/usted" forms.',
-      'EC': 'Ecuadorian Spanish: Use "tú/usted" forms.',
-    };
-
-    // English dialect rules
-    const englishDialectRules: Record<string, string> = {
-      'US': 'American English: Use US spelling (e.g., "color", "organize").',
-      'UK': 'British English: Use UK spelling (e.g., "colour", "organise").',
-      'GB': 'British English: Use UK spelling (e.g., "colour", "organise").',
-      'AU': 'Australian English: Use Australian conventions.',
-      'CA': 'Canadian English: Mix of US/UK spelling.',
-    };
-
-    // Portuguese dialect rules
-    const portugueseDialectRules: Record<string, string> = {
-      'BR': 'Brazilian Portuguese: Use standard Brazilian Portuguese.',
-      'PT': 'European Portuguese: Use European Portuguese.',
-    };
-
-    // Determine the dialect rule based on language and country
-    let dialectRule: string;
-    let languageInstruction: string;
-
-    if (isEnglish) {
-      dialectRule = englishDialectRules[params.country] || 'American English: Use US spelling.';
-      languageInstruction = 'WRITE IN ENGLISH.';
-    } else if (isPortuguese) {
-      dialectRule = portugueseDialectRules[params.country] || 'Brazilian Portuguese: Use standard Brazilian Portuguese.';
-      languageInstruction = 'WRITE IN PORTUGUESE.';
-    } else {
-      // Default to Spanish
-      dialectRule = spanishDialectRules[params.country] || 'Neutral Spanish: Use "tú/usted" forms.';
-      languageInstruction = 'WRITE IN SPANISH.';
-    }
-
-    logger.info('ai', `Generating copy master in ${isEnglish ? 'English' : isPortuguese ? 'Portuguese' : 'Spanish'} for country ${params.country}`);
-
-    const systemPrompt = `You are an expert digital marketing copywriter specialized in creating compelling copy masters for advertising campaigns.
-
-A Copy Master is the central communication message that defines the angle and tone of an advertising campaign.
-
-CRITICAL REQUIREMENTS:
-- ${languageInstruction}
-- Perfect spelling and grammar (zero tolerance for errors)
-- ${dialectRule}
-- Use formal or semi-formal tone (NEVER informal/casual)
-- NO exaggerated claims (e.g., "guaranteed", "100%", "always")
-- NO invented statistics or fake data
-- Truthful, realistic, and professional language
-- Aligned with the offer's value proposition
-- Culturally relevant for the target country
-- Emotionally compelling but honest
-- Concise (2-3 sentences max)
-
-Your task is to create a Copy Master that will serve as the foundation for all campaign content and pass strict editorial review.`;
-
-    const userPrompt = `Create a Copy Master for the following advertising campaign:
-
-Offer: ${params.offerName}
-${params.offerDescription ? `Description: ${params.offerDescription}` : ''}
-${params.vertical ? `Vertical: ${params.vertical}` : ''}
-Target Country: ${params.country}
-Language: ${params.language}
-
-CRITICAL LANGUAGE REQUIREMENT: ${languageInstruction} ${dialectRule}
-
-Generate a compelling Copy Master that:
-- Is written ENTIRELY in ${isEnglish ? 'English' : isPortuguese ? 'Portuguese' : 'Spanish'}
-- Uses perfect grammar for ${params.country}
-- Uses formal/semi-formal tone
-- Makes NO exaggerated claims
-- Is truthful and professional
-- Captures the essence of this offer and resonates with the target audience`;
-
-    // Debug: Log API key info before making the call (same as generateKeywords)
-    const debugKey = params.apiKey ? params.apiKey : this.getCleanApiKey();
-    console.log(`[AIService.generateCopyMaster] 🔑 API Key debug:`, {
-      keyLength: debugKey.length,
-      keyStart: debugKey.substring(0, 15),
-      keyEnd: debugKey.substring(debugKey.length - 6),
-      startsWithSkAnt: debugKey.startsWith('sk-ant-'),
-      isExplicitKey: !!params.apiKey,
-      rawEnvLength: (process.env.ANTHROPIC_API_KEY || '').length,
-      offerName: params.offerName,
-      country: params.country,
-    });
-
-    let message;
-    try {
-      message = await this.getAnthropic(params.apiKey).messages.create({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 500,
-        temperature: 0.7,
-        system: systemPrompt,
-        messages: [
-          {
-            role: 'user',
-            content: userPrompt,
-          },
-        ],
-      });
-    } catch (error: any) {
-      console.error(`[AIService.generateCopyMaster] ❌ Anthropic API Error:`, {
-        status: error.status,
-        statusCode: error.statusCode,
-        message: error.message,
-        errorType: error.constructor?.name,
-        keyUsed: `${debugKey.substring(0, 15)}...${debugKey.substring(debugKey.length - 6)}`,
-        rawEnvLength: (process.env.ANTHROPIC_API_KEY || '').length,
-      });
-      throw error;
-    }
-
-    const copyMaster = message.content[0].type === 'text' ? message.content[0].text : '';
-
-    // Save to database
-    await this.saveAIContent({
-      contentType: 'copy_master',
-      content: { copyMaster },
-      model: 'claude-sonnet-4',
-      prompt: userPrompt,
-      tokensUsed: message.usage.input_tokens + message.usage.output_tokens,
-    });
-
-    return copyMaster.trim();
-  }
-
-  /**
-   * Generate Keywords for Tonic campaigns
-   * Optimized for BOFU (Bottom of Funnel) transactional intent
-   */
-  async generateKeywords(params: GenerateKeywordsParams): Promise<string[]> {
-    const count = 10; // Always generate 10 keywords
-
-    // Map country codes to full names and regional context
-    const countryContext: Record<string, { name: string; language: string; regionalNotes: string }> = {
-      'MX': { name: 'México', language: 'Spanish (Mexican)', regionalNotes: 'Use Mexican Spanish terminology. Example: "carro" instead of "coche", "computadora" instead of "ordenador". Include city references like Ciudad de México, Guadalajara, Monterrey when relevant.' },
-      'CO': { name: 'Colombia', language: 'Spanish (Colombian)', regionalNotes: 'Use Colombian Spanish terminology. Example: "carro" or "vehículo", "computador". Include city references like Bogotá, Medellín, Cali when relevant.' },
-      'AR': { name: 'Argentina', language: 'Spanish (Argentine)', regionalNotes: 'Use Argentine Spanish terminology. Example: "auto", "computadora". Include city references like Buenos Aires, Córdoba, Rosario when relevant.' },
-      'ES': { name: 'España', language: 'Spanish (European)', regionalNotes: 'Use European Spanish terminology. Example: "coche", "ordenador". Include city references like Madrid, Barcelona, Valencia when relevant.' },
-      'CL': { name: 'Chile', language: 'Spanish (Chilean)', regionalNotes: 'Use Chilean Spanish terminology. Include city references like Santiago, Valparaíso, Concepción when relevant.' },
-      'PE': { name: 'Perú', language: 'Spanish (Peruvian)', regionalNotes: 'Use Peruvian Spanish terminology. Include city references like Lima, Arequipa, Trujillo when relevant.' },
-      'US': { name: 'United States', language: 'Spanish (US Latino) or English', regionalNotes: 'For Spanish: Use neutral Latin American Spanish. For English: Use American English. Can reference major cities like Miami, Los Angeles, Houston, New York.' },
-      'BR': { name: 'Brasil', language: 'Portuguese (Brazilian)', regionalNotes: 'Use Brazilian Portuguese terminology. Include city references like São Paulo, Rio de Janeiro, Brasília when relevant.' },
-    };
-
-    const context = countryContext[params.country] || {
-      name: params.country,
-      language: 'Local language',
-      regionalNotes: 'Adapt terminology to local market.'
-    };
-
-    const systemPrompt = `You are an expert in SEO Strategy, PPC, and Growth Hacking, specialized in compliance policies and regional semantic adaptation with a focus on transactional and financial intent keywords.
-
-PRIMARY MISSION:
-Generate a list of exactly 10 high-conversion keywords, 100% compliant and culturally adapted, focused on the bottom of the funnel (BOFU). Keywords must be aggressive, commercial, and click-attractive, prioritizing purchase intent, hiring, or financial comparison.
-
-CONTEXT:
-- Target Country: ${context.name}
-- Language: ${context.language}
-- Regional Adaptation: ${context.regionalNotes}
-
-WORKFLOW DIRECTIVES:
-
-🔹 Step 0 - Linguistic and Cultural Adaptation (PRIORITY)
-- Identify synonyms, regionalisms, and colloquial terms specific to ${context.name}.
-- Replace generic words with more natural and commercial local equivalents.
-- ${context.regionalNotes}
-
-🔹 Step 1 - Competitor Analysis
-- Consider 2-3 relevant competitors in ${context.name}.
-- Think about what transactional and financial keywords they use in their communication.
-
-🔹 Step 2 - List Generation (10 Keywords)
-Focus: maximum conversion intent, direct and commercial language.
-
-MANDATORY COMPOSITION:
-- Minimum 3 Direct Transactional Keywords → include verbs like: buy, hire, finance, quote, invest, price, payment (in the target language)
-- Minimum 2 Specific Action Long-Tails → start with verb + clear benefit + 6-10 words. Can include city/country name when relevant for conversion.
-- Remaining 5 Keywords: combination of:
-  * Commercial Research (vs, alternatives, best options)
-  * Decision Questions (how much does it cost, how to finance)
-  * Financial Angles (credit, leasing, investment, monthly payments)
-
-COMPLIANCE AND QUALITY RULES (MANDATORY):
-- Total Relevance: each keyword must be directly linked to the niche/offer.
-- No deception or false superlatives: exclude "free", "cheapest", "top deals", "guaranteed", "100%", etc.
-- No false interactivity: avoid "search here" or "click now".
-- Location references: use real city/state/country names only if it adds to conversion value.
-- Estimated search volume: >70 monthly.
-- Temporality: only use 2025 or 2026 if intentional and relevant.
-
-CRITICAL OUTPUT FORMAT:
-Return ONLY a valid JSON array with exactly 10 keywords. No markdown, no code blocks, no explanations, no numbering.
-Example format: ["keyword 1", "keyword 2", "keyword 3", ...]`;
-
-    const userPrompt = `Generate 10 high-conversion BOFU keywords for this advertising campaign:
-
-OFFER: ${params.offerName}
-COPY MASTER (Main Message): ${params.copyMaster}
-TARGET COUNTRY: ${context.name}
-LANGUAGE: ${context.language}
-
-REMEMBER:
-- ${context.regionalNotes}
-- Minimum 3 transactional keywords with action verbs
-- Minimum 2 long-tail keywords (6-10 words) with specific benefits
-- 5 mixed keywords (comparisons, questions, financial terms)
-- Use real city/country names from ${context.name} when it adds value
-- Perfect spelling in ${context.language}
-- NO false claims, NO "free", NO "guaranteed"
-
-Return ONLY a JSON array: ["keyword1", "keyword2", ..., "keyword10"]`;
-
-    // Debug: Log API key info before making the call
-    const debugKey = params.apiKey ? params.apiKey : this.getCleanApiKey();
-    console.log(`[AIService.generateKeywords] 🔑 API Key debug:`, {
-      keyLength: debugKey.length,
-      keyStart: debugKey.substring(0, 15),
-      keyEnd: debugKey.substring(debugKey.length - 6),
-      startsWithSkAnt: debugKey.startsWith('sk-ant-'),
-      isExplicitKey: !!params.apiKey,
-    });
-
-    let message;
-    try {
-      message = await this.getAnthropic(params.apiKey).messages.create({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 600, // Increased for 10 longer keywords (long-tails)
-        temperature: 0.8,
-        system: systemPrompt,
-        messages: [
-          {
-            role: 'user',
-            content: userPrompt,
-          },
-        ],
-      });
-    } catch (error: any) {
-      console.error(`[AIService.generateKeywords] ❌ Anthropic API Error:`, {
-        status: error.status,
-        message: error.message,
-        keyUsed: `${debugKey.substring(0, 15)}...${debugKey.substring(debugKey.length - 6)}`,
-        rawEnvLength: (process.env.ANTHROPIC_API_KEY || '').length,
-      });
-      throw error;
-    }
-
-    const responseText = message.content[0].type === 'text' ? message.content[0].text : '[]';
-    const cleanedResponse = this.cleanJsonResponse(responseText);
-    let keywords = JSON.parse(cleanedResponse);
-
-    // Ensure we always return exactly 10 keywords
-    if (keywords.length > 10) {
-      keywords = keywords.slice(0, 10);
-    }
-
-    // Save to database
-    await this.saveAIContent({
-      contentType: 'keywords',
-      content: { keywords },
-      model: 'claude-sonnet-4',
-      prompt: userPrompt,
-      tokensUsed: message.usage.input_tokens + message.usage.output_tokens,
-    });
-
-    return keywords;
-  }
-
-  /**
-   * Generate Article content for RSOC campaigns
-   */
-  async generateArticle(params: GenerateArticleParams): Promise<{
-    headline: string;
-    teaser: string;
-    contentGenerationPhrases: string[];
-  }> {
-    // Determine the base language from the language parameter
-    const lang = params.language.toLowerCase();
-    const isEnglish = lang === 'en' || lang === 'english';
-    const isPortuguese = lang === 'pt' || lang === 'portuguese';
-    const isSpanish = lang === 'es' || lang === 'spanish';
-    const isItalian = lang === 'it' || lang === 'italian';
-    const isFrench = lang === 'fr' || lang === 'french';
-    const isGerman = lang === 'de' || lang === 'german';
-    const isDutch = lang === 'nl' || lang === 'dutch';
-    const isPolish = lang === 'pl' || lang === 'polish';
-
-    // Map countries to their specific Spanish dialect rules
-    const spanishDialectRules: Record<string, string> = {
-      'MX': 'Mexican Spanish: Use "tú/usted" forms (e.g., "sueñas", "quieres", "puedes"). Never use "vos" or Argentine forms.',
-      'CO': 'Colombian Spanish: Use "tú/usted" forms (e.g., "sueñas", "quieres", "puedes"). Formal and clear language.',
-      'AR': 'Argentine Spanish: Use "vos" forms (e.g., "soñás", "querés", "podés"). Informal but professional tone.',
-      'ES': 'European Spanish: Use "tú/vosotros" forms (e.g., "sueñas", "soñáis"). Use "vosotros" for plural informal.',
-      'CL': 'Chilean Spanish: Use "tú" forms (e.g., "sueñas", "quieres"). Avoid excessive Chilean slang.',
-      'PE': 'Peruvian Spanish: Use "tú/usted" forms (e.g., "sueñas", "quieres"). Formal and respectful.',
-      'VE': 'Venezuelan Spanish: Use "tú/usted" forms. Formal and clear.',
-      'EC': 'Ecuadorian Spanish: Use "tú/usted" forms. Formal and respectful.',
-    };
-
-    // English dialect rules
-    const englishDialectRules: Record<string, string> = {
-      'US': 'American English: Use US spelling (e.g., "color", "organize"). Clear, professional language.',
-      'UK': 'British English: Use UK spelling (e.g., "colour", "organise").',
-      'GB': 'British English: Use UK spelling (e.g., "colour", "organise").',
-      'AU': 'Australian English: Use Australian conventions.',
-      'CA': 'Canadian English: Mix of US/UK spelling.',
-    };
-
-    // Portuguese dialect rules
-    const portugueseDialectRules: Record<string, string> = {
-      'BR': 'Brazilian Portuguese: Use standard Brazilian Portuguese conjugations.',
-      'PT': 'European Portuguese: Use European Portuguese.',
-    };
-
-    // Determine the dialect rule based on language and country
-    let dialectRule: string;
-    let languageInstruction: string;
-    let languageName: string;
-
-    if (isEnglish) {
-      dialectRule = englishDialectRules[params.country] || 'American English: Use US spelling.';
-      languageInstruction = 'WRITE ENTIRELY IN ENGLISH.';
-      languageName = 'English';
-    } else if (isPortuguese) {
-      dialectRule = portugueseDialectRules[params.country] || 'Brazilian Portuguese: Use standard Brazilian Portuguese.';
-      languageInstruction = 'WRITE ENTIRELY IN PORTUGUESE.';
-      languageName = 'Portuguese';
-    } else if (isItalian) {
-      dialectRule = 'Standard Italian: Use formal "Lei" or informal "tu" appropriately. Clear, professional language.';
-      languageInstruction = 'WRITE ENTIRELY IN ITALIAN.';
-      languageName = 'Italian';
-    } else if (isFrench) {
-      dialectRule = params.country === 'CA' ? 'Canadian French: Use Québécois conventions.' : 'Standard French: Use formal "vous" or informal "tu" appropriately.';
-      languageInstruction = 'WRITE ENTIRELY IN FRENCH.';
-      languageName = 'French';
-    } else if (isGerman) {
-      dialectRule = params.country === 'AT' ? 'Austrian German conventions.' : params.country === 'CH' ? 'Swiss German conventions.' : 'Standard German: Use formal "Sie" or informal "du" appropriately.';
-      languageInstruction = 'WRITE ENTIRELY IN GERMAN.';
-      languageName = 'German';
-    } else if (isDutch) {
-      dialectRule = params.country === 'BE' ? 'Belgian Dutch (Flemish) conventions.' : 'Standard Dutch: Clear, professional language.';
-      languageInstruction = 'WRITE ENTIRELY IN DUTCH.';
-      languageName = 'Dutch';
-    } else if (isPolish) {
-      dialectRule = 'Standard Polish: Use formal or informal address appropriately. Clear, professional language.';
-      languageInstruction = 'WRITE ENTIRELY IN POLISH.';
-      languageName = 'Polish';
-    } else if (isSpanish) {
-      dialectRule = spanishDialectRules[params.country] || 'Neutral Spanish: Use "tú/usted" forms.';
-      languageInstruction = 'WRITE ENTIRELY IN SPANISH.';
-      languageName = 'Spanish';
-    } else {
-      // For any other language, use the language parameter directly
-      // This ensures we never default to Spanish incorrectly
-      const capitalizedLang = params.language.charAt(0).toUpperCase() + params.language.slice(1).toLowerCase();
-      dialectRule = `Standard ${capitalizedLang}: Use appropriate formal/informal conventions for ${params.country}.`;
-      languageInstruction = `WRITE ENTIRELY IN ${params.language.toUpperCase()}.`;
-      languageName = capitalizedLang;
-    }
-
-    logger.info('ai', `Generating article in ${languageName} for country ${params.country}`);
-
-    const systemPrompt = `You are an expert content writer specialized in creating high-quality articles for native advertising that pass strict editorial review.
-
-CRITICAL REQUIREMENTS (Article will be REJECTED if these are violated):
-
-1. LANGUAGE & GRAMMAR:
-   - ${languageInstruction}
-   - Perfect spelling and grammar - zero tolerance for errors
-   - ${dialectRule}
-   - Use formal or semi-formal tone - NEVER informal/casual language
-   - Match the EXACT dialect of the target country
-
-2. FACTUAL ACCURACY:
-   - NEVER invent statistics, numbers, or data
-   - NEVER make exaggerated claims (e.g., "guaranteed", "100%", "always")
-   - Use realistic, verifiable information only
-   - If mentioning data, use general terms like "many people", "studies suggest" instead of fake percentages
-
-3. CONTENT QUALITY:
-   - Headlines must be compelling but truthful - no clickbait
-   - Teaser must be informative and engaging (250-1000 characters)
-   - Content generation phrases: EXACTLY 3-5 phrases (CRITICAL: Tonic will reject if less than 3 or more than 5)
-   - Natural tone - not overly promotional or salesy
-
-4. COMPLIANCE:
-   - Appropriate for the offer type (loans, insurance, etc.)
-   - No misleading statements
-   - Professional and trustworthy tone
-
-IMPORTANT: Return ONLY valid JSON, no markdown formatting, no code blocks, no explanations.`;
-
-    const userPrompt = `Create article content for this RSOC campaign:
-
-Offer: ${params.offerName}
-Copy Master: ${params.copyMaster}
-Keywords: ${params.keywords.join(', ')}
-Country: ${params.country}
-Language: ${params.language}
-
-CRITICAL LANGUAGE REQUIREMENT: ${languageInstruction} ${dialectRule}
-
-ALL CONTENT (headline, teaser, contentGenerationPhrases) MUST BE IN ${languageName.toUpperCase()}.
-
-REMEMBER:
-- Perfect grammar and spelling
-- NO invented data or exaggerated claims
-- Formal/semi-formal tone only
-- Truthful, valuable content
-- CRITICAL: contentGenerationPhrases must be EXACTLY 3, 4, or 5 phrases (NOT 2, NOT 6, NOT 7!)
-
-Return a JSON object with:
-{
-  "headline": "engaging headline in ${languageName} (max 256 characters)",
-  "teaser": "compelling opening paragraph in ${languageName} (250-1000 characters)",
-  "contentGenerationPhrases": ["phrase1 in ${languageName}", "phrase2", "phrase3", "phrase4"]
-}
-
-IMPORTANT: The contentGenerationPhrases array MUST contain between 3 and 5 items. If you generate more than 5 or less than 3, the request will be REJECTED by Tonic.`;
-
-    const message = await this.getAnthropic(params.apiKey).messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1500,
-      temperature: 0.7,
-      system: systemPrompt,
-      messages: [
-        {
-          role: 'user',
-          content: userPrompt,
-        },
-      ],
-    });
-
-    const responseText = message.content[0].type === 'text' ? message.content[0].text : '{}';
-    const cleanedResponse = this.cleanJsonResponse(responseText);
-    const article = JSON.parse(cleanedResponse);
-
-    // CRITICAL VALIDATION: Tonic requires EXACTLY 3-5 content generation phrases
-    if (!article.contentGenerationPhrases || !Array.isArray(article.contentGenerationPhrases)) {
-      throw new Error('AI failed to generate contentGenerationPhrases array');
-    }
-
-    // If Claude generated more than 5 phrases, trim to 5
-    if (article.contentGenerationPhrases.length > 5) {
-      logger.warn('ai', `Generated ${article.contentGenerationPhrases.length} phrases, trimming to 5 for Tonic compliance`, {
-        original: article.contentGenerationPhrases.length,
-        trimmed: 5
-      });
-      article.contentGenerationPhrases = article.contentGenerationPhrases.slice(0, 5);
-    }
-
-    // If Claude generated less than 3 phrases, throw error (cannot auto-fix)
-    if (article.contentGenerationPhrases.length < 3) {
-      throw new Error(`AI generated only ${article.contentGenerationPhrases.length} content generation phrases, but Tonic requires 3-5. Please retry.`);
-    }
-
-    // Save to database
-    await this.saveAIContent({
-      contentType: 'article',
-      content: article,
-      model: 'claude-sonnet-4',
-      prompt: userPrompt,
-      tokensUsed: message.usage.input_tokens + message.usage.output_tokens,
-    });
-
-    return article;
-  }
-
-  /**
-   * Generate Ad Copy for Meta/TikTok
-   */
-  async generateAdCopy(params: GenerateAdCopyParams): Promise<{
-    primaryText: string;
-    headline: string;
-    description: string;
-    callToAction: string;
-  }> {
-    // Determine the base language from the language parameter
-    const lang = params.language.toLowerCase();
-
-    // Get language name and instruction based on language code
-    const { languageName, languageInstruction } = this.getLanguageInfo(lang, params.language);
-
-    logger.info('ai', `Generating ad copy in ${languageName} for ${params.platform}`);
-
-    const platformGuidelines = {
-      META: {
-        primaryTextMax: 125,
-        headlineMax: 40,
-        descriptionMax: 30,
-        ctas: [
-          'LEARN_MORE',
-          'SHOP_NOW',
-          'SIGN_UP',
-          'DOWNLOAD',
-          'GET_QUOTE',
-          'APPLY_NOW',
-        ],
-      },
-      TIKTOK: {
-        primaryTextMax: 100,
-        headlineMax: 100,
-        descriptionMax: 999,
-        ctas: ['SHOP_NOW', 'LEARN_MORE', 'SIGN_UP', 'DOWNLOAD', 'APPLY_NOW'],
-      },
-    };
-
-    const guidelines = platformGuidelines[params.platform];
-
-    const systemPrompt = `You are an expert performance marketer creating ad copy for ${params.platform}.
-
-Guidelines for ${params.platform}:
-- Primary text: max ${guidelines.primaryTextMax} characters
-- Headline: max ${guidelines.headlineMax} characters
-- Description: max ${guidelines.descriptionMax} characters
-
-CRITICAL REQUIREMENTS:
-- ${languageInstruction}
-- Perfect spelling and grammar (zero tolerance for errors)
-- Formal or semi-formal tone (NO informal/casual language)
-- NO exaggerated claims (e.g., "guaranteed", "100%", "never")
-- NO invented statistics or fake data
-- Attention-grabbing but truthful and realistic
-- Conversion-focused but professional
-- Clear, action-oriented language
-- Complies with ${params.platform} advertising policies
-
-IMPORTANT: Return ONLY valid JSON, no markdown formatting, no code blocks, no explanations.`;
-
-    const userPrompt = `Create ad copy for this campaign:
-
-Offer: ${params.offerName}
-Copy Master: ${params.copyMaster}
-Platform: ${params.platform}
-Ad Format: ${params.adFormat}
-Country: ${params.country}
-Language: ${params.language}
-${params.targetAudience ? `Target Audience: ${params.targetAudience}` : ''}
-
-CRITICAL LANGUAGE REQUIREMENT: ${languageInstruction} ALL ad copy text MUST be in ${languageName}.
-
-Return JSON:
-{
-  "primaryText": "main ad text in ${languageName}",
-  "headline": "compelling headline in ${languageName}",
-  "description": "description text in ${languageName}",
-  "callToAction": "CTA text (one of: ${guidelines.ctas.join(', ')})"
-}`;
-
-    const message = await this.callAnthropicWithDiagnostics(
-      `generateAdCopy(${params.platform}, ${params.country})`,
-      () => this.getAnthropic(params.apiKey).messages.create({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 800,
-        temperature: 0.8,
-        system: systemPrompt,
-        messages: [
-          {
-            role: 'user',
-            content: userPrompt,
-          },
-        ],
-      }),
-      params.apiKey
-    );
-
-    const responseText = message.content[0].type === 'text' ? message.content[0].text : '{}';
-    const cleanedResponse = this.cleanJsonResponse(responseText);
-    const adCopy = JSON.parse(cleanedResponse);
-
-    // Save to database
-    await this.saveAIContent({
-      contentType: 'ad_copy',
-      content: adCopy,
-      model: 'claude-sonnet-4',
-      prompt: userPrompt,
-      tokensUsed: message.usage.input_tokens + message.usage.output_tokens,
-    });
-
-    return adCopy;
-  }
-
-  // ============================================
-  // TEXT GENERATION WITH GEMINI (For Cron Context)
-  // These functions use Gemini instead of Anthropic to avoid
-  // stale connection issues in Vercel serverless cron jobs.
-  // ============================================
-
-  /**
-   * Generate Copy Master using Gemini (for cron context)
-   * Uses the same prompts as generateCopyMaster but with Gemini API
-   */
-  async generateCopyMasterWithGemini(params: Omit<GenerateCopyMasterParams, 'apiKey'>): Promise<string> {
     const model = 'gemini-2.0-flash-exp';
 
     // Determine the base language from the language parameter
@@ -1612,10 +829,10 @@ Return ONLY the copy master text, nothing else.`;
   }
 
   /**
-   * Generate Keywords using Gemini (for cron context)
-   * Uses the same prompts as generateKeywords but with Gemini API
+   * Generate Keywords for Tonic campaigns
+   * v2.8.0 - NOW USES GEMINI (no more Anthropic)
    */
-  async generateKeywordsWithGemini(params: Omit<GenerateKeywordsParams, 'apiKey'>): Promise<string[]> {
+  async generateKeywords(params: GenerateKeywordsParams): Promise<string[]> {
     const model = 'gemini-2.0-flash-exp';
 
     // Map country codes to full names and regional context
@@ -1735,120 +952,10 @@ Example format: ["keyword 1", "keyword 2", "keyword 3", ...]`;
   }
 
   /**
-   * Generate Ad Copy using Gemini (for cron context)
-   * Uses the same prompts as generateAdCopy but with Gemini API
+   * Generate Article content for RSOC campaigns
+   * v2.8.0 - NOW USES GEMINI (no more Anthropic)
    */
-  async generateAdCopyWithGemini(params: Omit<GenerateAdCopyParams, 'apiKey'>): Promise<{
-    primaryText: string;
-    headline: string;
-    description: string;
-    callToAction: string;
-  }> {
-    const model = 'gemini-2.0-flash-exp';
-    const lang = params.language.toLowerCase();
-
-    const { languageName, languageInstruction } = this.getLanguageInfo(lang, params.language);
-
-    logger.info('ai', `[Gemini] Generating ad copy in ${languageName} for ${params.platform}`);
-
-    const platformGuidelines = {
-      META: {
-        primaryTextMax: 125,
-        headlineMax: 40,
-        descriptionMax: 30,
-        ctas: [
-          'LEARN_MORE',
-          'SHOP_NOW',
-          'SIGN_UP',
-          'DOWNLOAD',
-          'GET_QUOTE',
-          'APPLY_NOW',
-        ],
-      },
-      TIKTOK: {
-        primaryTextMax: 100,
-        headlineMax: 100,
-        descriptionMax: 999,
-        ctas: ['SHOP_NOW', 'LEARN_MORE', 'SIGN_UP', 'DOWNLOAD', 'APPLY_NOW'],
-      },
-    };
-
-    const guidelines = platformGuidelines[params.platform];
-
-    const prompt = `You are an expert performance marketer creating ad copy for ${params.platform}.
-
-Guidelines for ${params.platform}:
-- Primary text: max ${guidelines.primaryTextMax} characters
-- Headline: max ${guidelines.headlineMax} characters
-- Description: max ${guidelines.descriptionMax} characters
-
-CRITICAL REQUIREMENTS:
-- ${languageInstruction}
-- Perfect spelling and grammar (zero tolerance for errors)
-- Formal or semi-formal tone (NO informal/casual language)
-- NO exaggerated claims (e.g., "guaranteed", "100%", "never")
-- NO invented statistics or fake data
-- Attention-grabbing but truthful and realistic
-- Conversion-focused but professional
-- Clear, action-oriented language
-- Complies with ${params.platform} advertising policies
-
-Create ad copy for this campaign:
-
-Offer: ${params.offerName}
-Copy Master: ${params.copyMaster}
-Platform: ${params.platform}
-Ad Format: ${params.adFormat}
-Country: ${params.country}
-Language: ${params.language}
-${params.targetAudience ? `Target Audience: ${params.targetAudience}` : ''}
-
-CRITICAL LANGUAGE REQUIREMENT: ${languageInstruction} ALL ad copy text MUST be in ${languageName}.
-
-Return ONLY valid JSON (no markdown, no code blocks):
-{
-  "primaryText": "main ad text in ${languageName}",
-  "headline": "compelling headline in ${languageName}",
-  "description": "description text in ${languageName}",
-  "callToAction": "CTA text (one of: ${guidelines.ctas.join(', ')})"
-}`;
-
-    try {
-      const response = await this.geminiClient.models.generateContent({
-        model,
-        contents: prompt,
-      });
-
-      const text = response.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-      const cleanedResponse = this.cleanJsonResponse(text);
-      const adCopy = JSON.parse(cleanedResponse);
-
-      if (!adCopy.primaryText || !adCopy.headline) {
-        throw new Error('Gemini returned incomplete ad copy');
-      }
-
-      logger.success('ai', `[Gemini] Ad copy generated successfully for ${params.platform}`);
-
-      // Save to database
-      await this.saveAIContent({
-        contentType: 'ad_copy',
-        content: adCopy,
-        model: 'gemini-2.0-flash-exp',
-        prompt: prompt,
-      });
-
-      return adCopy;
-    } catch (error: any) {
-      logger.error('ai', `[Gemini] Ad copy generation failed: ${error.message}`);
-      throw error;
-    }
-  }
-
-  /**
-   * Generate Article using Gemini (for cron context)
-   * Uses the same prompts as generateArticle but with Gemini API
-   */
-  async generateArticleWithGemini(params: Omit<GenerateArticleParams, 'apiKey'>): Promise<{
+  async generateArticle(params: GenerateArticleParams): Promise<{
     headline: string;
     teaser: string;
     contentGenerationPhrases: string[];
@@ -1997,38 +1104,82 @@ Return ONLY valid JSON (no markdown, no code blocks):
   }
 
   /**
-   * Generate Targeting Suggestions using Gemini (for cron context)
-   * Uses the same prompts as generateTargetingSuggestions but with Gemini API
+   * Generate Ad Copy for Meta/TikTok
+   * v2.8.0 - NOW USES GEMINI (no more Anthropic)
    */
-  async generateTargetingSuggestionsWithGemini(params: {
-    offerName: string;
-    copyMaster: string;
-    platform: 'META' | 'TIKTOK';
-  }): Promise<{
-    ageGroups: string[];
-    interests: string[];
-    behaviors?: string[];
-    demographics: string;
+  async generateAdCopy(params: GenerateAdCopyParams): Promise<{
+    primaryText: string;
+    headline: string;
+    description: string;
+    callToAction: string;
   }> {
     const model = 'gemini-2.0-flash-exp';
+    const lang = params.language.toLowerCase();
 
-    logger.info('ai', `[Gemini] Generating targeting suggestions for ${params.platform}`);
+    const { languageName, languageInstruction } = this.getLanguageInfo(lang, params.language);
 
-    const prompt = `You are an expert media buyer specialized in ${params.platform} Ads targeting.
+    logger.info('ai', `[Gemini] Generating ad copy in ${languageName} for ${params.platform}`);
 
-Analyze the offer and copy master to suggest optimal targeting parameters. Be specific and data-driven.
+    const platformGuidelines = {
+      META: {
+        primaryTextMax: 125,
+        headlineMax: 40,
+        descriptionMax: 30,
+        ctas: [
+          'LEARN_MORE',
+          'SHOP_NOW',
+          'SIGN_UP',
+          'DOWNLOAD',
+          'GET_QUOTE',
+          'APPLY_NOW',
+        ],
+      },
+      TIKTOK: {
+        primaryTextMax: 100,
+        headlineMax: 100,
+        descriptionMax: 999,
+        ctas: ['SHOP_NOW', 'LEARN_MORE', 'SIGN_UP', 'DOWNLOAD', 'APPLY_NOW'],
+      },
+    };
 
-Suggest targeting for this campaign on ${params.platform}:
+    const guidelines = platformGuidelines[params.platform];
+
+    const prompt = `You are an expert performance marketer creating ad copy for ${params.platform}.
+
+Guidelines for ${params.platform}:
+- Primary text: max ${guidelines.primaryTextMax} characters
+- Headline: max ${guidelines.headlineMax} characters
+- Description: max ${guidelines.descriptionMax} characters
+
+CRITICAL REQUIREMENTS:
+- ${languageInstruction}
+- Perfect spelling and grammar (zero tolerance for errors)
+- Formal or semi-formal tone (NO informal/casual language)
+- NO exaggerated claims (e.g., "guaranteed", "100%", "never")
+- NO invented statistics or fake data
+- Attention-grabbing but truthful and realistic
+- Conversion-focused but professional
+- Clear, action-oriented language
+- Complies with ${params.platform} advertising policies
+
+Create ad copy for this campaign:
 
 Offer: ${params.offerName}
 Copy Master: ${params.copyMaster}
+Platform: ${params.platform}
+Ad Format: ${params.adFormat}
+Country: ${params.country}
+Language: ${params.language}
+${params.targetAudience ? `Target Audience: ${params.targetAudience}` : ''}
+
+CRITICAL LANGUAGE REQUIREMENT: ${languageInstruction} ALL ad copy text MUST be in ${languageName}.
 
 Return ONLY valid JSON (no markdown, no code blocks):
 {
-  "ageGroups": ["age ranges that match the offer"],
-  "interests": ["specific interest categories"],
-  "behaviors": ["behavioral targeting categories (Meta only)"],
-  "demographics": "detailed description of ideal audience"
+  "primaryText": "main ad text in ${languageName}",
+  "headline": "compelling headline in ${languageName}",
+  "description": "description text in ${languageName}",
+  "callToAction": "CTA text (one of: ${guidelines.ctas.join(', ')})"
 }`;
 
     try {
@@ -2039,13 +1190,25 @@ Return ONLY valid JSON (no markdown, no code blocks):
 
       const text = response.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
       const cleanedResponse = this.cleanJsonResponse(text);
-      const suggestions = JSON.parse(cleanedResponse);
+      const adCopy = JSON.parse(cleanedResponse);
 
-      logger.success('ai', `[Gemini] Targeting suggestions generated for ${params.platform}`);
+      if (!adCopy.primaryText || !adCopy.headline) {
+        throw new Error('Gemini returned incomplete ad copy');
+      }
 
-      return suggestions;
+      logger.success('ai', `[Gemini] Ad copy generated successfully for ${params.platform}`);
+
+      // Save to database
+      await this.saveAIContent({
+        contentType: 'ad_copy',
+        content: adCopy,
+        model: 'gemini-2.0-flash-exp',
+        prompt: prompt,
+      });
+
+      return adCopy;
     } catch (error: any) {
-      logger.error('ai', `[Gemini] Targeting suggestions generation failed: ${error.message}`);
+      logger.error('ai', `[Gemini] Ad copy generation failed: ${error.message}`);
       throw error;
     }
   }
@@ -2082,20 +1245,15 @@ ${params.vertical ? `- VERTICAL: ${params.vertical}` : ''}
 Responde SOLO con un JSON array de exactamente 5 strings (cada uno 50-80 caracteres), sin explicaciones ni markdown:
 ["copy1", "copy2", "copy3", "copy4", "copy5"]`;
 
-    const message = await this.getAnthropic(params.apiKey).messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1500,
-      temperature: 0.8,
-      system: systemPrompt,
-      messages: [
-        {
-          role: 'user',
-          content: userPrompt,
-        },
-      ],
+    const model = 'gemini-2.0-flash-exp';
+    const prompt = `${systemPrompt}\n\n${userPrompt}`;
+
+    const response = await this.geminiClient.models.generateContent({
+      model,
+      contents: prompt,
     });
 
-    const responseText = message.content[0].type === 'text' ? message.content[0].text : '[]';
+    const responseText = response.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
     const cleanedResponse = this.cleanJsonResponse(responseText);
     let suggestions: string[] = JSON.parse(cleanedResponse);
 
@@ -2108,9 +1266,8 @@ Responde SOLO con un JSON array de exactamente 5 strings (cada uno 50-80 caracte
     await this.saveAIContent({
       contentType: 'copy_master_suggestions',
       content: { suggestions },
-      model: 'claude-sonnet-4',
+      model: 'gemini-2.0-flash-exp',
       prompt: userPrompt,
-      tokensUsed: message.usage.input_tokens + message.usage.output_tokens,
     });
 
     return suggestions;
@@ -2163,20 +1320,15 @@ Responde SOLO con un JSON array de objetos con esta estructura exacta, sin expli
   {"keyword": "keyword aquí", "type": "urgency"}
 ]`;
 
-    const message = await this.getAnthropic(params.apiKey).messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1500,
-      temperature: 0.8,
-      system: systemPrompt,
-      messages: [
-        {
-          role: 'user',
-          content: userPrompt,
-        },
-      ],
+    const model = 'gemini-2.0-flash-exp';
+    const prompt = `${systemPrompt}\n\n${userPrompt}`;
+
+    const response = await this.geminiClient.models.generateContent({
+      model,
+      contents: prompt,
     });
 
-    const responseText = message.content[0].type === 'text' ? message.content[0].text : '[]';
+    const responseText = response.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
     const cleanedResponse = this.cleanJsonResponse(responseText);
     let suggestions: { keyword: string; type: string }[] = JSON.parse(cleanedResponse);
 
@@ -2189,9 +1341,8 @@ Responde SOLO con un JSON array de objetos con esta estructura exacta, sin expli
     await this.saveAIContent({
       contentType: 'keyword_suggestions',
       content: { suggestions },
-      model: 'claude-sonnet-4',
+      model: 'gemini-2.0-flash-exp',
       prompt: userPrompt,
-      tokensUsed: message.usage.input_tokens + message.usage.output_tokens,
     });
 
     return suggestions;
@@ -2229,20 +1380,15 @@ INSTRUCCIONES DE CONTENIDO:
 Responde SOLO con un JSON array de exactamente 5 strings (cada uno máximo 80 caracteres), sin explicaciones ni markdown:
 ["titulo1", "titulo2", "titulo3", "titulo4", "titulo5"]`;
 
-    const message = await this.getAnthropic(params.apiKey).messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1500,
-      temperature: 0.8,
-      system: systemPrompt,
-      messages: [
-        {
-          role: 'user',
-          content: userPrompt,
-        },
-      ],
+    const model = 'gemini-2.0-flash-exp';
+    const prompt = `${systemPrompt}\n\n${userPrompt}`;
+
+    const response = await this.geminiClient.models.generateContent({
+      model,
+      contents: prompt,
     });
 
-    const responseText = message.content[0].type === 'text' ? message.content[0].text : '[]';
+    const responseText = response.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
     const cleanedResponse = this.cleanJsonResponse(responseText);
     let suggestions: string[] = JSON.parse(cleanedResponse);
 
@@ -2255,9 +1401,8 @@ Responde SOLO con un JSON array de exactamente 5 strings (cada uno máximo 80 ca
     await this.saveAIContent({
       contentType: 'ad_title_suggestions',
       content: { suggestions },
-      model: 'claude-sonnet-4',
+      model: 'gemini-2.0-flash-exp',
       prompt: userPrompt,
-      tokensUsed: message.usage.input_tokens + message.usage.output_tokens,
     });
 
     return suggestions;
@@ -2299,20 +1444,15 @@ INSTRUCCIONES DE CONTENIDO:
 Responde SOLO con un JSON array de exactamente 5 strings (cada uno máximo 120 caracteres), sin explicaciones ni markdown:
 ["texto1", "texto2", "texto3", "texto4", "texto5"]`;
 
-    const message = await this.getAnthropic(params.apiKey).messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1500,
-      temperature: 0.8,
-      system: systemPrompt,
-      messages: [
-        {
-          role: 'user',
-          content: userPrompt,
-        },
-      ],
+    const model = 'gemini-2.0-flash-exp';
+    const prompt = `${systemPrompt}\n\n${userPrompt}`;
+
+    const response = await this.geminiClient.models.generateContent({
+      model,
+      contents: prompt,
     });
 
-    const responseText = message.content[0].type === 'text' ? message.content[0].text : '[]';
+    const responseText = response.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
     const cleanedResponse = this.cleanJsonResponse(responseText);
     let suggestions: string[] = JSON.parse(cleanedResponse);
 
@@ -2325,9 +1465,8 @@ Responde SOLO con un JSON array de exactamente 5 strings (cada uno máximo 120 c
     await this.saveAIContent({
       contentType: 'ad_primary_text_suggestions',
       content: { suggestions, selectedTitle: params.selectedTitle },
-      model: 'claude-sonnet-4',
+      model: 'gemini-2.0-flash-exp',
       prompt: userPrompt,
-      tokensUsed: message.usage.input_tokens + message.usage.output_tokens,
     });
 
     return suggestions;
@@ -2368,20 +1507,15 @@ INSTRUCCIONES DE CONTENIDO:
 Responde SOLO con un JSON array de exactamente 5 strings (cada uno máximo 120 caracteres), sin explicaciones ni markdown:
 ["desc1", "desc2", "desc3", "desc4", "desc5"]`;
 
-    const message = await this.getAnthropic(params.apiKey).messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1500,
-      temperature: 0.8,
-      system: systemPrompt,
-      messages: [
-        {
-          role: 'user',
-          content: userPrompt,
-        },
-      ],
+    const model = 'gemini-2.0-flash-exp';
+    const prompt = `${systemPrompt}\n\n${userPrompt}`;
+
+    const response = await this.geminiClient.models.generateContent({
+      model,
+      contents: prompt,
     });
 
-    const responseText = message.content[0].type === 'text' ? message.content[0].text : '[]';
+    const responseText = response.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
     const cleanedResponse = this.cleanJsonResponse(responseText);
     let suggestions: string[] = JSON.parse(cleanedResponse);
 
@@ -2398,9 +1532,8 @@ Responde SOLO con un JSON array de exactamente 5 strings (cada uno máximo 120 c
         selectedTitle: params.selectedTitle,
         selectedPrimaryText: params.selectedPrimaryText
       },
-      model: 'claude-sonnet-4',
+      model: 'gemini-2.0-flash-exp',
       prompt: userPrompt,
-      tokensUsed: message.usage.input_tokens + message.usage.output_tokens,
     });
 
     return suggestions;
@@ -2614,29 +1747,23 @@ Output ONLY a valid JSON array with no markdown, no explanations:
 ]`;
     }
 
-    const message = await this.getAnthropic(params.apiKey).messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 2000,
-      temperature: 0.8,
-      system: systemPrompt,
-      messages: [
-        {
-          role: 'user',
-          content: userPrompt,
-        },
-      ],
+    const model = 'gemini-2.0-flash-exp';
+    const prompt = `${systemPrompt}\n\n${userPrompt}`;
+
+    const response = await this.geminiClient.models.generateContent({
+      model,
+      contents: prompt,
     });
 
-    const responseText = message.content[0].type === 'text' ? message.content[0].text : '[]';
+    const responseText = response.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
     const cleanedResponse = this.cleanJsonResponse(responseText);
 
     // Save to database for tracking
     await this.saveAIContent({
       contentType: 'ad_copy_suggestions',
       content: { platform: params.platform, suggestions: cleanedResponse },
-      model: 'claude-sonnet-4',
+      model: 'gemini-2.0-flash-exp',
       prompt: userPrompt,
-      tokensUsed: message.usage.input_tokens + message.usage.output_tokens,
     });
 
     if (params.platform === 'META') {
@@ -2668,18 +1795,21 @@ Output ONLY a valid JSON array with no markdown, no explanations:
     behaviors?: string[];
     demographics: string;
   }> {
-    const systemPrompt = `You are an expert media buyer specialized in ${params.platform} Ads targeting.
+    // v2.8.0 - NOW USES GEMINI (no more Anthropic)
+    const model = 'gemini-2.0-flash-exp';
+
+    logger.info('ai', `[Gemini] Generating targeting suggestions for ${params.platform}`);
+
+    const prompt = `You are an expert media buyer specialized in ${params.platform} Ads targeting.
 
 Analyze the offer and copy master to suggest optimal targeting parameters. Be specific and data-driven.
 
-IMPORTANT: Return ONLY valid JSON, no markdown formatting, no code blocks, no explanations.`;
-
-    const userPrompt = `Suggest targeting for this campaign on ${params.platform}:
+Suggest targeting for this campaign on ${params.platform}:
 
 Offer: ${params.offerName}
 Copy Master: ${params.copyMaster}
 
-Return JSON:
+Return ONLY valid JSON (no markdown, no code blocks):
 {
   "ageGroups": ["age ranges that match the offer"],
   "interests": ["specific interest categories"],
@@ -2687,26 +1817,23 @@ Return JSON:
   "demographics": "detailed description of ideal audience"
 }`;
 
-    const message = await this.callAnthropicWithDiagnostics(
-      `generateTargetingSuggestions(${params.platform})`,
-      () => this.getAnthropic(params.apiKey).messages.create({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1000,
-        temperature: 0.7,
-        system: systemPrompt,
-        messages: [
-          {
-            role: 'user',
-            content: userPrompt,
-          },
-        ],
-      }),
-      params.apiKey
-    );
+    try {
+      const response = await this.geminiClient.models.generateContent({
+        model,
+        contents: prompt,
+      });
 
-    const responseText = message.content[0].type === 'text' ? message.content[0].text : '{}';
-    const cleanedResponse = this.cleanJsonResponse(responseText);
-    return JSON.parse(cleanedResponse);
+      const text = response.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+      const cleanedResponse = this.cleanJsonResponse(text);
+      const suggestions = JSON.parse(cleanedResponse);
+
+      logger.success('ai', `[Gemini] Targeting suggestions generated for ${params.platform}`);
+
+      return suggestions;
+    } catch (error: any) {
+      logger.error('ai', `[Gemini] Targeting suggestions generation failed: ${error.message}`);
+      throw error;
+    }
   }
 
   // ============================================
