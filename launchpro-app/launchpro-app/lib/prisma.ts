@@ -7,6 +7,10 @@ const createPrismaClient = () => {
   });
 
   // Middleware to track Campaign status changes - saves to database
+  // NOTE: This middleware is now DISABLED because we use campaignAudit.service.ts instead
+  // The service provides more detailed logging with proper schema columns
+  // Keeping this commented out for reference
+  /*
   client.$use(async (params: Prisma.MiddlewareParams, next) => {
     // Only intercept Campaign updates with status changes
     if (
@@ -24,16 +28,17 @@ const createPrismaClient = () => {
       // Execute the update first
       const result = await next(params);
 
-      // Then log to database (fire and forget - don't block)
+      // Then log to database using new schema
       try {
         await client.$executeRaw`
-          INSERT INTO "CampaignAuditLog" (id, "campaignId", "newStatus", action, caller, timestamp)
+          INSERT INTO "CampaignAuditLog" (id, "campaignId", event, source, "newStatus", message, "createdAt")
           VALUES (
             ${`audit-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`},
             ${campaignId},
+            'STATUS_CHANGE',
+            'prisma-middleware',
             ${newStatus},
-            ${params.action},
-            ${callerLines.substring(0, 500)},
+            ${`Auto-logged: ${params.action} changed status to ${newStatus}`},
             NOW()
           )
         `;
@@ -46,6 +51,7 @@ const createPrismaClient = () => {
 
     return next(params);
   });
+  */
 
   return client;
 };
