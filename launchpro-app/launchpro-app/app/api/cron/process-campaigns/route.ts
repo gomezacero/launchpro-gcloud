@@ -101,21 +101,27 @@ export async function GET(request: NextRequest) {
         status: CampaignStatus.ARTICLE_APPROVED,
         // CRITICAL: Must have a real tracking link (not placeholder)
         tonicTrackingLink: { not: null },
-        NOT: {
-          tonicTrackingLink: { contains: 'tracking-pending' },
-        },
-        // Exclude campaigns that already have platforms launched
-        NOT: {
-          platforms: {
-            some: {
-              OR: [
-                { status: CampaignStatus.ACTIVE },
-                { metaCampaignId: { not: null } },
-                { tiktokCampaignId: { not: null } },
-              ],
+        AND: [
+          {
+            NOT: {
+              tonicTrackingLink: { contains: 'tracking-pending' },
             },
           },
-        },
+          {
+            // Exclude campaigns that already have platforms launched
+            NOT: {
+              platforms: {
+                some: {
+                  OR: [
+                    { status: CampaignStatus.ACTIVE },
+                    { metaCampaignId: { not: null } },
+                    { tiktokCampaignId: { not: null } },
+                  ],
+                },
+              },
+            },
+          },
+        ],
       },
       include: {
         platforms: {
