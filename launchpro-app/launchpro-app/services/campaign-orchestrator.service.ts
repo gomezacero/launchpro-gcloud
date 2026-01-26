@@ -1666,8 +1666,8 @@ class CampaignOrchestratorService {
     // Check if manual ad copy was provided for Meta
     const hasManualAdCopy = platformConfig.manualAdCopy &&
       (platformConfig.manualAdCopy.adTitle ||
-       platformConfig.manualAdCopy.description ||
-       platformConfig.manualAdCopy.primaryText);
+        platformConfig.manualAdCopy.description ||
+        platformConfig.manualAdCopy.primaryText);
 
     let adCopy: { headline: string; primaryText: string; description: string; callToAction: string };
 
@@ -4035,6 +4035,7 @@ class CampaignOrchestratorService {
         copyMaster: copyMasterForKeywords,
         count: 10,
         country: params.country,
+        apiKey: process.env.ANTHROPIC_API_KEY,
       });
 
       // Save keywords to campaign
@@ -4179,7 +4180,7 @@ class CampaignOrchestratorService {
     // DEBUG: First thing - log that we entered this function
     const apiKeyCheck = (process.env.ANTHROPIC_API_KEY || '').trim();
     logger.info('system', `🔄 [Orchestrator] ENTERED continueCampaignAfterArticle for ${campaignId}`);
-    logger.info('system', `🔑 [Orchestrator] ANTHROPIC_API_KEY at function entry: length=${apiKeyCheck.length}, valid_format=${apiKeyCheck.startsWith('sk-ant-')}, preview=${apiKeyCheck.substring(0,15)}...${apiKeyCheck.substring(apiKeyCheck.length-6)}`);
+    logger.info('system', `🔑 [Orchestrator] ANTHROPIC_API_KEY at function entry: length=${apiKeyCheck.length}, valid_format=${apiKeyCheck.startsWith('sk-ant-')}, preview=${apiKeyCheck.substring(0, 15)}...${apiKeyCheck.substring(apiKeyCheck.length - 6)}`);
 
     // Get campaign with all related data
     const campaign = await prisma.campaign.findUnique({
@@ -4440,7 +4441,7 @@ class CampaignOrchestratorService {
     // Generate Copy Master if not set
     if (!campaign.copyMaster) {
       logger.info('system', `🤖 [AI] ABOUT TO CALL Anthropic generateCopyMaster for "${campaign.name}" (${campaignId})`);
-      logger.info('system', `🔑 [AI] API Key: length=${cleanKey.length}, starts_with_sk-ant=${cleanKey.startsWith('sk-ant-')}, preview=${cleanKey.substring(0,15)}...${cleanKey.substring(cleanKey.length-6)}`);
+      logger.info('system', `🔑 [AI] API Key: length=${cleanKey.length}, starts_with_sk-ant=${cleanKey.startsWith('sk-ant-')}, preview=${cleanKey.substring(0, 15)}...${cleanKey.substring(cleanKey.length - 6)}`);
       try {
         aiContentResult.copyMaster = await aiService.generateCopyMaster({
           offerName: campaign.offer.name,
@@ -4448,6 +4449,7 @@ class CampaignOrchestratorService {
           vertical: campaign.offer.vertical,
           country: campaign.country,
           language: campaign.language,
+          apiKey: process.env.ANTHROPIC_API_KEY,
         });
         logger.success('system', `✅ [AI] Anthropic generateCopyMaster SUCCESS for "${campaign.name}"`);
       } catch (copyMasterError: any) {
@@ -4479,6 +4481,7 @@ class CampaignOrchestratorService {
           copyMaster: aiContentResult.copyMaster,
           count: 6,
           country: campaign.country,
+          apiKey: process.env.ANTHROPIC_API_KEY,
         });
         logger.success('system', `✅ [AI] Anthropic generateKeywords SUCCESS for "${campaign.name}"`);
       } catch (keywordsError: any) {
@@ -4571,6 +4574,7 @@ class CampaignOrchestratorService {
           adFormat: effectiveMediaType === 'VIDEO' ? 'VIDEO' : 'IMAGE',
           country: campaign.country,
           language: campaign.language,
+          apiKey: process.env.ANTHROPIC_API_KEY,
         });
         logger.success('system', `✅ [AI] Anthropic generateAdCopy SUCCESS for "${campaign.name}" platform=${platformConfig.platform}`);
       } catch (adCopyError: any) {

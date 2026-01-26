@@ -80,12 +80,14 @@ function validateApiKey(apiKey: string): { valid: boolean; error?: string } {
  *
  * @throws Error if API key is invalid or missing
  */
-export function getAnthropicClient(): Anthropic {
+export function getAnthropicClient(apiKey?: string): Anthropic {
   _invocationCount++;
   const callId = `${INSTANCE_ID}-call-${_invocationCount}`;
 
-  const apiKey = getCleanApiKey();
-  const currentKeyHash = getKeyHash(apiKey);
+  // Use provided key or fallback to environment
+  // If fallback, use getCleanApiKey which handles env var cleaning
+  const effectiveKey = apiKey ? apiKey : getCleanApiKey();
+  const currentKeyHash = getKeyHash(effectiveKey);
 
   // Log debug info
   console.log(`[AnthropicClient v2.4.0] Creating FRESH client:`, {
@@ -93,12 +95,13 @@ export function getAnthropicClient(): Anthropic {
     instanceId: INSTANCE_ID,
     invocationCount: _invocationCount,
     keyHash: currentKeyHash,
+    isExplicitKey: !!apiKey,
     timeSinceModuleLoad: `${Math.round((Date.now() - MODULE_LOAD_TIME) / 1000)}s`,
     timestamp: new Date().toISOString(),
   });
 
   // Validate the API key
-  const validation = validateApiKey(apiKey);
+  const validation = validateApiKey(effectiveKey);
   if (!validation.valid) {
     console.error(`[AnthropicClient v2.4.0] API key validation failed:`, validation.error);
     throw new Error(`[AnthropicClient] ${validation.error}`);
@@ -106,7 +109,7 @@ export function getAnthropicClient(): Anthropic {
 
   try {
     // CREATE FRESH CLIENT EVERY TIME
-    const client = new Anthropic({ apiKey });
+    const client = new Anthropic({ apiKey: effectiveKey });
     console.log(`[AnthropicClient v2.4.0] Fresh client created successfully (callId: ${callId})`);
     return client;
   } catch (error: any) {

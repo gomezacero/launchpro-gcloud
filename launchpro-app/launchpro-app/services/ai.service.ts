@@ -28,6 +28,7 @@ interface GenerateCopyMasterParams {
   vertical?: string;
   country: string;
   language: string;
+  apiKey?: string;
 }
 
 interface GenerateKeywordsParams {
@@ -35,6 +36,7 @@ interface GenerateKeywordsParams {
   copyMaster: string;
   count?: number; // 3-10, default 6
   country: string;
+  apiKey?: string;
 }
 
 interface GenerateArticleParams {
@@ -43,6 +45,7 @@ interface GenerateArticleParams {
   keywords: string[];
   country: string;
   language: string;
+  apiKey?: string;
 }
 
 interface GenerateAdCopyParams {
@@ -53,12 +56,29 @@ interface GenerateAdCopyParams {
   targetAudience?: string;
   country: string;
   language: string;
+  apiKey?: string;
 }
 
 interface GenerateImageParams {
   prompt: string;
   aspectRatio?: '1:1' | '16:9' | '9:16' | '4:3' | '3:4';
   negativePrompt?: string;
+  apiKey?: string;
+}
+
+interface GenerateUGCMediaParams {
+  campaignId: string;
+  platform: 'META' | 'TIKTOK';
+  mediaType: 'IMAGE' | 'VIDEO' | 'BOTH';
+  count: number;
+  category: string;
+  country: string;
+  language: string;
+  adTitle: string;
+  copyMaster: string;
+  offerName?: string;
+  vertical?: string;
+  apiKey?: string;
 }
 
 interface GenerateVideoParams {
@@ -625,7 +645,7 @@ class AIService {
     let cleanedKey = rawKey.split('').filter(c => c.charCodeAt(0) >= 33 && c.charCodeAt(0) <= 126).join('');
     // Remove surrounding quotes if present (common Vercel env var issue)
     if ((cleanedKey.startsWith('"') && cleanedKey.endsWith('"')) ||
-        (cleanedKey.startsWith("'") && cleanedKey.endsWith("'"))) {
+      (cleanedKey.startsWith("'") && cleanedKey.endsWith("'"))) {
       cleanedKey = cleanedKey.slice(1, -1);
     }
     return cleanedKey;
@@ -675,15 +695,16 @@ class AIService {
    * This fixes the 401 "invalid x-api-key" error that occurs when multiple
    * campaigns are processed in parallel and each creates its own client.
    */
-  private get anthropic(): Anthropic {
+  private getAnthropic(apiKey?: string): Anthropic {
     // Log debug info (doesn't expose full key)
     const debugInfo = getApiKeyDebugInfo();
     console.log('[AIService.anthropic getter] Using singleton client:', {
       ...debugInfo,
+      isExplicitKey: !!apiKey,
       timestamp: new Date().toISOString(),
     });
 
-    return getAnthropicClient();
+    return getAnthropicClient(apiKey);
   }
 
   /**
@@ -692,11 +713,12 @@ class AIService {
    */
   private async callAnthropicWithDiagnostics<T>(
     operation: string,
-    apiCall: () => Promise<T>
+    apiCall: () => Promise<T>,
+    apiKey?: string
   ): Promise<T> {
     const startTime = Date.now();
-    const rawApiKey = process.env.ANTHROPIC_API_KEY || '';
-    const cleanApiKey = this.getCleanApiKey();
+    const rawApiKey = apiKey || process.env.ANTHROPIC_API_KEY || '';
+    const cleanApiKey = apiKey ? apiKey : this.getCleanApiKey(); // If passed explicitly, assume it's clean-ish but still worth checking types
 
     // DETAILED DEBUG: Log pre-call diagnostics with both raw and clean key info
     console.log(`[AIService.callAnthropicWithDiagnostics] 🚀 Starting ${operation}:`, {
@@ -899,12 +921,13 @@ Generate a compelling Copy Master that:
 - Captures the essence of this offer and resonates with the target audience`;
 
     // Debug: Log API key info before making the call (same as generateKeywords)
-    const debugKey = this.getCleanApiKey();
+    const debugKey = params.apiKey ? params.apiKey : this.getCleanApiKey();
     console.log(`[AIService.generateCopyMaster] 🔑 API Key debug:`, {
       keyLength: debugKey.length,
       keyStart: debugKey.substring(0, 15),
       keyEnd: debugKey.substring(debugKey.length - 6),
       startsWithSkAnt: debugKey.startsWith('sk-ant-'),
+      isExplicitKey: !!params.apiKey,
       rawEnvLength: (process.env.ANTHROPIC_API_KEY || '').length,
       offerName: params.offerName,
       country: params.country,
@@ -912,7 +935,7 @@ Generate a compelling Copy Master that:
 
     let message;
     try {
-      message = await this.anthropic.messages.create({
+      message = await this.getAnthropic(params.apiKey).messages.create({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 500,
         temperature: 0.7,
@@ -1038,17 +1061,18 @@ REMEMBER:
 Return ONLY a JSON array: ["keyword1", "keyword2", ..., "keyword10"]`;
 
     // Debug: Log API key info before making the call
-    const debugKey = this.getCleanApiKey();
+    const debugKey = params.apiKey ? params.apiKey : this.getCleanApiKey();
     console.log(`[AIService.generateKeywords] 🔑 API Key debug:`, {
       keyLength: debugKey.length,
       keyStart: debugKey.substring(0, 15),
       keyEnd: debugKey.substring(debugKey.length - 6),
       startsWithSkAnt: debugKey.startsWith('sk-ant-'),
+      isExplicitKey: !!params.apiKey,
     });
 
     let message;
     try {
-      message = await this.anthropic.messages.create({
+      message = await this.getAnthropic(params.apiKey).messages.create({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 600, // Increased for 10 longer keywords (long-tails)
         temperature: 0.8,
@@ -1243,7 +1267,7 @@ Return a JSON object with:
 
 IMPORTANT: The contentGenerationPhrases array MUST contain between 3 and 5 items. If you generate more than 5 or less than 3, the request will be REJECTED by Tonic.`;
 
-    const message = await this.anthropic.messages.create({
+    const message = await this.getAnthropic(params.apiKey).messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 1500,
       temperature: 0.7,
@@ -1374,7 +1398,7 @@ Return JSON:
 
     const message = await this.callAnthropicWithDiagnostics(
       `generateAdCopy(${params.platform}, ${params.country})`,
-      () => this.anthropic.messages.create({
+      () => this.getAnthropic(params.apiKey).messages.create({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 800,
         temperature: 0.8,
@@ -1385,7 +1409,8 @@ Return JSON:
             content: userPrompt,
           },
         ],
-      })
+      }),
+      params.apiKey
     );
 
     const responseText = message.content[0].type === 'text' ? message.content[0].text : '{}';
@@ -1413,6 +1438,7 @@ Return JSON:
     vertical?: string;
     country: string;
     language: string;
+    apiKey?: string;
   }): Promise<string[]> {
     const systemPrompt = `Actúa como un experto en Copywriting para Anuncios de Alto Rendimiento (PPC y Social Ads).
 Tu objetivo es generar 5 opciones de títulos cortos (máximo 50-80 caracteres incluyendo espacios) que generen curiosidad inmediata y clics.
@@ -1435,7 +1461,7 @@ ${params.vertical ? `- VERTICAL: ${params.vertical}` : ''}
 Responde SOLO con un JSON array de exactamente 5 strings (cada uno 50-80 caracteres), sin explicaciones ni markdown:
 ["copy1", "copy2", "copy3", "copy4", "copy5"]`;
 
-    const message = await this.anthropic.messages.create({
+    const message = await this.getAnthropic(params.apiKey).messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 1500,
       temperature: 0.8,
@@ -1477,6 +1503,7 @@ Responde SOLO con un JSON array de exactamente 5 strings (cada uno 50-80 caracte
     category: string;
     country: string;
     language: string;
+    apiKey?: string;
   }): Promise<{ keyword: string; type: string }[]> {
     const systemPrompt = `Actúa como un especialista Senior en SEO y Keyword Research. Tu tarea es generar una lista de 10 palabras clave (keywords) transaccionales y de navegación para la categoría especificada. Las keywords deben simular consultas orgánicas y naturales que los usuarios escriben en la barra de búsqueda de Google.
 
@@ -1515,7 +1542,7 @@ Responde SOLO con un JSON array de objetos con esta estructura exacta, sin expli
   {"keyword": "keyword aquí", "type": "urgency"}
 ]`;
 
-    const message = await this.anthropic.messages.create({
+    const message = await this.getAnthropic(params.apiKey).messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 1500,
       temperature: 0.8,
@@ -1558,6 +1585,7 @@ Responde SOLO con un JSON array de objetos con esta estructura exacta, sin expli
     copyMaster: string;
     country: string;
     language: string;
+    apiKey?: string;
   }): Promise<string[]> {
     const systemPrompt = `Actúa como experto en Copywriting para Anuncios. Genera 5 opciones de TÍTULOS que generen alta curiosidad.
 
@@ -1580,7 +1608,7 @@ INSTRUCCIONES DE CONTENIDO:
 Responde SOLO con un JSON array de exactamente 5 strings (cada uno máximo 80 caracteres), sin explicaciones ni markdown:
 ["titulo1", "titulo2", "titulo3", "titulo4", "titulo5"]`;
 
-    const message = await this.anthropic.messages.create({
+    const message = await this.getAnthropic(params.apiKey).messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 1500,
       temperature: 0.8,
@@ -1624,6 +1652,7 @@ Responde SOLO con un JSON array de exactamente 5 strings (cada uno máximo 80 ca
     selectedTitle: string;
     country: string;
     language: string;
+    apiKey?: string;
   }): Promise<string[]> {
     const systemPrompt = `Actúa como experto en Copywriting. Genera 5 opciones de TEXTO PRINCIPAL (Primary Text) persuasivo.
 
@@ -1649,7 +1678,7 @@ INSTRUCCIONES DE CONTENIDO:
 Responde SOLO con un JSON array de exactamente 5 strings (cada uno máximo 120 caracteres), sin explicaciones ni markdown:
 ["texto1", "texto2", "texto3", "texto4", "texto5"]`;
 
-    const message = await this.anthropic.messages.create({
+    const message = await this.getAnthropic(params.apiKey).messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 1500,
       temperature: 0.8,
@@ -1694,6 +1723,7 @@ Responde SOLO con un JSON array de exactamente 5 strings (cada uno máximo 120 c
     selectedPrimaryText: string;
     country: string;
     language: string;
+    apiKey?: string;
   }): Promise<string[]> {
     const systemPrompt = `Actúa como experto en Copywriting. Genera 5 opciones de DESCRIPCIONES (para la parte inferior del anuncio).
 
@@ -1717,7 +1747,7 @@ INSTRUCCIONES DE CONTENIDO:
 Responde SOLO con un JSON array de exactamente 5 strings (cada uno máximo 120 caracteres), sin explicaciones ni markdown:
 ["desc1", "desc2", "desc3", "desc4", "desc5"]`;
 
-    const message = await this.anthropic.messages.create({
+    const message = await this.getAnthropic(params.apiKey).messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 1500,
       temperature: 0.8,
@@ -1767,6 +1797,7 @@ Responde SOLO con un JSON array de exactamente 5 strings (cada uno máximo 120 c
     platform: 'META' | 'TIKTOK';
     country: string;
     language: string;
+    apiKey?: string;
   }): Promise<{
     meta?: { headline: string; primaryText: string; description: string }[];
     tiktok?: { adText: string }[];
@@ -1962,7 +1993,7 @@ Output ONLY a valid JSON array with no markdown, no explanations:
 ]`;
     }
 
-    const message = await this.anthropic.messages.create({
+    const message = await this.getAnthropic(params.apiKey).messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 2000,
       temperature: 0.8,
@@ -2009,6 +2040,7 @@ Output ONLY a valid JSON array with no markdown, no explanations:
     offerName: string;
     copyMaster: string;
     platform: 'META' | 'TIKTOK';
+    apiKey?: string;
   }): Promise<{
     ageGroups: string[];
     interests: string[];
@@ -2036,7 +2068,7 @@ Return JSON:
 
     const message = await this.callAnthropicWithDiagnostics(
       `generateTargetingSuggestions(${params.platform})`,
-      () => this.anthropic.messages.create({
+      () => this.getAnthropic(params.apiKey).messages.create({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 1000,
         temperature: 0.7,
@@ -2047,7 +2079,8 @@ Return JSON:
             content: userPrompt,
           },
         ],
-      })
+      }),
+      params.apiKey
     );
 
     const responseText = message.content[0].type === 'text' ? message.content[0].text : '{}';
