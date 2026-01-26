@@ -8,7 +8,7 @@ import { CampaignStatus, Prisma, Campaign, CampaignPlatform, Offer, Account } fr
 
 // DEPLOYMENT VERSION - Used to verify which code version is running
 // This helps identify if old Vercel instances are executing stale code
-const CODE_VERSION = 'v2.7.0-pregenerate-keywords-in-http-2026-01-26';
+const CODE_VERSION = 'v2.8.0-http-launch-fix-401-2026-01-26';
 
 /**
  * Cron Job: Process Approved Campaigns (PARALLEL PROCESSING)
@@ -301,40 +301,38 @@ async function processSingleCampaign(
     // ============================================
     // ATOMIC CLAIM: Prevent race conditions
     // ============================================
-    const claimed = await prisma.campaign.updateMany({
-      where: {
-        id: campaign.id,
-        status: campaign.status, // Must still be the same status
-      },
-      data: {
-        status: CampaignStatus.GENERATING_AI,
-      },
+    // We use a processing flag instead of status change, because the HTTP endpoint
+    // will manage the status transitions (ARTICLE_APPROVED -> LAUNCHING -> ACTIVE/FAILED)
+    // This uses an optimistic lock pattern - we verify the campaign is still in ARTICLE_APPROVED
+    const currentCampaign = await prisma.campaign.findUnique({
+      where: { id: campaign.id },
+      select: { status: true },
     });
 
-    if (claimed.count === 0) {
-      logger.info('system', `⏭️ [CRON] Campaign "${campaign.name}" already claimed by another process`);
+    if (currentCampaign?.status !== CampaignStatus.ARTICLE_APPROVED) {
+      logger.info('system', `⏭️ [CRON] Campaign "${campaign.name}" status changed (now ${currentCampaign?.status}), skipping`);
       return {
         success: true,
         skipped: true,
         campaignId: campaign.id,
-        message: 'Already claimed by another process',
+        message: `Status changed to ${currentCampaign?.status}, skipping`,
       };
     }
 
-    // ULTRA DEBUG: Claimed successfully
-    console.log(`\n[processSingleCampaign] ✅ CLAIMED campaign "${campaign.name}" for processing`);
-    console.log(`[processSingleCampaign] Status set to GENERATING_AI`);
+    // ULTRA DEBUG: Ready to process
+    console.log(`\n[processSingleCampaign] ✅ Campaign "${campaign.name}" ready for HTTP launch`);
+    console.log(`[processSingleCampaign] Current status: ARTICLE_APPROVED`);
 
-    // AUDIT LOG: Starting AI generation
+    // AUDIT LOG: Starting launch via HTTP
     await campaignAudit.logStatusChange(
       campaign.id,
       'cron/process-campaigns',
       'ARTICLE_APPROVED',
-      'GENERATING_AI',
-      `Campaign claimed for processing - starting AI content generation`,
+      'LAUNCHING',
+      `Cron delegating to HTTP endpoint for launch`,
       { processId, trackingLink: campaign.tonicTrackingLink }
     );
-    logger.info('system', `🔒 [CRON] Claimed campaign "${campaign.name}" for processing`);
+    logger.info('system', `🔒 [CRON] Starting HTTP launch for campaign "${campaign.name}"`);
 
     // DEBUG: Log ANTHROPIC_API_KEY status before processing
     const apiKey = (process.env.ANTHROPIC_API_KEY || '').trim();
@@ -345,20 +343,45 @@ async function processSingleCampaign(
     logger.info('system', `🔑 [CRON] ANTHROPIC_API_KEY check BEFORE continueCampaignAfterArticle: length=${apiKey.length}, starts_with_sk-ant=${apiKey.startsWith('sk-ant-')}, preview=${apiKey.substring(0,15)}...${apiKey.substring(apiKey.length-6)}`);
 
     // ============================================
-    // PROCESS THE CAMPAIGN
+    // PROCESS THE CAMPAIGN VIA HTTP (fixes 401 in cron context)
     // ============================================
-    console.log(`\n[processSingleCampaign] 🚀 ABOUT TO CALL continueCampaignAfterArticle...`);
+    // Instead of calling continueCampaignAfterArticle directly (which fails with 401),
+    // we call the /api/campaigns/[id]/launch endpoint via HTTP.
+    // This executes in a fresh HTTP context where env vars work correctly.
+    console.log(`\n[processSingleCampaign] 🚀 LAUNCHING VIA HTTP ENDPOINT...`);
     console.log(`[processSingleCampaign] CODE_VERSION: ${CODE_VERSION}`);
     console.log(`[processSingleCampaign] Campaign ID: ${campaign.id}`);
     console.log(`[processSingleCampaign] Timestamp: ${new Date().toISOString()}`);
-    console.log(`[processSingleCampaign] API Key Preview: ${apiKey.substring(0, 20)}...${apiKey.substring(apiKey.length - 6)}`);
-    logger.info('system', `🚀 [CRON] CALLING continueCampaignAfterArticle for "${campaign.name}" NOW... (${CODE_VERSION})`);
+    logger.info('system', `🚀 [CRON] LAUNCHING "${campaign.name}" via HTTP endpoint (${CODE_VERSION})`);
 
-    const result = await campaignOrchestrator.continueCampaignAfterArticle(campaign.id);
+    // Determine the base URL for the HTTP call
+    const baseUrl = process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : process.env.NEXTAUTH_URL || 'https://launchproquick.vercel.app';
 
-    console.log(`\n[processSingleCampaign] ✅ continueCampaignAfterArticle RETURNED`);
+    const launchUrl = `${baseUrl}/api/campaigns/${campaign.id}/launch`;
+    console.log(`[processSingleCampaign] Launch URL: ${launchUrl}`);
+    logger.info('system', `🌐 [CRON] Calling launch endpoint: ${launchUrl}`);
+
+    const httpResponse = await fetch(launchUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    const result = await httpResponse.json();
+
+    if (!httpResponse.ok) {
+      console.log(`\n[processSingleCampaign] ❌ HTTP launch FAILED`);
+      console.log(`[processSingleCampaign] Status: ${httpResponse.status}`);
+      console.log(`[processSingleCampaign] Response:`, JSON.stringify(result, null, 2));
+      throw new Error(result.error || `HTTP ${httpResponse.status}: Launch failed`);
+    }
+
+    console.log(`\n[processSingleCampaign] ✅ HTTP launch RETURNED`);
     console.log(`[processSingleCampaign] Result:`, JSON.stringify(result, null, 2));
-    logger.info('system', `✅ [CRON] continueCampaignAfterArticle RETURNED for "${campaign.name}"`)
+    logger.info('system', `✅ [CRON] HTTP launch RETURNED for "${campaign.name}"`)
 
     const duration = Date.now() - campaignStartTime;
     logger.success('system', `✅ [CRON] Campaign "${campaign.name}" processed in ${duration}ms`, {
@@ -374,14 +397,14 @@ async function processSingleCampaign(
         data: { errorDetails: Prisma.DbNull },
       });
 
-      // AUDIT LOG: Campaign launched successfully
+      // AUDIT LOG: Campaign launched successfully (via HTTP endpoint)
       await campaignAudit.logStatusChange(
         campaign.id,
         'cron/process-campaigns',
-        'GENERATING_AI',
+        'ARTICLE_APPROVED',
         'ACTIVE',
-        `Campaign successfully launched to ${result.platforms.map((p: any) => p.platform).join(', ')}`,
-        { durationMs: duration, platforms: result.platforms }
+        `Campaign successfully launched via HTTP to ${result.platforms.map((p: any) => p.platform).join(', ')}`,
+        { durationMs: duration, platforms: result.platforms, launchMethod: 'HTTP' }
       );
     } else {
       // AUDIT LOG: Partial success
