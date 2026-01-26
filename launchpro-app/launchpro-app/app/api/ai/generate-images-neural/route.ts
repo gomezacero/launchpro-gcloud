@@ -87,8 +87,8 @@ export async function POST(request: NextRequest) {
       previewMode: true, // Always preview mode for wizard
     };
 
-    // Execute Neural Engine Pipeline
-    const orchestrator = getNeuralEngineOrchestrator();
+    // Execute Neural Engine Pipeline - pass apiKey explicitly for serverless reliability
+    const orchestrator = getNeuralEngineOrchestrator(process.env.ANTHROPIC_API_KEY);
     const result = await orchestrator.execute(neuralInput);
 
     const duration = Date.now() - startTime;

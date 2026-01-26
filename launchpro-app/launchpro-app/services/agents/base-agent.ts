@@ -28,17 +28,18 @@ export abstract class BaseAgent {
   protected config: AgentConfig;
   protected state: AgentState;
   protected toolHandlers: Map<string, (input: any) => Promise<ToolResult>>;
+  protected apiKey?: string;
 
   /**
-   * Get Anthropic client - uses singleton from anthropic-client.ts
-   * This fixes the 401 "invalid x-api-key" error caused by creating multiple instances
+   * Get Anthropic client with explicit API key for serverless reliability
+   * Passing apiKey explicitly prevents 401 errors in Vercel serverless environment
    */
   protected get anthropic(): Anthropic {
-    return getAnthropicClient();
+    return getAnthropicClient(this.apiKey);
   }
 
-  constructor(config: Partial<AgentConfig> = {}) {
-    // No Anthropic initialization needed - client comes from singleton
+  constructor(config: Partial<AgentConfig> = {}, apiKey?: string) {
+    this.apiKey = apiKey || process.env.ANTHROPIC_API_KEY;
 
     this.config = {
       model: config.model || 'claude-sonnet-4-20250514',

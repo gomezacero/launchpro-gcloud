@@ -61,7 +61,8 @@ async function generateWithNeuralEngine(params: {
       logger.info('ai', `[NeuralEngine] Using copyMaster for context: "${params.copyMaster}"`);
     }
 
-    const orchestrator = getNeuralEngineOrchestrator();
+    // Pass apiKey explicitly for serverless reliability
+    const orchestrator = getNeuralEngineOrchestrator(process.env.ANTHROPIC_API_KEY);
 
     const input: NeuralEngineInput = {
       offer: {
@@ -2696,6 +2697,7 @@ class CampaignOrchestratorService {
       adFormat: adFormat,
       country: campaign.country,
       language: campaign.language,
+      apiKey: process.env.ANTHROPIC_API_KEY,
     });
 
     // Fetch the TikTok Account
@@ -2776,6 +2778,7 @@ class CampaignOrchestratorService {
       offerName: campaign.offer.name,
       copyMaster: aiContent.copyMaster,
       platform: 'TIKTOK',
+      apiKey: process.env.ANTHROPIC_API_KEY,
     });
 
     // Map Age Groups to TikTok Enums
@@ -4650,6 +4653,7 @@ class CampaignOrchestratorService {
             copyMaster: aiContentResult.copyMaster,
             offerName: campaign.offer.name,
             vertical: campaign.offer.vertical,
+            apiKey: process.env.ANTHROPIC_API_KEY,
           });
         }
 

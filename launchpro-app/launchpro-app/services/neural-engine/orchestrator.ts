@@ -47,11 +47,15 @@ const ORCHESTRATOR_NAME = 'NeuralEngineOrchestrator';
 export class NeuralEngineOrchestrator {
   private globalScout = getGlobalScoutAgent();
   private assetManager = getAssetManagerAgent();
-  private angleStrategist = getAngleStrategistAgent();
+  private angleStrategist: ReturnType<typeof getAngleStrategistAgent>;
   private visualEngineer = getVisualEngineerAgent();
   private complianceAssembler = getComplianceAssembler();
+  private apiKey?: string;
 
-  constructor() {
+  constructor(apiKey?: string) {
+    this.apiKey = apiKey || process.env.ANTHROPIC_API_KEY;
+    // Pass apiKey to AngleStrategist for serverless reliability
+    this.angleStrategist = getAngleStrategistAgent(this.apiKey);
     console.log(`[${ORCHESTRATOR_NAME}] Initialized`);
   }
 
@@ -350,7 +354,17 @@ export class NeuralEngineOrchestrator {
 
 let orchestratorInstance: NeuralEngineOrchestrator | null = null;
 
-export function getNeuralEngineOrchestrator(): NeuralEngineOrchestrator {
+/**
+ * Get or create a NeuralEngineOrchestrator instance.
+ * When apiKey is provided, creates a fresh instance for serverless reliability.
+ * When no apiKey is provided, returns singleton (for backwards compatibility).
+ */
+export function getNeuralEngineOrchestrator(apiKey?: string): NeuralEngineOrchestrator {
+  // If apiKey is explicitly provided, create fresh instance for serverless reliability
+  if (apiKey) {
+    return new NeuralEngineOrchestrator(apiKey);
+  }
+  // Otherwise use singleton pattern with env var fallback
   if (!orchestratorInstance) {
     orchestratorInstance = new NeuralEngineOrchestrator();
   }

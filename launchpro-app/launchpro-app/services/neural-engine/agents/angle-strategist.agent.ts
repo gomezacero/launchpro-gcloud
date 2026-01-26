@@ -39,17 +39,18 @@ const AGENT_NAME = 'AngleStrategist';
 
 export class AngleStrategistAgent {
   private cacheService = getSemanticCacheService();
+  private apiKey?: string;
 
   /**
-   * Get Anthropic client - uses singleton from anthropic-client.ts
-   * This fixes the 401 "invalid x-api-key" error caused by creating multiple instances
+   * Get Anthropic client with explicit API key for serverless reliability
+   * Passing apiKey explicitly prevents 401 errors in Vercel serverless environment
    */
   private get anthropic(): Anthropic {
-    return getAnthropicClient();
+    return getAnthropicClient(this.apiKey);
   }
 
-  constructor() {
-    // No initialization needed - Anthropic client comes from singleton
+  constructor(apiKey?: string) {
+    this.apiKey = apiKey || process.env.ANTHROPIC_API_KEY;
   }
 
   /**
@@ -432,12 +433,22 @@ Reference ${i + 1}:
 }
 
 // ============================================================================
-// SINGLETON
+// SINGLETON / FACTORY
 // ============================================================================
 
 let angleStrategistInstance: AngleStrategistAgent | null = null;
 
-export function getAngleStrategistAgent(): AngleStrategistAgent {
+/**
+ * Get or create an AngleStrategistAgent instance.
+ * When apiKey is provided, creates a fresh instance for serverless reliability.
+ * When no apiKey is provided, returns singleton (for backwards compatibility).
+ */
+export function getAngleStrategistAgent(apiKey?: string): AngleStrategistAgent {
+  // If apiKey is explicitly provided, create fresh instance for serverless reliability
+  if (apiKey) {
+    return new AngleStrategistAgent(apiKey);
+  }
+  // Otherwise use singleton pattern with env var fallback
   if (!angleStrategistInstance) {
     angleStrategistInstance = new AngleStrategistAgent();
   }
