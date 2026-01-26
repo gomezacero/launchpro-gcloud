@@ -94,30 +94,16 @@ export async function GET(request: NextRequest) {
     // Find MULTIPLE campaigns ready to process (up to 3 for parallel processing)
     // CRITICAL: Only process campaigns that ALREADY have tracking links
     // The poll-tracking-links cron handles waiting for tracking links
-    const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
-
     const campaigns = await prisma.campaign.findMany({
       where: {
-        OR: [
-          {
-            status: CampaignStatus.ARTICLE_APPROVED,
-            // CRITICAL: Must have a real tracking link (not placeholder)
-            tonicTrackingLink: { not: null },
-            NOT: {
-              tonicTrackingLink: { contains: 'tracking-pending' },
-            },
-          },
-          {
-            // Retry stuck GENERATING_AI campaigns (timeout recovery)
-            // CRITICAL: Must ALSO have tracking link to retry
-            status: CampaignStatus.GENERATING_AI,
-            updatedAt: { lt: fifteenMinutesAgo },
-            tonicTrackingLink: { not: null },
-            NOT: {
-              tonicTrackingLink: { contains: 'tracking-pending' },
-            },
-          },
-        ],
+        // ONLY process campaigns that are ARTICLE_APPROVED with a valid tracking link
+        // NO automatic retry for GENERATING_AI - if it fails, it stays failed
+        status: CampaignStatus.ARTICLE_APPROVED,
+        // CRITICAL: Must have a real tracking link (not placeholder)
+        tonicTrackingLink: { not: null },
+        NOT: {
+          tonicTrackingLink: { contains: 'tracking-pending' },
+        },
         // Exclude campaigns that already have platforms launched
         NOT: {
           platforms: {
@@ -309,11 +295,6 @@ async function processSingleCampaign(
     // ============================================
     // ATOMIC CLAIM: Prevent race conditions
     // ============================================
-    const isRetry = campaign.status === CampaignStatus.GENERATING_AI;
-    if (isRetry) {
-      logger.info('system', `🔄 [CRON] Retrying stuck campaign "${campaign.name}" (was in GENERATING_AI >15min)`);
-    }
-
     const claimed = await prisma.campaign.updateMany({
       where: {
         id: campaign.id,
