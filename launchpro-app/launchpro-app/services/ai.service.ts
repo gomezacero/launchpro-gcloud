@@ -8,15 +8,22 @@ import { logger } from '@/lib/logger';
 import { getStorage } from '@/lib/gcs';
 import { getAnthropicClient, getApiKeyDebugInfo } from '@/lib/anthropic-client';
 
+// VERSION MARKER - Used to verify which code version is deployed
+const AI_SERVICE_VERSION = 'v2.6.1-gemini-migration-2026-01-26';
+console.log(`[AIService] Module loaded - VERSION: ${AI_SERVICE_VERSION}`);
+
 /**
- * AI Service
- * Handles all AI-powered content generation:
- * - Copy Master generation (Anthropic Claude Sonnet 4)
- * - Keywords generation (Anthropic Claude Sonnet 4)
- * - Article generation for RSOC (Anthropic Claude Sonnet 4)
- * - Ad copy generation (Anthropic Claude Sonnet 4)
- * - Image generation (Google Gemini - Nano Banana Pro / gemini-2.0-flash-exp)
- * - Video generation (Google Vertex AI - Veo 3.1 Fast)
+ * AI Service v2.6.1 - GEMINI MIGRATION
+ *
+ * Cron context uses GEMINI to avoid Anthropic 401 stale connection issues:
+ * - generateCopyMasterWithGemini
+ * - generateKeywordsWithGemini
+ * - generateAdCopyWithGemini
+ * - generateArticleWithGemini
+ * - generateTargetingSuggestionsWithGemini
+ *
+ * HTTP context still uses Anthropic (works fine):
+ * - generateCopyMaster, generateKeywords, generateAdCopy, generateArticle
  */
 
 // Initialize clients

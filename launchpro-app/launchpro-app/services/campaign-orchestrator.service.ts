@@ -4245,10 +4245,13 @@ class CampaignOrchestratorService {
    * Handles: Tonic campaign creation, tracking link, AI content, platform launch.
    */
   async continueCampaignAfterArticle(campaignId: string): Promise<LaunchResult> {
-    // DEBUG: First thing - log that we entered this function
-    const apiKeyCheck = (process.env.ANTHROPIC_API_KEY || '').trim();
-    logger.info('system', `🔄 [Orchestrator] ENTERED continueCampaignAfterArticle for ${campaignId}`);
-    logger.info('system', `🔑 [Orchestrator] ANTHROPIC_API_KEY at function entry: length=${apiKeyCheck.length}, valid_format=${apiKeyCheck.startsWith('sk-ant-')}, preview=${apiKeyCheck.substring(0, 15)}...${apiKeyCheck.substring(apiKeyCheck.length - 6)}`);
+    // VERSION MARKER - Critical for debugging which code is running
+    const ORCHESTRATOR_VERSION = 'v2.6.1-GEMINI-MIGRATION';
+    console.log(`\n\n🚀🚀🚀 [continueCampaignAfterArticle] VERSION: ${ORCHESTRATOR_VERSION} 🚀🚀🚀`);
+    console.log(`🚀🚀🚀 This version uses GEMINI for AI generation, NOT Anthropic 🚀🚀🚀\n\n`);
+
+    logger.info('system', `🔄 [Orchestrator] ENTERED continueCampaignAfterArticle for ${campaignId} - VERSION: ${ORCHESTRATOR_VERSION}`);
+    logger.info('system', `🔑 [Orchestrator] Note: This version uses GEMINI for AI, Anthropic key is only for HTTP context`);
 
     // Get campaign with all related data
     const campaign = await prisma.campaign.findUnique({
