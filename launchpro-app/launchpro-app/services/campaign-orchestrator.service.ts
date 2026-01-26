@@ -1694,15 +1694,15 @@ class CampaignOrchestratorService {
       });
     } else {
       // Generate ad copy with AI (all fields empty = use AI)
-      logger.info('meta', 'Generating ad copy with AI (no manual values provided)');
-      adCopy = await aiService.generateAdCopy({
+      // v2.6.0: Uses Gemini instead of Anthropic to avoid stale connection 401 errors
+      logger.info('meta', 'Generating ad copy with Gemini (no manual values provided)');
+      adCopy = await aiService.generateAdCopyWithGemini({
         offerName: campaign.offer.name,
         copyMaster: aiContent.copyMaster,
         platform: 'META',
         adFormat: adFormat,
         country: campaign.country,
         language: campaign.language,
-        apiKey: process.env.ANTHROPIC_API_KEY,
       });
     }
 
@@ -1771,12 +1771,12 @@ class CampaignOrchestratorService {
     logger.info('meta', `Using Pixel ID: ${pixelId} for Account: ${adAccountId}`);
 
     // Generate targeting suggestions from AI
-    logger.info('meta', 'Generating AI targeting suggestions...');
-    const targetingSuggestions = await aiService.generateTargetingSuggestions({
+    // v2.6.0: Uses Gemini instead of Anthropic to avoid stale connection 401 errors
+    logger.info('meta', 'Generating AI targeting suggestions with Gemini...');
+    const targetingSuggestions = await aiService.generateTargetingSuggestionsWithGemini({
       offerName: campaign.offer.name,
       copyMaster: aiContent.copyMaster,
       platform: 'META',
-      apiKey: process.env.ANTHROPIC_API_KEY,
     });
 
     logger.info('meta', 'AI Targeting Suggestions:', targetingSuggestions);
@@ -2696,14 +2696,14 @@ class CampaignOrchestratorService {
     const adFormat = 'VIDEO'; // TikTok PLACEMENT_TIKTOK siempre requiere VIDEO
 
     // Generate ad copy specific to TikTok
-    const adCopy = await aiService.generateAdCopy({
+    // v2.6.0: Uses Gemini instead of Anthropic to avoid stale connection 401 errors
+    const adCopy = await aiService.generateAdCopyWithGemini({
       offerName: campaign.offer.name,
       copyMaster: aiContent.copyMaster,
       platform: 'TIKTOK',
       adFormat: adFormat,
       country: campaign.country,
       language: campaign.language,
-      apiKey: process.env.ANTHROPIC_API_KEY,
     });
 
     // Fetch the TikTok Account
@@ -2779,12 +2779,12 @@ class CampaignOrchestratorService {
     logger.success('tiktok', `TikTok campaign created with ID: ${tiktokCampaign.campaign_id} `);
 
     // Generate targeting suggestions from AI
-    logger.info('tiktok', 'Generating AI targeting suggestions...');
-    const targetingSuggestions = await aiService.generateTargetingSuggestions({
+    // v2.6.0: Uses Gemini instead of Anthropic to avoid stale connection 401 errors
+    logger.info('tiktok', 'Generating AI targeting suggestions with Gemini...');
+    const targetingSuggestions = await aiService.generateTargetingSuggestionsWithGemini({
       offerName: campaign.offer.name,
       copyMaster: aiContent.copyMaster,
       platform: 'TIKTOK',
-      apiKey: process.env.ANTHROPIC_API_KEY,
     });
 
     // Map Age Groups to TikTok Enums

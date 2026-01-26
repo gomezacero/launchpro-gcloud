@@ -1942,6 +1942,60 @@ Return ONLY valid JSON (no markdown, no code blocks):
   }
 
   /**
+   * Generate Targeting Suggestions using Gemini (for cron context)
+   * Uses the same prompts as generateTargetingSuggestions but with Gemini API
+   */
+  async generateTargetingSuggestionsWithGemini(params: {
+    offerName: string;
+    copyMaster: string;
+    platform: 'META' | 'TIKTOK';
+  }): Promise<{
+    ageGroups: string[];
+    interests: string[];
+    behaviors?: string[];
+    demographics: string;
+  }> {
+    const model = 'gemini-2.0-flash-exp';
+
+    logger.info('ai', `[Gemini] Generating targeting suggestions for ${params.platform}`);
+
+    const prompt = `You are an expert media buyer specialized in ${params.platform} Ads targeting.
+
+Analyze the offer and copy master to suggest optimal targeting parameters. Be specific and data-driven.
+
+Suggest targeting for this campaign on ${params.platform}:
+
+Offer: ${params.offerName}
+Copy Master: ${params.copyMaster}
+
+Return ONLY valid JSON (no markdown, no code blocks):
+{
+  "ageGroups": ["age ranges that match the offer"],
+  "interests": ["specific interest categories"],
+  "behaviors": ["behavioral targeting categories (Meta only)"],
+  "demographics": "detailed description of ideal audience"
+}`;
+
+    try {
+      const response = await this.geminiClient.models.generateContent({
+        model,
+        contents: prompt,
+      });
+
+      const text = response.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+      const cleanedResponse = this.cleanJsonResponse(text);
+      const suggestions = JSON.parse(cleanedResponse);
+
+      logger.success('ai', `[Gemini] Targeting suggestions generated for ${params.platform}`);
+
+      return suggestions;
+    } catch (error: any) {
+      logger.error('ai', `[Gemini] Targeting suggestions generation failed: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
    * Generate 5 Copy Master suggestions - short, high-converting ad titles
    */
   async generateCopyMasterSuggestions(params: {
