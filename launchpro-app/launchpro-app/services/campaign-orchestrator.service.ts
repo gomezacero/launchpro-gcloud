@@ -1694,16 +1694,43 @@ class CampaignOrchestratorService {
       });
     } else {
       // Generate ad copy with AI (all fields empty = use AI)
-      // v2.6.0: Uses Gemini instead of Anthropic to avoid stale connection 401 errors
-      logger.info('meta', 'Generating ad copy with Gemini (no manual values provided)');
-      adCopy = await aiService.generateAdCopyWithGemini({
-        offerName: campaign.offer.name,
-        copyMaster: aiContent.copyMaster,
-        platform: 'META',
-        adFormat: adFormat,
-        country: campaign.country,
-        language: campaign.language,
+      // v2.7.1: Uses Gemini instead of Anthropic to avoid stale connection 401 errors
+      logger.info('meta', '🤖 Generating ad copy with GEMINI (NOT Anthropic!) - v2.7.1');
+      await campaignAudit.log(campaign.id, {
+        event: 'AI_CALL',
+        source: 'launchToMeta.generateAdCopy',
+        message: `📤 CALLING aiService.generateAdCopyWithGemini (NOT Anthropic!)`,
+        details: { function: 'generateAdCopyWithGemini', provider: 'GEMINI', platform: 'META' },
       });
+      const adCopyStartTime = Date.now();
+      try {
+        adCopy = await aiService.generateAdCopyWithGemini({
+          offerName: campaign.offer.name,
+          copyMaster: aiContent.copyMaster,
+          platform: 'META',
+          adFormat: adFormat,
+          country: campaign.country,
+          language: campaign.language,
+        });
+        await campaignAudit.log(campaign.id, {
+          event: 'AI_CALL',
+          source: 'launchToMeta.generateAdCopy',
+          message: `✅ SUCCESS generateAdCopyWithGemini`,
+          durationMs: Date.now() - adCopyStartTime,
+          details: { function: 'generateAdCopyWithGemini', provider: 'GEMINI', success: true },
+        });
+      } catch (adCopyError: any) {
+        await campaignAudit.log(campaign.id, {
+          event: 'AI_CALL',
+          source: 'launchToMeta.generateAdCopy',
+          message: `❌ FAILED generateAdCopyWithGemini: ${adCopyError.message}`,
+          isError: true,
+          errorCode: adCopyError.status || 'UNKNOWN',
+          durationMs: Date.now() - adCopyStartTime,
+          details: { function: 'generateAdCopyWithGemini', provider: 'GEMINI', error: adCopyError.message },
+        });
+        throw adCopyError;
+      }
     }
 
     // Determine budget strategy: CBO (Campaign Budget Optimization) vs ABO (Ad Set Budget Optimization)
@@ -1771,13 +1798,41 @@ class CampaignOrchestratorService {
     logger.info('meta', `Using Pixel ID: ${pixelId} for Account: ${adAccountId}`);
 
     // Generate targeting suggestions from AI
-    // v2.6.0: Uses Gemini instead of Anthropic to avoid stale connection 401 errors
-    logger.info('meta', 'Generating AI targeting suggestions with Gemini...');
-    const targetingSuggestions = await aiService.generateTargetingSuggestionsWithGemini({
-      offerName: campaign.offer.name,
-      copyMaster: aiContent.copyMaster,
-      platform: 'META',
+    // v2.7.1: Uses Gemini instead of Anthropic to avoid stale connection 401 errors
+    logger.info('meta', '🤖 Generating AI targeting suggestions with GEMINI (NOT Anthropic!) - v2.7.1');
+    await campaignAudit.log(campaign.id, {
+      event: 'AI_CALL',
+      source: 'launchToMeta.generateTargeting',
+      message: `📤 CALLING aiService.generateTargetingSuggestionsWithGemini (NOT Anthropic!)`,
+      details: { function: 'generateTargetingSuggestionsWithGemini', provider: 'GEMINI', platform: 'META' },
     });
+    const targetingStartTime = Date.now();
+    let targetingSuggestions;
+    try {
+      targetingSuggestions = await aiService.generateTargetingSuggestionsWithGemini({
+        offerName: campaign.offer.name,
+        copyMaster: aiContent.copyMaster,
+        platform: 'META',
+      });
+      await campaignAudit.log(campaign.id, {
+        event: 'AI_CALL',
+        source: 'launchToMeta.generateTargeting',
+        message: `✅ SUCCESS generateTargetingSuggestionsWithGemini`,
+        durationMs: Date.now() - targetingStartTime,
+        details: { function: 'generateTargetingSuggestionsWithGemini', provider: 'GEMINI', success: true },
+      });
+    } catch (targetingError: any) {
+      await campaignAudit.log(campaign.id, {
+        event: 'AI_CALL',
+        source: 'launchToMeta.generateTargeting',
+        message: `❌ FAILED generateTargetingSuggestionsWithGemini: ${targetingError.message}`,
+        isError: true,
+        errorCode: targetingError.status || 'UNKNOWN',
+        durationMs: Date.now() - targetingStartTime,
+        details: { function: 'generateTargetingSuggestionsWithGemini', provider: 'GEMINI', error: targetingError.message },
+      });
+      throw targetingError;
+    }
 
     logger.info('meta', 'AI Targeting Suggestions:', targetingSuggestions);
 
@@ -4246,12 +4301,20 @@ class CampaignOrchestratorService {
    */
   async continueCampaignAfterArticle(campaignId: string): Promise<LaunchResult> {
     // VERSION MARKER - Critical for debugging which code is running
-    const ORCHESTRATOR_VERSION = 'v2.7.0-FULL-GEMINI-MIGRATION';
+    const ORCHESTRATOR_VERSION = 'v2.7.1-AUDIT-LOGGING';
     console.log(`\n\n🚀🚀🚀 [continueCampaignAfterArticle] VERSION: ${ORCHESTRATOR_VERSION} 🚀🚀🚀`);
-    console.log(`🚀🚀🚀 v2.7.0: ALL AI calls use GEMINI - No Anthropic calls anywhere 🚀🚀🚀\n\n`);
+    console.log(`🚀🚀🚀 v2.7.1: ALL AI calls use GEMINI + Audit logging to DB 🚀🚀🚀\n\n`);
 
     logger.info('system', `🔄 [Orchestrator] ENTERED continueCampaignAfterArticle for ${campaignId} - VERSION: ${ORCHESTRATOR_VERSION}`);
-    logger.info('system', `🔑 [Orchestrator] v2.7.0: ALL AI generation uses GEMINI - Anthropic completely removed from flow`);
+    logger.info('system', `🔑 [Orchestrator] v2.7.1: ALL AI generation uses GEMINI - Anthropic completely removed from flow`);
+
+    // Log to DB for visibility
+    await campaignAudit.log(campaignId, {
+      event: 'CRON_PROCESS',
+      source: 'campaign-orchestrator.continueCampaignAfterArticle',
+      message: `🚀 STARTED processing - VERSION: ${ORCHESTRATOR_VERSION} - Using GEMINI for all AI`,
+      details: { version: ORCHESTRATOR_VERSION, aiProvider: 'GEMINI', anthropicRemoved: true },
+    });
 
     // Get campaign with all related data
     const campaign = await prisma.campaign.findUnique({
@@ -4510,9 +4573,16 @@ class CampaignOrchestratorService {
     const aiContentResult: any = {};
 
     // Generate Copy Master if not set
-    // v2.6.0: Uses Gemini instead of Anthropic to avoid stale connection 401 errors in cron context
+    // v2.7.1: Uses Gemini instead of Anthropic to avoid stale connection 401 errors in cron context
     if (!campaign.copyMaster) {
       logger.info('system', `🤖 [AI] ABOUT TO CALL Gemini generateCopyMasterWithGemini for "${campaign.name}" (${campaignId})`);
+      await campaignAudit.log(campaignId, {
+        event: 'AI_CALL',
+        source: 'continueCampaignAfterArticle.generateCopyMaster',
+        message: `📤 CALLING aiService.generateCopyMasterWithGemini (NOT Anthropic!)`,
+        details: { function: 'generateCopyMasterWithGemini', provider: 'GEMINI', offerName: campaign.offer.name },
+      });
+      const copyMasterStartTime = Date.now();
       try {
         aiContentResult.copyMaster = await aiService.generateCopyMasterWithGemini({
           offerName: campaign.offer.name,
@@ -4521,8 +4591,24 @@ class CampaignOrchestratorService {
           country: campaign.country,
           language: campaign.language,
         });
+        await campaignAudit.log(campaignId, {
+          event: 'AI_CALL',
+          source: 'continueCampaignAfterArticle.generateCopyMaster',
+          message: `✅ SUCCESS generateCopyMasterWithGemini`,
+          durationMs: Date.now() - copyMasterStartTime,
+          details: { function: 'generateCopyMasterWithGemini', provider: 'GEMINI', success: true },
+        });
         logger.success('system', `✅ [AI] Gemini generateCopyMasterWithGemini SUCCESS for "${campaign.name}"`);
       } catch (copyMasterError: any) {
+        await campaignAudit.log(campaignId, {
+          event: 'AI_CALL',
+          source: 'continueCampaignAfterArticle.generateCopyMaster',
+          message: `❌ FAILED generateCopyMasterWithGemini: ${copyMasterError.message}`,
+          isError: true,
+          errorCode: copyMasterError.status || 'UNKNOWN',
+          durationMs: Date.now() - copyMasterStartTime,
+          details: { function: 'generateCopyMasterWithGemini', provider: 'GEMINI', error: copyMasterError.message },
+        });
         logger.error('system', `❌ [AI] Gemini generateCopyMasterWithGemini FAILED for "${campaign.name}": ${copyMasterError.message}`, {
           errorMessage: copyMasterError.message,
           errorType: copyMasterError.constructor?.name,

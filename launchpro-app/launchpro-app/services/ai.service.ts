@@ -9,7 +9,7 @@ import { getStorage } from '@/lib/gcs';
 import { getAnthropicClient, getApiKeyDebugInfo } from '@/lib/anthropic-client';
 
 // VERSION MARKER - Used to verify which code version is deployed
-const AI_SERVICE_VERSION = 'v2.7.0-FULL-GEMINI-MIGRATION-2026-01-26';
+const AI_SERVICE_VERSION = 'v2.7.1-AUDIT-LOGGING-2026-01-26';
 console.log(`[AIService] Module loaded - VERSION: ${AI_SERVICE_VERSION}`);
 
 /**
