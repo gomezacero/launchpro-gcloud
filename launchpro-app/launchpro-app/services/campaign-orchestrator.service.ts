@@ -3998,6 +3998,54 @@ class CampaignOrchestratorService {
       { name: params.name, country: params.country, language: params.language, campaignType: campaignType }
     );
 
+    // ============================================
+    // PRE-GENERATE KEYWORDS IN HTTP CONTEXT
+    // ============================================
+    // Generate keywords NOW (in HTTP context) so that continueCampaignAfterArticle
+    // doesn't need to call Anthropic. This fixes the 401 error that occurs when
+    // the cron tries to call Anthropic in a different execution context.
+    let generatedKeywords = params.keywords || [];
+
+    if (generatedKeywords.length === 0) {
+      logger.info('ai', '🔑 Pre-generating keywords in HTTP context (to avoid cron 401 issues)...');
+
+      // Generate copyMaster first if not provided (needed for keywords)
+      let copyMasterForKeywords = params.copyMaster;
+      if (!copyMasterForKeywords) {
+        logger.info('ai', 'Generating Copy Master for keywords...');
+        copyMasterForKeywords = await aiService.generateCopyMaster({
+          offerName: offer.name,
+          offerDescription: offer.description || undefined,
+          vertical: offer.vertical,
+          country: params.country,
+          language: params.language,
+        });
+
+        // Save copyMaster to campaign
+        await prisma.campaign.update({
+          where: { id: campaign.id },
+          data: { copyMaster: copyMasterForKeywords },
+        });
+        logger.success('ai', 'Copy Master generated and saved');
+      }
+
+      // Generate keywords
+      generatedKeywords = await aiService.generateKeywords({
+        offerName: offer.name,
+        copyMaster: copyMasterForKeywords,
+        count: 10,
+        country: params.country,
+      });
+
+      // Save keywords to campaign
+      await prisma.campaign.update({
+        where: { id: campaign.id },
+        data: { keywords: generatedKeywords },
+      });
+
+      logger.success('ai', `✅ Pre-generated ${generatedKeywords.length} keywords in HTTP context`, { keywords: generatedKeywords });
+    }
+
     // For RSOC campaigns, handle article (new or existing)
     let articleRequestId: number | undefined;
 
