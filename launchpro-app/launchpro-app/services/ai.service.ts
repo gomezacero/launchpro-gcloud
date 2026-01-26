@@ -1429,6 +1429,518 @@ Return JSON:
     return adCopy;
   }
 
+  // ============================================
+  // TEXT GENERATION WITH GEMINI (For Cron Context)
+  // These functions use Gemini instead of Anthropic to avoid
+  // stale connection issues in Vercel serverless cron jobs.
+  // ============================================
+
+  /**
+   * Generate Copy Master using Gemini (for cron context)
+   * Uses the same prompts as generateCopyMaster but with Gemini API
+   */
+  async generateCopyMasterWithGemini(params: Omit<GenerateCopyMasterParams, 'apiKey'>): Promise<string> {
+    const model = 'gemini-2.0-flash-exp';
+
+    // Determine the base language from the language parameter
+    const lang = params.language.toLowerCase();
+    const isEnglish = lang === 'en' || lang === 'english';
+    const isPortuguese = lang === 'pt' || lang === 'portuguese';
+    const isSpanish = lang === 'es' || lang === 'spanish' || (!isEnglish && !isPortuguese);
+
+    // Map countries to their specific dialect rules
+    const spanishDialectRules: Record<string, string> = {
+      'MX': 'Mexican Spanish: Use "tú/usted" forms. Never use "vos" or Argentine forms.',
+      'CO': 'Colombian Spanish: Use "tú/usted" forms. Formal and clear.',
+      'AR': 'Argentine Spanish: Use "vos" forms (e.g., "querés", "podés").',
+      'ES': 'European Spanish: Use "tú/vosotros" forms.',
+      'CL': 'Chilean Spanish: Use "tú" forms.',
+      'PE': 'Peruvian Spanish: Use "tú/usted" forms.',
+      'VE': 'Venezuelan Spanish: Use "tú/usted" forms.',
+      'EC': 'Ecuadorian Spanish: Use "tú/usted" forms.',
+    };
+
+    const englishDialectRules: Record<string, string> = {
+      'US': 'American English: Use US spelling (e.g., "color", "organize").',
+      'UK': 'British English: Use UK spelling (e.g., "colour", "organise").',
+      'GB': 'British English: Use UK spelling (e.g., "colour", "organise").',
+      'AU': 'Australian English: Use Australian conventions.',
+      'CA': 'Canadian English: Mix of US/UK spelling.',
+    };
+
+    const portugueseDialectRules: Record<string, string> = {
+      'BR': 'Brazilian Portuguese: Use standard Brazilian Portuguese.',
+      'PT': 'European Portuguese: Use European Portuguese.',
+    };
+
+    let dialectRule: string;
+    let languageInstruction: string;
+
+    if (isEnglish) {
+      dialectRule = englishDialectRules[params.country] || 'American English: Use US spelling.';
+      languageInstruction = 'WRITE IN ENGLISH.';
+    } else if (isPortuguese) {
+      dialectRule = portugueseDialectRules[params.country] || 'Brazilian Portuguese: Use standard Brazilian Portuguese.';
+      languageInstruction = 'WRITE IN PORTUGUESE.';
+    } else {
+      dialectRule = spanishDialectRules[params.country] || 'Neutral Spanish: Use "tú/usted" forms.';
+      languageInstruction = 'WRITE IN SPANISH.';
+    }
+
+    logger.info('ai', `[Gemini] Generating copy master in ${isEnglish ? 'English' : isPortuguese ? 'Portuguese' : 'Spanish'} for country ${params.country}`);
+
+    const prompt = `You are an expert digital marketing copywriter specialized in creating compelling copy masters for advertising campaigns.
+
+A Copy Master is the central communication message that defines the angle and tone of an advertising campaign.
+
+CRITICAL REQUIREMENTS:
+- ${languageInstruction}
+- Perfect spelling and grammar (zero tolerance for errors)
+- ${dialectRule}
+- Use formal or semi-formal tone (NEVER informal/casual)
+- NO exaggerated claims (e.g., "guaranteed", "100%", "always")
+- NO invented statistics or fake data
+- Truthful, realistic, and professional language
+- Aligned with the offer's value proposition
+- Culturally relevant for the target country
+- Emotionally compelling but honest
+- Concise (2-3 sentences max)
+
+Create a Copy Master for the following advertising campaign:
+
+Offer: ${params.offerName}
+${params.offerDescription ? `Description: ${params.offerDescription}` : ''}
+${params.vertical ? `Vertical: ${params.vertical}` : ''}
+Target Country: ${params.country}
+Language: ${params.language}
+
+CRITICAL LANGUAGE REQUIREMENT: ${languageInstruction} ${dialectRule}
+
+Generate a compelling Copy Master that:
+- Is written ENTIRELY in ${isEnglish ? 'English' : isPortuguese ? 'Portuguese' : 'Spanish'}
+- Uses perfect grammar for ${params.country}
+- Uses formal/semi-formal tone
+- Makes NO exaggerated claims
+- Is truthful and professional
+- Captures the essence of this offer and resonates with the target audience
+
+Return ONLY the copy master text, nothing else.`;
+
+    try {
+      const response = await this.geminiClient.models.generateContent({
+        model,
+        contents: prompt,
+      });
+
+      const text = response.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      const copyMaster = text.trim();
+
+      if (!copyMaster) {
+        throw new Error('Gemini returned empty copy master');
+      }
+
+      logger.success('ai', `[Gemini] Copy master generated successfully`);
+
+      // Save to database
+      await this.saveAIContent({
+        contentType: 'copy_master',
+        content: { copyMaster },
+        model: 'gemini-2.0-flash-exp',
+        prompt: prompt,
+      });
+
+      return copyMaster;
+    } catch (error: any) {
+      logger.error('ai', `[Gemini] Copy master generation failed: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Generate Keywords using Gemini (for cron context)
+   * Uses the same prompts as generateKeywords but with Gemini API
+   */
+  async generateKeywordsWithGemini(params: Omit<GenerateKeywordsParams, 'apiKey'>): Promise<string[]> {
+    const model = 'gemini-2.0-flash-exp';
+
+    // Map country codes to full names and regional context
+    const countryContext: Record<string, { name: string; language: string; regionalNotes: string }> = {
+      'MX': { name: 'México', language: 'Spanish (Mexican)', regionalNotes: 'Use Mexican Spanish terminology. Example: "carro" instead of "coche", "computadora" instead of "ordenador". Include city references like Ciudad de México, Guadalajara, Monterrey when relevant.' },
+      'CO': { name: 'Colombia', language: 'Spanish (Colombian)', regionalNotes: 'Use Colombian Spanish terminology. Example: "carro" or "vehículo", "computador". Include city references like Bogotá, Medellín, Cali when relevant.' },
+      'AR': { name: 'Argentina', language: 'Spanish (Argentine)', regionalNotes: 'Use Argentine Spanish terminology. Example: "auto", "computadora". Include city references like Buenos Aires, Córdoba, Rosario when relevant.' },
+      'ES': { name: 'España', language: 'Spanish (European)', regionalNotes: 'Use European Spanish terminology. Example: "coche", "ordenador". Include city references like Madrid, Barcelona, Valencia when relevant.' },
+      'CL': { name: 'Chile', language: 'Spanish (Chilean)', regionalNotes: 'Use Chilean Spanish terminology. Include city references like Santiago, Valparaíso, Concepción when relevant.' },
+      'PE': { name: 'Perú', language: 'Spanish (Peruvian)', regionalNotes: 'Use Peruvian Spanish terminology. Include city references like Lima, Arequipa, Trujillo when relevant.' },
+      'US': { name: 'United States', language: 'Spanish (US Latino) or English', regionalNotes: 'For Spanish: Use neutral Latin American Spanish. For English: Use American English. Can reference major cities like Miami, Los Angeles, Houston, New York.' },
+      'BR': { name: 'Brasil', language: 'Portuguese (Brazilian)', regionalNotes: 'Use Brazilian Portuguese terminology. Include city references like São Paulo, Rio de Janeiro, Brasília when relevant.' },
+    };
+
+    const context = countryContext[params.country] || {
+      name: params.country,
+      language: 'Local language',
+      regionalNotes: 'Adapt terminology to local market.'
+    };
+
+    logger.info('ai', `[Gemini] Generating keywords for ${params.offerName} in ${context.name}`);
+
+    const prompt = `You are an expert in SEO Strategy, PPC, and Growth Hacking, specialized in compliance policies and regional semantic adaptation with a focus on transactional and financial intent keywords.
+
+PRIMARY MISSION:
+Generate a list of exactly 10 high-conversion keywords, 100% compliant and culturally adapted, focused on the bottom of the funnel (BOFU). Keywords must be aggressive, commercial, and click-attractive, prioritizing purchase intent, hiring, or financial comparison.
+
+CONTEXT:
+- Target Country: ${context.name}
+- Language: ${context.language}
+- Regional Adaptation: ${context.regionalNotes}
+
+WORKFLOW DIRECTIVES:
+
+🔹 Step 0 - Linguistic and Cultural Adaptation (PRIORITY)
+- Identify synonyms, regionalisms, and colloquial terms specific to ${context.name}.
+- Replace generic words with more natural and commercial local equivalents.
+- ${context.regionalNotes}
+
+🔹 Step 1 - Competitor Analysis
+- Consider 2-3 relevant competitors in ${context.name}.
+- Think about what transactional and financial keywords they use in their communication.
+
+🔹 Step 2 - List Generation (10 Keywords)
+Focus: maximum conversion intent, direct and commercial language.
+
+MANDATORY COMPOSITION:
+- Minimum 3 Direct Transactional Keywords → include verbs like: buy, hire, finance, quote, invest, price, payment (in the target language)
+- Minimum 2 Specific Action Long-Tails → start with verb + clear benefit + 6-10 words. Can include city/country name when relevant for conversion.
+- Remaining 5 Keywords: combination of:
+  * Commercial Research (vs, alternatives, best options)
+  * Decision Questions (how much does it cost, how to finance)
+  * Financial Angles (credit, leasing, investment, monthly payments)
+
+COMPLIANCE AND QUALITY RULES (MANDATORY):
+- Total Relevance: each keyword must be directly linked to the niche/offer.
+- No deception or false superlatives: exclude "free", "cheapest", "top deals", "guaranteed", "100%", etc.
+- No false interactivity: avoid "search here" or "click now".
+- Location references: use real city/state/country names only if it adds to conversion value.
+- Estimated search volume: >70 monthly.
+- Temporality: only use 2025 or 2026 if intentional and relevant.
+
+Generate 10 high-conversion BOFU keywords for this advertising campaign:
+
+OFFER: ${params.offerName}
+COPY MASTER (Main Message): ${params.copyMaster}
+TARGET COUNTRY: ${context.name}
+LANGUAGE: ${context.language}
+
+REMEMBER:
+- ${context.regionalNotes}
+- Minimum 3 transactional keywords with action verbs
+- Minimum 2 long-tail keywords (6-10 words) with specific benefits
+- 5 mixed keywords (comparisons, questions, financial terms)
+- Use real city/country names from ${context.name} when it adds value
+- Perfect spelling in ${context.language}
+- NO false claims, NO "free", NO "guaranteed"
+
+CRITICAL OUTPUT FORMAT:
+Return ONLY a valid JSON array with exactly 10 keywords. No markdown, no code blocks, no explanations, no numbering.
+Example format: ["keyword 1", "keyword 2", "keyword 3", ...]`;
+
+    try {
+      const response = await this.geminiClient.models.generateContent({
+        model,
+        contents: prompt,
+      });
+
+      const text = response.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+      const cleanedResponse = this.cleanJsonResponse(text);
+      let keywords = JSON.parse(cleanedResponse);
+
+      // Ensure we always return exactly 10 keywords
+      if (keywords.length > 10) {
+        keywords = keywords.slice(0, 10);
+      }
+
+      if (!Array.isArray(keywords) || keywords.length === 0) {
+        throw new Error('Gemini returned invalid keywords array');
+      }
+
+      logger.success('ai', `[Gemini] Generated ${keywords.length} keywords successfully`);
+
+      // Save to database
+      await this.saveAIContent({
+        contentType: 'keywords',
+        content: { keywords },
+        model: 'gemini-2.0-flash-exp',
+        prompt: prompt,
+      });
+
+      return keywords;
+    } catch (error: any) {
+      logger.error('ai', `[Gemini] Keywords generation failed: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Generate Ad Copy using Gemini (for cron context)
+   * Uses the same prompts as generateAdCopy but with Gemini API
+   */
+  async generateAdCopyWithGemini(params: Omit<GenerateAdCopyParams, 'apiKey'>): Promise<{
+    primaryText: string;
+    headline: string;
+    description: string;
+    callToAction: string;
+  }> {
+    const model = 'gemini-2.0-flash-exp';
+    const lang = params.language.toLowerCase();
+
+    const { languageName, languageInstruction } = this.getLanguageInfo(lang, params.language);
+
+    logger.info('ai', `[Gemini] Generating ad copy in ${languageName} for ${params.platform}`);
+
+    const platformGuidelines = {
+      META: {
+        primaryTextMax: 125,
+        headlineMax: 40,
+        descriptionMax: 30,
+        ctas: [
+          'LEARN_MORE',
+          'SHOP_NOW',
+          'SIGN_UP',
+          'DOWNLOAD',
+          'GET_QUOTE',
+          'APPLY_NOW',
+        ],
+      },
+      TIKTOK: {
+        primaryTextMax: 100,
+        headlineMax: 100,
+        descriptionMax: 999,
+        ctas: ['SHOP_NOW', 'LEARN_MORE', 'SIGN_UP', 'DOWNLOAD', 'APPLY_NOW'],
+      },
+    };
+
+    const guidelines = platformGuidelines[params.platform];
+
+    const prompt = `You are an expert performance marketer creating ad copy for ${params.platform}.
+
+Guidelines for ${params.platform}:
+- Primary text: max ${guidelines.primaryTextMax} characters
+- Headline: max ${guidelines.headlineMax} characters
+- Description: max ${guidelines.descriptionMax} characters
+
+CRITICAL REQUIREMENTS:
+- ${languageInstruction}
+- Perfect spelling and grammar (zero tolerance for errors)
+- Formal or semi-formal tone (NO informal/casual language)
+- NO exaggerated claims (e.g., "guaranteed", "100%", "never")
+- NO invented statistics or fake data
+- Attention-grabbing but truthful and realistic
+- Conversion-focused but professional
+- Clear, action-oriented language
+- Complies with ${params.platform} advertising policies
+
+Create ad copy for this campaign:
+
+Offer: ${params.offerName}
+Copy Master: ${params.copyMaster}
+Platform: ${params.platform}
+Ad Format: ${params.adFormat}
+Country: ${params.country}
+Language: ${params.language}
+${params.targetAudience ? `Target Audience: ${params.targetAudience}` : ''}
+
+CRITICAL LANGUAGE REQUIREMENT: ${languageInstruction} ALL ad copy text MUST be in ${languageName}.
+
+Return ONLY valid JSON (no markdown, no code blocks):
+{
+  "primaryText": "main ad text in ${languageName}",
+  "headline": "compelling headline in ${languageName}",
+  "description": "description text in ${languageName}",
+  "callToAction": "CTA text (one of: ${guidelines.ctas.join(', ')})"
+}`;
+
+    try {
+      const response = await this.geminiClient.models.generateContent({
+        model,
+        contents: prompt,
+      });
+
+      const text = response.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+      const cleanedResponse = this.cleanJsonResponse(text);
+      const adCopy = JSON.parse(cleanedResponse);
+
+      if (!adCopy.primaryText || !adCopy.headline) {
+        throw new Error('Gemini returned incomplete ad copy');
+      }
+
+      logger.success('ai', `[Gemini] Ad copy generated successfully for ${params.platform}`);
+
+      // Save to database
+      await this.saveAIContent({
+        contentType: 'ad_copy',
+        content: adCopy,
+        model: 'gemini-2.0-flash-exp',
+        prompt: prompt,
+      });
+
+      return adCopy;
+    } catch (error: any) {
+      logger.error('ai', `[Gemini] Ad copy generation failed: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Generate Article using Gemini (for cron context)
+   * Uses the same prompts as generateArticle but with Gemini API
+   */
+  async generateArticleWithGemini(params: Omit<GenerateArticleParams, 'apiKey'>): Promise<{
+    headline: string;
+    teaser: string;
+    contentGenerationPhrases: string[];
+  }> {
+    const model = 'gemini-2.0-flash-exp';
+
+    // Determine the base language from the language parameter
+    const lang = params.language.toLowerCase();
+    const { languageName, languageInstruction } = this.getLanguageInfo(lang, params.language);
+
+    // Get dialect rule based on language and country
+    const spanishDialectRules: Record<string, string> = {
+      'MX': 'Mexican Spanish: Use "tú/usted" forms. Never use "vos" or Argentine forms.',
+      'CO': 'Colombian Spanish: Use "tú/usted" forms. Formal and clear.',
+      'AR': 'Argentine Spanish: Use "vos" forms (e.g., "soñás", "querés", "podés").',
+      'ES': 'European Spanish: Use "tú/vosotros" forms.',
+      'CL': 'Chilean Spanish: Use "tú" forms.',
+      'PE': 'Peruvian Spanish: Use "tú/usted" forms.',
+      'VE': 'Venezuelan Spanish: Use "tú/usted" forms.',
+      'EC': 'Ecuadorian Spanish: Use "tú/usted" forms.',
+    };
+
+    const englishDialectRules: Record<string, string> = {
+      'US': 'American English: Use US spelling.',
+      'UK': 'British English: Use UK spelling.',
+      'GB': 'British English: Use UK spelling.',
+      'AU': 'Australian English: Use Australian conventions.',
+      'CA': 'Canadian English: Mix of US/UK spelling.',
+    };
+
+    const portugueseDialectRules: Record<string, string> = {
+      'BR': 'Brazilian Portuguese: Use standard Brazilian Portuguese.',
+      'PT': 'European Portuguese: Use European Portuguese.',
+    };
+
+    let dialectRule = 'Use appropriate formal conventions for the target country.';
+    const isEnglish = lang === 'en' || lang === 'english';
+    const isPortuguese = lang === 'pt' || lang === 'portuguese';
+    const isSpanish = lang === 'es' || lang === 'spanish';
+
+    if (isEnglish) {
+      dialectRule = englishDialectRules[params.country] || 'American English: Use US spelling.';
+    } else if (isPortuguese) {
+      dialectRule = portugueseDialectRules[params.country] || 'Brazilian Portuguese.';
+    } else if (isSpanish) {
+      dialectRule = spanishDialectRules[params.country] || 'Neutral Spanish: Use "tú/usted" forms.';
+    }
+
+    logger.info('ai', `[Gemini] Generating article in ${languageName} for country ${params.country}`);
+
+    const prompt = `You are an expert content writer specialized in creating high-quality articles for native advertising that pass strict editorial review.
+
+CRITICAL REQUIREMENTS (Article will be REJECTED if these are violated):
+
+1. LANGUAGE & GRAMMAR:
+   - ${languageInstruction}
+   - Perfect spelling and grammar - zero tolerance for errors
+   - ${dialectRule}
+   - Use formal or semi-formal tone - NEVER informal/casual language
+   - Match the EXACT dialect of the target country
+
+2. FACTUAL ACCURACY:
+   - NEVER invent statistics, numbers, or data
+   - NEVER make exaggerated claims (e.g., "guaranteed", "100%", "always")
+   - Use realistic, verifiable information only
+   - If mentioning data, use general terms like "many people", "studies suggest" instead of fake percentages
+
+3. CONTENT QUALITY:
+   - Headlines must be compelling but truthful - no clickbait
+   - Teaser must be informative and engaging (250-1000 characters)
+   - Content generation phrases: EXACTLY 3-5 phrases (CRITICAL: Tonic will reject if less than 3 or more than 5)
+   - Natural tone - not overly promotional or salesy
+
+4. COMPLIANCE:
+   - Appropriate for the offer type (loans, insurance, etc.)
+   - No misleading statements
+   - Professional and trustworthy tone
+
+Create article content for this RSOC campaign:
+
+Offer: ${params.offerName}
+Copy Master: ${params.copyMaster}
+Keywords: ${params.keywords.join(', ')}
+Country: ${params.country}
+Language: ${params.language}
+
+CRITICAL LANGUAGE REQUIREMENT: ${languageInstruction} ${dialectRule}
+
+ALL CONTENT (headline, teaser, contentGenerationPhrases) MUST BE IN ${languageName.toUpperCase()}.
+
+REMEMBER:
+- Perfect grammar and spelling
+- NO invented data or exaggerated claims
+- Formal/semi-formal tone only
+- Truthful, valuable content
+- CRITICAL: contentGenerationPhrases must be EXACTLY 3, 4, or 5 phrases (NOT 2, NOT 6, NOT 7!)
+
+Return ONLY valid JSON (no markdown, no code blocks):
+{
+  "headline": "engaging headline in ${languageName} (max 256 characters)",
+  "teaser": "compelling opening paragraph in ${languageName} (250-1000 characters)",
+  "contentGenerationPhrases": ["phrase1 in ${languageName}", "phrase2", "phrase3", "phrase4"]
+}`;
+
+    try {
+      const response = await this.geminiClient.models.generateContent({
+        model,
+        contents: prompt,
+      });
+
+      const text = response.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+      const cleanedResponse = this.cleanJsonResponse(text);
+      const article = JSON.parse(cleanedResponse);
+
+      // CRITICAL VALIDATION: Tonic requires EXACTLY 3-5 content generation phrases
+      if (!article.contentGenerationPhrases || !Array.isArray(article.contentGenerationPhrases)) {
+        throw new Error('Gemini failed to generate contentGenerationPhrases array');
+      }
+
+      // If generated more than 5 phrases, trim to 5
+      if (article.contentGenerationPhrases.length > 5) {
+        logger.warn('ai', `[Gemini] Generated ${article.contentGenerationPhrases.length} phrases, trimming to 5 for Tonic compliance`);
+        article.contentGenerationPhrases = article.contentGenerationPhrases.slice(0, 5);
+      }
+
+      // If generated less than 3 phrases, throw error
+      if (article.contentGenerationPhrases.length < 3) {
+        throw new Error(`Gemini generated only ${article.contentGenerationPhrases.length} content generation phrases, but Tonic requires 3-5`);
+      }
+
+      logger.success('ai', `[Gemini] Article generated successfully`);
+
+      // Save to database
+      await this.saveAIContent({
+        contentType: 'article',
+        content: article,
+        model: 'gemini-2.0-flash-exp',
+        prompt: prompt,
+      });
+
+      return article;
+    } catch (error: any) {
+      logger.error('ai', `[Gemini] Article generation failed: ${error.message}`);
+      throw error;
+    }
+  }
+
   /**
    * Generate 5 Copy Master suggestions - short, high-converting ad titles
    */

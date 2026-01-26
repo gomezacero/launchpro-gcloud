@@ -4507,29 +4507,24 @@ class CampaignOrchestratorService {
     const aiContentResult: any = {};
 
     // Generate Copy Master if not set
+    // v2.6.0: Uses Gemini instead of Anthropic to avoid stale connection 401 errors in cron context
     if (!campaign.copyMaster) {
-      logger.info('system', `🤖 [AI] ABOUT TO CALL Anthropic generateCopyMaster for "${campaign.name}" (${campaignId})`);
-      logger.info('system', `🔑 [AI] API Key: length=${cleanKey.length}, starts_with_sk-ant=${cleanKey.startsWith('sk-ant-')}, preview=${cleanKey.substring(0, 15)}...${cleanKey.substring(cleanKey.length - 6)}`);
+      logger.info('system', `🤖 [AI] ABOUT TO CALL Gemini generateCopyMasterWithGemini for "${campaign.name}" (${campaignId})`);
       try {
-        aiContentResult.copyMaster = await aiService.generateCopyMaster({
+        aiContentResult.copyMaster = await aiService.generateCopyMasterWithGemini({
           offerName: campaign.offer.name,
           offerDescription: campaign.offer.description || undefined,
           vertical: campaign.offer.vertical,
           country: campaign.country,
           language: campaign.language,
-          apiKey: process.env.ANTHROPIC_API_KEY,
         });
-        logger.success('system', `✅ [AI] Anthropic generateCopyMaster SUCCESS for "${campaign.name}"`);
+        logger.success('system', `✅ [AI] Gemini generateCopyMasterWithGemini SUCCESS for "${campaign.name}"`);
       } catch (copyMasterError: any) {
-        logger.error('system', `❌ [AI] Anthropic generateCopyMaster FAILED for "${campaign.name}": ${copyMasterError.message}`, {
-          errorStatus: copyMasterError.status,
-          errorStatusCode: copyMasterError.statusCode,
+        logger.error('system', `❌ [AI] Gemini generateCopyMasterWithGemini FAILED for "${campaign.name}": ${copyMasterError.message}`, {
           errorMessage: copyMasterError.message,
           errorType: copyMasterError.constructor?.name,
-          apiKeyLength: cleanKey.length,
-          apiKeyPreview: `${cleanKey.substring(0, 15)}...${cleanKey.substring(cleanKey.length - 6)}`,
         });
-        throw new Error(`AI Copy Master generation failed: ${copyMasterError.message}`);
+        throw new Error(`AI Copy Master generation failed (Gemini): ${copyMasterError.message}`);
       }
 
       await prisma.campaign.update({
@@ -4541,27 +4536,23 @@ class CampaignOrchestratorService {
     }
 
     // Generate Keywords if not set
+    // v2.6.0: Uses Gemini instead of Anthropic to avoid stale connection 401 errors in cron context
     if (!campaign.keywords || campaign.keywords.length === 0) {
-      logger.info('system', `🤖 [AI] ABOUT TO CALL Anthropic generateKeywords for "${campaign.name}" (${campaignId})`);
+      logger.info('system', `🤖 [AI] ABOUT TO CALL Gemini generateKeywordsWithGemini for "${campaign.name}" (${campaignId})`);
       try {
-        aiContentResult.keywords = await aiService.generateKeywords({
+        aiContentResult.keywords = await aiService.generateKeywordsWithGemini({
           offerName: campaign.offer.name,
           copyMaster: aiContentResult.copyMaster,
           count: 6,
           country: campaign.country,
-          apiKey: process.env.ANTHROPIC_API_KEY,
         });
-        logger.success('system', `✅ [AI] Anthropic generateKeywords SUCCESS for "${campaign.name}"`);
+        logger.success('system', `✅ [AI] Gemini generateKeywordsWithGemini SUCCESS for "${campaign.name}"`);
       } catch (keywordsError: any) {
-        logger.error('system', `❌ [AI] Anthropic generateKeywords FAILED for "${campaign.name}": ${keywordsError.message}`, {
-          errorStatus: keywordsError.status,
-          errorStatusCode: keywordsError.statusCode,
+        logger.error('system', `❌ [AI] Gemini generateKeywordsWithGemini FAILED for "${campaign.name}": ${keywordsError.message}`, {
           errorMessage: keywordsError.message,
           errorType: keywordsError.constructor?.name,
-          apiKeyLength: cleanKey.length,
-          apiKeyPreview: `${cleanKey.substring(0, 15)}...${cleanKey.substring(cleanKey.length - 6)}`,
         });
-        throw new Error(`AI Keywords generation failed: ${keywordsError.message}`);
+        throw new Error(`AI Keywords generation failed (Gemini): ${keywordsError.message}`);
       }
 
       await prisma.campaign.update({
@@ -4637,27 +4628,26 @@ class CampaignOrchestratorService {
       const preGeneratedCopy = campaign.preGeneratedAdCopy as Record<string, any> | null;
 
       if (preGeneratedCopy && preGeneratedCopy[platformConfig.platform]) {
-        // USE PRE-GENERATED AD COPY (avoids calling Anthropic in cron context)
+        // USE PRE-GENERATED AD COPY (avoids calling AI in cron context)
         adCopy = preGeneratedCopy[platformConfig.platform];
-        logger.info('system', `✅ Using pre-generated Ad Copy for "${campaign.name}" platform=${platformConfig.platform} (avoiding cron 401 issue)`);
+        logger.info('system', `✅ Using pre-generated Ad Copy for "${campaign.name}" platform=${platformConfig.platform}`);
       } else {
-        // FALLBACK: Generate in cron context (may fail with 401)
-        logger.warn('system', `⚠️ No pre-generated Ad Copy found for ${platformConfig.platform}, generating in cron context...`);
-        logger.info('system', `🤖 [AI] ABOUT TO CALL Anthropic generateAdCopy for "${campaign.name}" platform=${platformConfig.platform}`);
+        // FALLBACK: Generate with Gemini in cron context
+        // v2.6.0: Uses Gemini instead of Anthropic to avoid stale connection 401 errors
+        logger.warn('system', `⚠️ No pre-generated Ad Copy found for ${platformConfig.platform}, generating with Gemini...`);
+        logger.info('system', `🤖 [AI] ABOUT TO CALL Gemini generateAdCopyWithGemini for "${campaign.name}" platform=${platformConfig.platform}`);
         try {
-          adCopy = await aiService.generateAdCopy({
+          adCopy = await aiService.generateAdCopyWithGemini({
             offerName: campaign.offer.name,
             copyMaster: aiContentResult.copyMaster,
             platform: platformConfig.platform as 'META' | 'TIKTOK',
             adFormat: effectiveMediaType === 'VIDEO' ? 'VIDEO' : 'IMAGE',
             country: campaign.country,
             language: campaign.language,
-            apiKey: process.env.ANTHROPIC_API_KEY,
           });
-          logger.success('system', `✅ [AI] Anthropic generateAdCopy SUCCESS for "${campaign.name}" platform=${platformConfig.platform}`);
+          logger.success('system', `✅ [AI] Gemini generateAdCopyWithGemini SUCCESS for "${campaign.name}" platform=${platformConfig.platform}`);
         } catch (adCopyError: any) {
-          logger.error('system', `❌ [AI] Anthropic generateAdCopy FAILED for "${campaign.name}": ${adCopyError.message}`, {
-            errorStatus: adCopyError.status,
+          logger.error('system', `❌ [AI] Gemini generateAdCopyWithGemini FAILED for "${campaign.name}": ${adCopyError.message}`, {
             errorMessage: adCopyError.message,
             platform: platformConfig.platform,
           });
@@ -4966,25 +4956,25 @@ class CampaignOrchestratorService {
 
       if (contentPhrases.length === 0) {
         // Generate article content with AI (includes headline and phrases)
-        const articleContent = await aiService.generateArticle({
+        // v2.6.0: Uses Gemini instead of Anthropic to avoid stale connection 401 errors in cron context
+        const articleContent = await aiService.generateArticleWithGemini({
           offerName: campaign.offer.name,
           copyMaster: campaign.copyMaster || `Discover the best deals on ${campaign.offer.name}`,
           keywords: campaign.keywords || [],
           country: campaign.country,
           language: campaign.language,
-          apiKey: process.env.ANTHROPIC_API_KEY,
         });
         contentPhrases = articleContent.contentGenerationPhrases;
         headline = articleContent.headline;
       } else {
         // Manual phrases provided, just generate headline
-        const articleContent = await aiService.generateArticle({
+        // v2.6.0: Uses Gemini instead of Anthropic to avoid stale connection 401 errors in cron context
+        const articleContent = await aiService.generateArticleWithGemini({
           offerName: campaign.offer.name,
           copyMaster: campaign.copyMaster || `Discover the best deals on ${campaign.offer.name}`,
           keywords: campaign.keywords || [],
           country: campaign.country,
           language: campaign.language,
-          apiKey: process.env.ANTHROPIC_API_KEY,
         });
         headline = articleContent.headline;
       }
