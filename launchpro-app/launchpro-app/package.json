@@ -18,7 +18,7 @@
     "setup:env": "bash scripts/setup-env.sh",
     "docker:build": "docker build -t launchpro .",
     "docker:run": "docker run -p 3001:3001 launchpro",
-    "deploy": "bash scripts/deploy.sh",
+    "deploy": "bash deploy.sh",
     "test": "echo \"No tests yet\" && exit 0"
   },
   "dependencies": {

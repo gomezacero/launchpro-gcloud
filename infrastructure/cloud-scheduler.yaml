@@ -1,0 +1,128 @@
+# ============================================================================
+# Cloud Scheduler Jobs Configuration
+# ============================================================================
+#
+# Define jobs programados que se ejecutan periódicamente.
+# Estos jobs típicamente encolan tareas en Cloud Tasks o realizan
+# operaciones de mantenimiento.
+#
+# NOTA: Con la arquitectura event-driven de Cloud Tasks, la mayoría
+# de los jobs de polling ya no son necesarios. Estos jobs son para
+# tareas de mantenimiento y monitoreo.
+#
+# Uso:
+#   gcloud scheduler jobs create http JOB_NAME --config=job-config.yaml
+#
+# O aplicar todos los jobs con deploy.sh
+
+# ============================================================================
+# Job: cleanup-stale-campaigns
+# ============================================================================
+# Limpia campañas que quedaron en estados intermedios por más de 24 horas
+# Ejecuta cada 6 horas
+---
+name: cleanup-stale-campaigns
+description: "Clean up campaigns stuck in intermediate states"
+schedule: "0 */6 * * *"  # Cada 6 horas
+timeZone: "America/New_York"
+httpTarget:
+  uri: "${CLOUD_RUN_URL}/api/cron/cleanup-stale"
+  httpMethod: POST
+  headers:
+    Content-Type: "application/json"
+  oidcToken:
+    serviceAccountEmail: "${SERVICE_ACCOUNT_EMAIL}"
+    audience: "${CLOUD_RUN_URL}"
+retryConfig:
+  retryCount: 3
+  maxRetryDuration: "300s"
+  minBackoffDuration: "60s"
+  maxBackoffDuration: "300s"
+
+# ============================================================================
+# Job: sync-campaign-status
+# ============================================================================
+# Sincroniza el estado de campañas activas con las plataformas
+# Verifica métricas y estado en Meta/TikTok
+# Ejecuta cada hora
+---
+name: sync-campaign-status
+description: "Sync active campaign status with ad platforms"
+schedule: "0 * * * *"  # Cada hora
+timeZone: "America/New_York"
+httpTarget:
+  uri: "${CLOUD_RUN_URL}/api/cron/sync-status"
+  httpMethod: POST
+  headers:
+    Content-Type: "application/json"
+  oidcToken:
+    serviceAccountEmail: "${SERVICE_ACCOUNT_EMAIL}"
+    audience: "${CLOUD_RUN_URL}"
+retryConfig:
+  retryCount: 2
+  maxRetryDuration: "600s"
+  minBackoffDuration: "120s"
+
+# ============================================================================
+# Job: stop-loss-check
+# ============================================================================
+# Verifica métricas de campañas activas y pausa las que excedan límites
+# Ejecuta cada 30 minutos
+---
+name: stop-loss-check
+description: "Check campaign metrics and apply stop-loss rules"
+schedule: "*/30 * * * *"  # Cada 30 minutos
+timeZone: "America/New_York"
+httpTarget:
+  uri: "${CLOUD_RUN_URL}/api/cron/stop-loss"
+  httpMethod: POST
+  headers:
+    Content-Type: "application/json"
+  oidcToken:
+    serviceAccountEmail: "${SERVICE_ACCOUNT_EMAIL}"
+    audience: "${CLOUD_RUN_URL}"
+retryConfig:
+  retryCount: 3
+  maxRetryDuration: "300s"
+
+# ============================================================================
+# Job: daily-report
+# ============================================================================
+# Genera y envía reportes diarios de campañas
+# Ejecuta a las 8 AM
+---
+name: daily-report
+description: "Generate and send daily campaign reports"
+schedule: "0 8 * * *"  # 8 AM cada día
+timeZone: "America/New_York"
+httpTarget:
+  uri: "${CLOUD_RUN_URL}/api/cron/daily-report"
+  httpMethod: POST
+  headers:
+    Content-Type: "application/json"
+  oidcToken:
+    serviceAccountEmail: "${SERVICE_ACCOUNT_EMAIL}"
+    audience: "${CLOUD_RUN_URL}"
+retryConfig:
+  retryCount: 2
+  maxRetryDuration: "300s"
+
+# ============================================================================
+# Job: health-check
+# ============================================================================
+# Health check para monitoreo y alertas
+# Ejecuta cada 5 minutos
+---
+name: health-check
+description: "Application health check for monitoring"
+schedule: "*/5 * * * *"  # Cada 5 minutos
+timeZone: "UTC"
+httpTarget:
+  uri: "${CLOUD_RUN_URL}/api/health"
+  httpMethod: GET
+  oidcToken:
+    serviceAccountEmail: "${SERVICE_ACCOUNT_EMAIL}"
+    audience: "${CLOUD_RUN_URL}"
+retryConfig:
+  retryCount: 1
+  maxRetryDuration: "60s"

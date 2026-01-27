@@ -1,0 +1,77 @@
+# ============================================================================
+# Cloud Tasks Queues Configuration
+# ============================================================================
+#
+# Define las colas de Cloud Tasks para procesamiento de campañas.
+# Cada cola tiene su propia configuración de retry y rate limiting.
+#
+# Uso:
+#   gcloud tasks queues create QUEUE_NAME --config=cloud-tasks.yaml
+#
+# O aplicar todas las colas con deploy.sh
+
+# ============================================================================
+# Queue: campaign-article-checks
+# ============================================================================
+# Verifica si los artículos de campañas están aprobados en Tonic
+#
+# Configuración:
+# - Rate: 10 tasks/segundo (suficiente para volumen normal)
+# - Retry: 5 intentos con backoff exponencial
+# - Timeout: 5 minutos por task
+---
+name: campaign-article-checks
+rateLimits:
+  maxDispatchesPerSecond: 10
+  maxConcurrentDispatches: 100
+  maxBurstSize: 10
+retryConfig:
+  maxAttempts: 5
+  maxRetryDuration: 1800s  # 30 minutos máximo de reintentos
+  minBackoff: 60s          # 1 minuto inicial
+  maxBackoff: 300s         # 5 minutos máximo
+  maxDoublings: 4
+
+# ============================================================================
+# Queue: campaign-tracking-polls
+# ============================================================================
+# Verifica si los tracking links están disponibles
+#
+# Configuración:
+# - Rate: 20 tasks/segundo (más frecuente, checks rápidos)
+# - Retry: 10 intentos (tracking puede tardar)
+# - Timeout: 2 minutos por task
+---
+name: campaign-tracking-polls
+rateLimits:
+  maxDispatchesPerSecond: 20
+  maxConcurrentDispatches: 200
+  maxBurstSize: 20
+retryConfig:
+  maxAttempts: 10
+  maxRetryDuration: 1200s  # 20 minutos máximo
+  minBackoff: 30s          # 30 segundos inicial
+  maxBackoff: 120s         # 2 minutos máximo
+  maxDoublings: 3
+
+# ============================================================================
+# Queue: campaign-processing
+# ============================================================================
+# Procesa campañas completas (AI + lanzamiento a plataformas)
+#
+# Configuración:
+# - Rate: 5 tasks/segundo (procesamiento pesado)
+# - Retry: 3 intentos (procesamiento costoso)
+# - Timeout: 15 minutos por task (Cloud Run max)
+---
+name: campaign-processing
+rateLimits:
+  maxDispatchesPerSecond: 5
+  maxConcurrentDispatches: 50
+  maxBurstSize: 5
+retryConfig:
+  maxAttempts: 3
+  maxRetryDuration: 3600s  # 1 hora máximo
+  minBackoff: 120s         # 2 minutos inicial
+  maxBackoff: 600s         # 10 minutos máximo
+  maxDoublings: 2

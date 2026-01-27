@@ -24,6 +24,7 @@ import { campaignLogger } from '@/lib/campaign-logger';
 import { tiktokService } from '../tiktok.service';
 import { aiService } from '../ai.service';
 import { campaignAudit } from '../campaign-audit.service';
+import { videoConverterService } from '../video-converter.service';
 import { MediaType } from '@prisma/client';
 import {
   resolveCountryCodesForTikTok,
@@ -81,11 +82,75 @@ class TikTokLauncherService implements IPlatformLauncher {
       });
 
       // 3. Obtener videos de la campaña (TikTok solo soporta video)
-      const videos = await this.getVideosForCampaign(campaign.id);
+      let videos = await this.getVideosForCampaign(campaign.id);
+      
+      // AUTO-FIX: Si no hay videos, intentar convertir imágenes
+      if (videos.length === 0) {
+        logger.info('tiktok-launcher', 'No videos found. Checking for images to convert...');
+        
+        const images = await prisma.media.findMany({
+          where: {
+            campaignId: campaign.id,
+            type: MediaType.IMAGE,
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 1, // Convertimos solo la imagen más reciente para empezar
+        });
+
+        if (images.length > 0) {
+          const imageToConvert = images[0];
+          logger.info('tiktok-launcher', `Converting image to video: ${imageToConvert.fileName}`);
+          
+          campaignLogger.info(
+            campaign.id,
+            'video_conversion',
+            `Auto-converting image to video for TikTok: ${imageToConvert.fileName}`
+          );
+
+          try {
+            const convertedVideo = await videoConverterService.convertImageToVideo(
+              imageToConvert.url,
+              imageToConvert.fileName
+            );
+
+            // Guardar el nuevo video en la DB
+            const newVideo = await prisma.media.create({
+              data: {
+                campaignId: campaign.id,
+                type: MediaType.VIDEO,
+                url: convertedVideo.gcsUrl || '', // URL pública o firmada
+                fileName: convertedVideo.fileName,
+                mimeType: 'video/mp4',
+                size: 0, // Tamaño aproximado o desconocido
+                width: convertedVideo.width,
+                height: convertedVideo.height,
+              },
+            });
+
+            // Limpiar archivo local temporal
+            videoConverterService.cleanupConvertedVideo(convertedVideo.localPath);
+
+            // Actualizar la lista de videos
+            videos = [newVideo];
+            
+            campaignLogger.success(
+              campaign.id,
+              'video_conversion',
+              `Video created successfully: ${newVideo.fileName}`
+            );
+
+          } catch (conversionError: any) {
+            logger.error('tiktok-launcher', `Video conversion failed`, conversionError);
+            throw new Error(
+              `TikTok requires video. Auto-conversion failed: ${conversionError.message}`
+            );
+          }
+        }
+      }
+
       if (videos.length === 0) {
         throw new Error(
-          'TikTok requires VIDEO for in-feed ads (PLACEMENT_TIKTOK does not support static images). ' +
-          'Please upload a video file (.mp4, .mov, etc.) to launch this campaign on TikTok.'
+          'TikTok requires VIDEO for in-feed ads. No videos found and no images available for auto-conversion.'
         );
       }
 
