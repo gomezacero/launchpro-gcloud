@@ -8,15 +8,16 @@ import { getStorage } from '@/lib/gcs';
 
 // VERSION MARKER - Used to verify which code version is deployed
 // BUILD_TIMESTAMP forces Vercel to create fresh serverless instances
-const BUILD_TIMESTAMP = '2026-01-27T14:50:00Z';
-const AI_SERVICE_VERSION = 'v2.9.2-GEMINI-ONLY-FORCE-REBUILD';
-console.log(`[AIService] ========== MODULE LOAD ==========`);
-console.log(`[AIService] VERSION: ${AI_SERVICE_VERSION}`);
-console.log(`[AIService] BUILD_TIMESTAMP: ${BUILD_TIMESTAMP}`);
-console.log(`[AIService] AI PROVIDER: GEMINI EXCLUSIVELY`);
-console.log(`[AIService] ANTHROPIC STATUS: COMPLETELY REMOVED - NO SDK, NO CALLS`);
-console.log(`[AIService] If you see Anthropic 401 errors, the error is from OLD CACHED CODE, not this version`);
-console.log(`[AIService] ================================`);
+const BUILD_TIMESTAMP = '2026-01-27T15:15:00Z';
+const AI_SERVICE_VERSION = 'v2.9.3-GEMINI-ONLY-NO-ANTHROPIC';
+console.log(`\n\n${'='.repeat(80)}`);
+console.log(`[AIService] 🚀 MODULE LOAD - VERSION: ${AI_SERVICE_VERSION}`);
+console.log(`[AIService] 📅 BUILD_TIMESTAMP: ${BUILD_TIMESTAMP}`);
+console.log(`[AIService] ✅ AI PROVIDER: GEMINI EXCLUSIVELY`);
+console.log(`[AIService] ❌ ANTHROPIC: SDK NOT INSTALLED, NO IMPORTS, NO CALLS`);
+console.log(`[AIService] ⚠️  If you see Anthropic 401 errors, you are running OLD CACHED CODE`);
+console.log(`[AIService] 🔧 Solution: Delete .next folder, run 'npm run build', redeploy to Vercel`);
+console.log(`${'='.repeat(80)}\n\n`);
 
 /**
  * AI Service v2.8.0 - GEMINI ONLY
@@ -681,16 +682,37 @@ class AIService {
   }
 
   constructor() {
-    console.log('[AIService] Constructor called - v2.8.0 GEMINI ONLY');
+    console.log(`[AIService] Constructor called - VERSION: ${AI_SERVICE_VERSION}`);
+    console.log(`[AIService] BUILD_TIMESTAMP: ${BUILD_TIMESTAMP}`);
+    console.log(`[AIService] ANTHROPIC SDK: NOT INSTALLED - If you see 401 Anthropic errors, you are running OLD CODE`);
 
     const apiKey = process.env.GOOGLE_AI_API_KEY || process.env.GEMINI_API_KEY || '';
 
+    // CRITICAL: Log API key info for debugging (without revealing the key)
+    console.log(`[AIService] API Key check:`, {
+      hasGoogleAiKey: !!process.env.GOOGLE_AI_API_KEY,
+      hasGeminiKey: !!process.env.GEMINI_API_KEY,
+      keyLength: apiKey.length,
+      keyPrefix: apiKey.substring(0, 10),
+      isAnthropicKey: apiKey.startsWith('sk-ant'),
+    });
+
     // CRITICAL FIX: Check for misconfigured Anthropic keys
     if (apiKey.startsWith('sk-ant')) {
-        const errorMsg = 'CRITICAL ERROR: GEMINI_API_KEY or GOOGLE_AI_API_KEY contains an Anthropic key (starts with sk-ant). Please update your .env file to use a valid Google Gemini API key.';
-        console.error(errorMsg);
+        const errorMsg = `CRITICAL ERROR: Your API key starts with "sk-ant" which is an Anthropic key format. ` +
+          `LaunchPro v2.9.0+ uses GEMINI ONLY. Please set GEMINI_API_KEY to a valid Google Gemini API key. ` +
+          `Get one at: https://aistudio.google.com/apikey`;
+        console.error(`[AIService] ❌ ${errorMsg}`);
         logger.error('ai', errorMsg);
         throw new Error(errorMsg);
+    }
+
+    // Verify we have a valid API key
+    if (!apiKey) {
+      const errorMsg = 'GEMINI_API_KEY or GOOGLE_AI_API_KEY is not set. Please configure your environment variables.';
+      console.error(`[AIService] ❌ ${errorMsg}`);
+      logger.error('ai', errorMsg);
+      throw new Error(errorMsg);
     }
 
     // Initialize Gemini client for image generation (Nano Banana Pro)

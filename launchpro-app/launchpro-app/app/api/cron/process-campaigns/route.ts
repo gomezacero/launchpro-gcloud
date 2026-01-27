@@ -9,9 +9,10 @@ import { CampaignStatus, Prisma, Campaign, CampaignPlatform, Offer, Account } fr
 // DEPLOYMENT VERSION - Used to verify which code version is running
 // This helps identify if old Vercel instances are executing stale code
 // v2.9.0: Removed duplicate old code, all AI uses Gemini exclusively
+// v2.9.3: Added detailed API key debugging to help identify issues
 // BUILD_TIMESTAMP forces Vercel to invalidate cached serverless functions
-const BUILD_TIMESTAMP = '2026-01-27T14:50:00Z';
-const CODE_VERSION = 'v2.9.2-FORCE-REBUILD';
+const BUILD_TIMESTAMP = '2026-01-27T15:15:00Z';
+const CODE_VERSION = 'v2.9.3-GEMINI-ONLY-NO-ANTHROPIC';
 
 // MODULE LOAD LOG - This executes when the module is imported
 console.log(`\n\n${'='.repeat(80)}`);

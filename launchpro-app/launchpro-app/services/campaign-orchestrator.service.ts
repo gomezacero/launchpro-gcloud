@@ -4308,14 +4308,15 @@ class CampaignOrchestratorService {
   async continueCampaignAfterArticle(campaignId: string): Promise<LaunchResult> {
     // VERSION MARKER - Critical for debugging which code is running
     // BUILD_TIMESTAMP forces Vercel to invalidate cached serverless functions
-    const BUILD_TIMESTAMP = '2026-01-27T14:50:00Z';
-    const ORCHESTRATOR_VERSION = 'v2.9.2-FORCE-REBUILD';
+    const BUILD_TIMESTAMP = '2026-01-27T15:15:00Z';
+    const ORCHESTRATOR_VERSION = 'v2.9.3-GEMINI-ONLY-NO-ANTHROPIC';
 
     console.log(`\n\n${'='.repeat(80)}`);
     console.log(`🔍 [continueCampaignAfterArticle] VERSION: ${ORCHESTRATOR_VERSION}`);
     console.log(`🔍 [continueCampaignAfterArticle] BUILD_TIMESTAMP: ${BUILD_TIMESTAMP}`);
-    console.log(`🔍 [continueCampaignAfterArticle] AI PROVIDER: GEMINI ONLY - NO ANTHROPIC`);
-    console.log(`🔍 [continueCampaignAfterArticle] If you see 401 Anthropic errors, it's OLD CACHED CODE`);
+    console.log(`🔍 [continueCampaignAfterArticle] AI PROVIDER: GEMINI ONLY`);
+    console.log(`🔍 [continueCampaignAfterArticle] ANTHROPIC: SDK NOT INSTALLED - NO IMPORTS - NO CALLS`);
+    console.log(`🔍 [continueCampaignAfterArticle] If you see 401 Anthropic errors, DELETE .next AND REBUILD`);
     console.log(`${'='.repeat(80)}\n\n`);
 
     logger.info('system', `🔄 [Orchestrator] ENTERED continueCampaignAfterArticle for ${campaignId} - VERSION: ${ORCHESTRATOR_VERSION} - BUILD: ${BUILD_TIMESTAMP}`);
