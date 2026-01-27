@@ -3617,6 +3617,32 @@ class CampaignOrchestratorService {
             platformResults.push(result);
           }
         } catch (error: any) {
+          // DIAGNOSTIC: Capture full error details to identify source of Anthropic-formatted errors
+          const errorDiagnostic = {
+            platform: platformConfig.platform,
+            errorName: error.name,
+            errorMessage: error.message,
+            errorCode: error.code,
+            // Axios-specific fields
+            isAxiosError: error.isAxiosError || false,
+            axiosStatus: error.response?.status,
+            axiosStatusText: error.response?.statusText,
+            axiosData: error.response?.data ? JSON.stringify(error.response.data).substring(0, 500) : null,
+            axiosUrl: error.config?.url,
+            axiosMethod: error.config?.method,
+            axiosHeaders: error.config?.headers ? Object.keys(error.config.headers) : null,
+            // Stack trace (first 500 chars)
+            stackPreview: error.stack?.substring(0, 500),
+            // Check if error contains Anthropic patterns
+            containsAnthropicPattern: error.message?.includes('x-api-key') ||
+                                       error.message?.includes('anthropic') ||
+                                       error.message?.includes('req_'),
+          };
+
+          logger.error('system', `🔴 DIAGNOSTIC: Error launching to ${platformConfig.platform}`, errorDiagnostic);
+          console.log('🔴🔴🔴 FULL ERROR DIAGNOSTIC:', JSON.stringify(errorDiagnostic, null, 2));
+
+          // Original logging
           logger.error('system', `Error launching to ${platformConfig.platform}: ${error.message} `, {
             platform: platformConfig.platform,
             error: error.message,
