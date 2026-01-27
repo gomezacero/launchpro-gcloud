@@ -637,9 +637,63 @@ IMPORTANTE: El thumbnail debe generar curiosidad y deseo de ver el video. Debe d
 
 // Force rebuild: 2026-01-12T22:45:00Z
 class AIService {
-  private vertexAiClient: any;
-  private geminiClient: GoogleGenAI;
-  private storage: Storage;
+  private _vertexAiClient: any | null = null;
+  private _geminiClient: GoogleGenAI | null = null;
+  private _storage: Storage | null = null;
+
+  // Lazy getter for Gemini client - initializes on first use, not at module load
+  private get geminiClient(): GoogleGenAI {
+    if (!this._geminiClient) {
+      const apiKey = process.env.GOOGLE_AI_API_KEY || process.env.GEMINI_API_KEY || '';
+
+      if (!apiKey) {
+        throw new Error('GEMINI_API_KEY or GOOGLE_AI_API_KEY environment variable is required');
+      }
+
+      if (apiKey.startsWith('sk-ant')) {
+        throw new Error('CRITICAL: GEMINI_API_KEY contains an Anthropic key (sk-ant). Use a valid Google Gemini API key.');
+      }
+
+      this._geminiClient = new GoogleGenAI({ apiKey });
+      logger.info('ai', 'Gemini client initialized (lazy)');
+    }
+    return this._geminiClient;
+  }
+
+  // Lazy getter for Vertex AI client
+  private get vertexAiClient(): any {
+    if (!this._vertexAiClient) {
+      const credentialsJson = process.env.GCP_SERVICE_ACCOUNT_KEY;
+      let vertexAiOptions: any = {
+        apiEndpoint: `${env.GCP_LOCATION}-aiplatform.googleapis.com`,
+      };
+
+      if (credentialsJson) {
+        try {
+          const credentials = JSON.parse(credentialsJson);
+          vertexAiOptions.credentials = credentials;
+          vertexAiOptions.projectId = credentials.project_id;
+          logger.info('ai', `Vertex AI initialized with service account: ${credentials.client_email}`);
+        } catch (e: any) {
+          logger.error('ai', `Failed to parse GCP_SERVICE_ACCOUNT_KEY: ${e.message}`);
+        }
+      } else {
+        logger.warn('ai', 'GCP_SERVICE_ACCOUNT_KEY not found, using default credentials');
+      }
+
+      this._vertexAiClient = new PredictionServiceClient(vertexAiOptions);
+    }
+    return this._vertexAiClient;
+  }
+
+  // Lazy getter for Storage client
+  private get storage(): Storage {
+    if (!this._storage) {
+      this._storage = getStorage();
+      logger.info('ai', 'Storage client initialized (lazy)');
+    }
+    return this._storage;
+  }
 
   /**
    * Get language name and instruction based on language code
@@ -681,44 +735,9 @@ class AIService {
   }
 
   constructor() {
-    console.log('[AIService] Constructor called - v2.8.0 GEMINI ONLY');
-
-    const apiKey = process.env.GOOGLE_AI_API_KEY || process.env.GEMINI_API_KEY || '';
-
-    // CRITICAL FIX: Check for misconfigured Anthropic keys
-    if (apiKey.startsWith('sk-ant')) {
-        const errorMsg = 'CRITICAL ERROR: GEMINI_API_KEY or GOOGLE_AI_API_KEY contains an Anthropic key (starts with sk-ant). Please update your .env file to use a valid Google Gemini API key.';
-        console.error(errorMsg);
-        logger.error('ai', errorMsg);
-        throw new Error(errorMsg);
-    }
-
-    // Initialize Gemini client for image generation (Nano Banana Pro)
-    this.geminiClient = new GoogleGenAI({
-      apiKey: apiKey,
-    });
-
-    // Initialize Google Cloud clients with proper credentials (for Veo video generation)
-    const credentialsJson = process.env.GCP_SERVICE_ACCOUNT_KEY;
-    let vertexAiOptions: any = {
-      apiEndpoint: `${env.GCP_LOCATION}-aiplatform.googleapis.com`,
-    };
-
-    if (credentialsJson) {
-      try {
-        const credentials = JSON.parse(credentialsJson);
-        vertexAiOptions.credentials = credentials;
-        vertexAiOptions.projectId = credentials.project_id;
-        logger.info('ai', `Vertex AI initialized with service account: ${credentials.client_email}`);
-      } catch (e: any) {
-        logger.error('ai', `Failed to parse GCP_SERVICE_ACCOUNT_KEY: ${e.message}`);
-      }
-    } else {
-      logger.warn('ai', 'GCP_SERVICE_ACCOUNT_KEY not found, using default credentials');
-    }
-
-    this.vertexAiClient = new PredictionServiceClient(vertexAiOptions);
-    this.storage = getStorage();
+    // Lazy initialization - all clients are created on first use
+    // This allows the module to load during build time without API keys
+    console.log('[AIService] Constructor called - v2.9.2 GEMINI ONLY (lazy init for Cloud Run)');
   }
 
   // ============================================

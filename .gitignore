@@ -47,3 +47,4 @@ gcp-service-account.json
 # Database exports (contain sensitive data)
 *.sql
 datos_export.sql
+.codex

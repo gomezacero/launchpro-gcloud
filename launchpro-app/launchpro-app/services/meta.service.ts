@@ -1313,6 +1313,78 @@ class MetaService {
     return match ? match[1] : null;
   }
 
+  // ============================================
+  // DELETE OPERATIONS (for rollback)
+  // ============================================
+
+  /**
+   * Delete an ad
+   * Used for rollback when campaign creation fails
+   */
+  async deleteAd(adId: string, accessToken?: string): Promise<boolean> {
+    try {
+      const client = this.getClient(accessToken);
+      await client.delete(`/${adId}`);
+      console.log(`[META] ✅ Ad deleted: ${adId}`);
+      return true;
+    } catch (error: any) {
+      console.error(`[META] ❌ Failed to delete ad ${adId}:`, error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete an ad set
+   * Used for rollback when campaign creation fails
+   */
+  async deleteAdSet(adSetId: string, accessToken?: string): Promise<boolean> {
+    try {
+      const client = this.getClient(accessToken);
+      await client.delete(`/${adSetId}`);
+      console.log(`[META] ✅ AdSet deleted: ${adSetId}`);
+      return true;
+    } catch (error: any) {
+      console.error(`[META] ❌ Failed to delete adset ${adSetId}:`, error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete a campaign
+   * Used for rollback when campaign creation fails
+   */
+  async deleteCampaign(campaignId: string, accessToken?: string): Promise<boolean> {
+    try {
+      const client = this.getClient(accessToken);
+      await client.delete(`/${campaignId}`);
+      console.log(`[META] ✅ Campaign deleted: ${campaignId}`);
+      return true;
+    } catch (error: any) {
+      console.error(`[META] ❌ Failed to delete campaign ${campaignId}:`, error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Search for targeting interests by keyword
+   */
+  async searchInterests(query: string, accessToken?: string): Promise<any> {
+    try {
+      const client = this.getClient(accessToken);
+      const response = await client.get('/search', {
+        params: {
+          type: 'adinterest',
+          q: query,
+          limit: 10,
+        },
+      });
+      return response.data;
+    } catch (error: any) {
+      console.error(`[META] ❌ Failed to search interests for "${query}":`, error.message);
+      return { data: [] };
+    }
+  }
+
 }
 
 // Export singleton instance

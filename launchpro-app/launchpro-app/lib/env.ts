@@ -9,7 +9,14 @@ import { z } from 'zod';
  * - Las credenciales de Tonic se gestionan por cuenta en la base de datos
  * - Meta y TikTok usan tokens compartidos para acceder a múltiples cuentas
  * - Los IDs de cuenta por defecto son opcionales (fallback)
+ *
+ * NOTA: Durante build time (next build), las variables pueden no estar disponibles.
+ * La validación estricta solo ocurre en runtime cuando se accede a `env`.
  */
+
+// Check if we're in build phase
+const isBuildTime = process.env.NODE_ENV === 'production' && !process.env.DATABASE_URL;
+
 const envSchema = z.object({
   // ============================================================================
   // DATABASE
@@ -101,6 +108,62 @@ const envSchema = z.object({
   // Supabase credentials for DesignFlow (design task management)
   DESIGNFLOW_SUPABASE_URL: z.string().url().optional(),
   DESIGNFLOW_SUPABASE_ANON_KEY: z.string().optional(),
+
+  // ============================================================================
+  // GOOGLE CLOUD RUN & CLOUD TASKS
+  // ============================================================================
+  // Cloud Run URL - Usado para callbacks de Cloud Tasks
+  CLOUD_RUN_URL: z.string().url().optional(),
+
+  // Cloud Tasks configuration
+  CLOUD_TASKS_ENABLED: z.string().default('false'),
+  CLOUD_TASKS_LOCATION: z.string().default('us-central1'),
+  CLOUD_TASKS_SERVICE_ACCOUNT: z.string().optional(),
+
+  // Alternative names for GCP Project ID (backwards compatibility)
+  GOOGLE_CLOUD_PROJECT_ID: z.string().optional(),
+});
+
+// Build-time schema with all fields optional (for Next.js static generation)
+const buildTimeSchema = z.object({
+  DATABASE_URL: z.string().optional().default('postgresql://build:build@localhost:5432/build'),
+  TONIC_API_USERNAME: z.string().optional(),
+  TONIC_API_PASSWORD: z.string().optional(),
+  TONIC_API_BASE_URL: z.string().optional().default('https://api.publisher.tonic.com'),
+  META_ACCESS_TOKEN: z.string().optional().default('build-placeholder'),
+  META_AD_ACCOUNT_ID: z.string().optional(),
+  META_APP_ID: z.string().optional(),
+  META_APP_SECRET: z.string().optional(),
+  META_PIXEL_ID: z.string().optional(),
+  META_API_VERSION: z.string().optional().default('v21.0'),
+  TIKTOK_ACCESS_TOKEN: z.string().optional().default('build-placeholder'),
+  TIKTOK_ADVERTISER_ID: z.string().optional(),
+  TIKTOK_APP_ID: z.string().optional(),
+  TIKTOK_APP_SECRET: z.string().optional(),
+  TIKTOK_PIXEL_ID: z.string().optional(),
+  TABOOLA_CLIENT_ID: z.string().optional(),
+  TABOOLA_CLIENT_SECRET: z.string().optional(),
+  TABOOLA_ACCOUNT_ID: z.string().optional(),
+  GEMINI_API_KEY: z.string().optional(),
+  GOOGLE_AI_API_KEY: z.string().optional(),
+  ANTHROPIC_API_KEY: z.string().optional(),
+  GCP_PROJECT_ID: z.string().optional().default('build-placeholder'),
+  GCP_LOCATION: z.string().optional().default('us-central1'),
+  GCP_STORAGE_BUCKET: z.string().optional().default('build-placeholder'),
+  GOOGLE_APPLICATION_CREDENTIALS: z.string().optional(),
+  NODE_ENV: z.enum(['development', 'production', 'test']).optional().default('development'),
+  NEXT_PUBLIC_APP_URL: z.string().optional().default('http://localhost:3000'),
+  ENABLE_AI_CONTENT_GENERATION: z.string().optional().default('true'),
+  ENABLE_IMAGE_GENERATION: z.string().optional().default('true'),
+  ENABLE_VIDEO_GENERATION: z.string().optional().default('true'),
+  ENABLE_NEURAL_ENGINE: z.string().optional().default('false'),
+  DESIGNFLOW_SUPABASE_URL: z.string().optional(),
+  DESIGNFLOW_SUPABASE_ANON_KEY: z.string().optional(),
+  CLOUD_RUN_URL: z.string().optional(),
+  CLOUD_TASKS_ENABLED: z.string().optional().default('false'),
+  CLOUD_TASKS_LOCATION: z.string().optional().default('us-central1'),
+  CLOUD_TASKS_SERVICE_ACCOUNT: z.string().optional(),
+  GOOGLE_CLOUD_PROJECT_ID: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -118,5 +181,33 @@ export function validateEnv(): Env {
   }
 }
 
-// Export validated env (use with caution, only after validation)
-export const env = envSchema.parse(process.env);
+/**
+ * Lazy-loaded environment variables
+ * During build time, returns placeholder values
+ * At runtime, validates and returns actual values
+ */
+function getEnv(): Env {
+  // During build time, use relaxed schema
+  if (isBuildTime) {
+    return buildTimeSchema.parse(process.env) as Env;
+  }
+
+  // At runtime, validate strictly
+  try {
+    return envSchema.parse(process.env);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      console.error('Environment validation errors:', error.errors);
+      // In development, throw error
+      if (process.env.NODE_ENV === 'development') {
+        throw error;
+      }
+      // In production without DATABASE_URL, we're still building
+      return buildTimeSchema.parse(process.env) as Env;
+    }
+    throw error;
+  }
+}
+
+// Export validated env (lazy evaluation)
+export const env = getEnv();
