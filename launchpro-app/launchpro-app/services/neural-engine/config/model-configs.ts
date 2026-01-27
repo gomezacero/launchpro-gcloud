@@ -106,15 +106,15 @@ export const ASSET_MANAGER_CONFIG: AgentConfig = {
 /**
  * Angle Strategist - Creative Director Agent
  *
- * Requires: Complex reasoning, large context window
+ * v2.9.0: Migrated from Anthropic to Gemini to eliminate 401 errors
  * Task: Cross-reference cultural context with assets to define strategy
  * Complexity: High (strategic reasoning)
  */
 export const ANGLE_STRATEGIST_CONFIG: AgentConfig = {
   name: 'AngleStrategist',
   model: {
-    provider: 'anthropic',
-    model: 'claude-sonnet-4-20250514',
+    provider: 'google',
+    model: 'gemini-2.0-flash-exp',
     temperature: 0.7, // Higher for creative strategy
     maxTokens: 3000,
   },
@@ -271,9 +271,9 @@ export function estimateCampaignCost(): {
   // Asset Manager (embeddings only)
   breakdown.assetManager = 0.0001; // ~5 embedding queries
 
-  // Angle Strategist (Claude Sonnet)
+  // Angle Strategist (Gemini Flash - v2.9.0)
   breakdown.angleStrategist = estimateCost(
-    'claude-sonnet-4-20250514',
+    'gemini-2.0-flash',
     usage.angleStrategist.input,
     usage.angleStrategist.output
   );

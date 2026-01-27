@@ -2,7 +2,7 @@
  * RSOC Creative Neural Engine - Angle Strategist Agent
  *
  * Role: Creative Director & Consumer Psychology Strategist
- * Model: Claude Sonnet 3.5 (requires maximum reasoning capability)
+ * Model: Gemini 2.0 Flash (v2.9.0 - migrated from Anthropic)
  *
  * This agent crosses cultural data from Global Scout with assets from Asset Manager
  * to define the optimal psychological approach for the campaign.
@@ -13,8 +13,7 @@
  * - Visual direction and platform-specific adaptations
  */
 
-import Anthropic from '@anthropic-ai/sdk';
-import { getAnthropicClient } from '@/lib/anthropic-client';
+import { GoogleGenAI } from '@google/genai';
 import {
   StrategyBrief,
   CulturalContext,
@@ -39,18 +38,14 @@ const AGENT_NAME = 'AngleStrategist';
 
 export class AngleStrategistAgent {
   private cacheService = getSemanticCacheService();
-  private apiKey?: string;
+  private gemini: GoogleGenAI;
 
-  /**
-   * Get Anthropic client with explicit API key for serverless reliability
-   * Passing apiKey explicitly prevents 401 errors in Vercel serverless environment
-   */
-  private get anthropic(): Anthropic {
-    return getAnthropicClient(this.apiKey);
-  }
-
-  constructor(apiKey?: string) {
-    this.apiKey = apiKey || process.env.ANTHROPIC_API_KEY;
+  constructor() {
+    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY;
+    if (!apiKey) {
+      console.warn(`[${AGENT_NAME}] GEMINI_API_KEY not set. Agent will fail.`);
+    }
+    this.gemini = new GoogleGenAI({ apiKey: apiKey || '' });
   }
 
   /**
@@ -151,33 +146,35 @@ export class AngleStrategistAgent {
   }
 
   /**
-   * Develop the strategy using Claude Sonnet
+   * Develop the strategy using Gemini (v2.9.0 - migrated from Anthropic)
    */
   private async developStrategy(
     input: NeuralEngineInput,
     culturalContext: CulturalContext,
     retrievedAssets: RetrievedAssets
   ): Promise<StrategyBrief> {
-    const prompt = this.buildStrategyPrompt(input, culturalContext, retrievedAssets);
+    const userPrompt = this.buildStrategyPrompt(input, culturalContext, retrievedAssets);
+    const systemPrompt = this.getSystemPrompt();
 
-    console.log(`[${AGENT_NAME}] Calling Claude Sonnet for strategy development...`);
+    console.log(`[${AGENT_NAME}] Calling Gemini for strategy development...`);
 
-    const response = await this.anthropic.messages.create({
-      model: ANGLE_STRATEGIST_CONFIG.model.model,
-      max_tokens: ANGLE_STRATEGIST_CONFIG.model.maxTokens,
-      temperature: ANGLE_STRATEGIST_CONFIG.model.temperature,
-      system: this.getSystemPrompt(),
-      messages: [{ role: 'user', content: prompt }],
+    const response = await this.gemini.models.generateContent({
+      model: 'gemini-2.0-flash-exp',
+      contents: `${systemPrompt}\n\n${userPrompt}`,
+      config: {
+        temperature: ANGLE_STRATEGIST_CONFIG.model.temperature,
+        maxOutputTokens: ANGLE_STRATEGIST_CONFIG.model.maxTokens,
+      },
     });
 
     // Extract text response
-    const textBlock = response.content.find((block) => block.type === 'text');
-    if (!textBlock || textBlock.type !== 'text') {
-      throw new Error('No text response from Claude');
+    const text = response.text || '';
+    if (!text) {
+      throw new Error('Empty response from Gemini');
     }
 
     // Parse the JSON response
-    const strategyBrief = this.parseStrategyResponse(textBlock.text, input);
+    const strategyBrief = this.parseStrategyResponse(text, input);
 
     return strategyBrief;
   }
@@ -440,15 +437,9 @@ let angleStrategistInstance: AngleStrategistAgent | null = null;
 
 /**
  * Get or create an AngleStrategistAgent instance.
- * When apiKey is provided, creates a fresh instance for serverless reliability.
- * When no apiKey is provided, returns singleton (for backwards compatibility).
+ * v2.9.0: Uses Gemini, no apiKey parameter needed (uses env var).
  */
-export function getAngleStrategistAgent(apiKey?: string): AngleStrategistAgent {
-  // If apiKey is explicitly provided, create fresh instance for serverless reliability
-  if (apiKey) {
-    return new AngleStrategistAgent(apiKey);
-  }
-  // Otherwise use singleton pattern with env var fallback
+export function getAngleStrategistAgent(): AngleStrategistAgent {
   if (!angleStrategistInstance) {
     angleStrategistInstance = new AngleStrategistAgent();
   }

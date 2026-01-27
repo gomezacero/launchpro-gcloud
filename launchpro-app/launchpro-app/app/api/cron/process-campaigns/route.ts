@@ -8,8 +8,8 @@ import { CampaignStatus, Prisma, Campaign, CampaignPlatform, Offer, Account } fr
 
 // DEPLOYMENT VERSION - Used to verify which code version is running
 // This helps identify if old Vercel instances are executing stale code
-// v2.8.0: All AI uses Gemini exclusively - no more Anthropic
-const CODE_VERSION = 'v2.8.0-GEMINI-ONLY';
+// v2.9.0: Removed duplicate old code, all AI uses Gemini exclusively
+const CODE_VERSION = 'v2.9.0-NO-ANTHROPIC';
 
 // MODULE LOAD LOG - This executes when the module is imported
 console.log(`\n\n${'='.repeat(80)}`);
@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
   console.log(`[process-campaigns] CODE_VERSION: ${CODE_VERSION}`);
   console.log(`[process-campaigns] Instance ID: ${cronInstanceId}`);
   console.log(`[process-campaigns] Timestamp: ${new Date().toISOString()}`);
-  console.log(`[process-campaigns] ENV CHECK: ANTHROPIC_API_KEY length=${(process.env.ANTHROPIC_API_KEY || '').length}`);
+  console.log(`[process-campaigns] ENV CHECK: GEMINI_API_KEY exists=${!!process.env.GEMINI_API_KEY}`);
   console.log(`[process-campaigns] ENV CHECK: CRON_SECRET exists=${!!process.env.CRON_SECRET}`);
   console.log(`=======================================================\n\n`);
   // ====== END ULTRA DEBUG ======
@@ -70,33 +70,16 @@ export async function GET(request: NextRequest) {
 
   try {
     // Debug: Log environment info at the start of cron
-    const apiKey = (process.env.ANTHROPIC_API_KEY || '').trim();
+    // v2.9.0: All AI uses Gemini - no Anthropic validation needed
     const envDebug = {
-      anthropicKeyExists: !!apiKey,
-      anthropicKeyLength: apiKey.length,
-      anthropicKeyPreview: apiKey
-        ? `${apiKey.substring(0, 10)}...${apiKey.slice(-4)}`
-        : 'MISSING',
+      geminiKeyExists: !!process.env.GEMINI_API_KEY,
       nodeEnv: process.env.NODE_ENV,
       vercelEnv: process.env.VERCEL_ENV,
       vercelGitCommitSha: process.env.VERCEL_GIT_COMMIT_SHA?.substring(0, 7),
+      aiProvider: 'GEMINI-ONLY-v2.9.0',
     };
     console.log('[CRON process-campaigns] Environment debug:', JSON.stringify(envDebug));
     logger.info('system', '🔄 [CRON] Starting process-campaigns job (PARALLEL MODE)...', envDebug);
-
-    // VALIDATION: Check Anthropic API key BEFORE processing (fail fast for ALL campaigns)
-    if (!apiKey || apiKey.length < 50 || !apiKey.startsWith('sk-ant-')) {
-      logger.error('system', `❌ [CRON] CRITICAL: Anthropic API key is invalid or missing!`, {
-        keyLength: apiKey.length,
-        keyStart: apiKey.substring(0, 10) || 'EMPTY',
-        startsWithSkAnt: apiKey.startsWith('sk-ant-'),
-      });
-      return NextResponse.json({
-        success: false,
-        error: 'Anthropic API key is invalid or missing. Please check ANTHROPIC_API_KEY environment variable.',
-        systemError: true,
-      }, { status: 500 });
-    }
 
     // Find MULTIPLE campaigns ready to process (up to 3 for parallel processing)
     // CRITICAL: Only process campaigns that ALREADY have tracking links

@@ -47,16 +47,13 @@ const ORCHESTRATOR_NAME = 'NeuralEngineOrchestrator';
 export class NeuralEngineOrchestrator {
   private globalScout = getGlobalScoutAgent();
   private assetManager = getAssetManagerAgent();
-  private angleStrategist: ReturnType<typeof getAngleStrategistAgent>;
+  private angleStrategist = getAngleStrategistAgent();
   private visualEngineer = getVisualEngineerAgent();
   private complianceAssembler = getComplianceAssembler();
-  private apiKey?: string;
 
-  constructor(apiKey?: string) {
-    this.apiKey = apiKey || process.env.ANTHROPIC_API_KEY;
-    // Pass apiKey to AngleStrategist for serverless reliability
-    this.angleStrategist = getAngleStrategistAgent(this.apiKey);
-    console.log(`[${ORCHESTRATOR_NAME}] Initialized`);
+  constructor() {
+    // v2.9.0: All agents now use Gemini - no apiKey needed
+    console.log(`[${ORCHESTRATOR_NAME}] Initialized (v2.9.0 - Gemini-only)`);
   }
 
   /**
@@ -146,7 +143,7 @@ export class NeuralEngineOrchestrator {
       // ========================================================================
       // PHASE 2: Strategy Development
       // ========================================================================
-      console.log(`\n[${ORCHESTRATOR_NAME}] 🎯 PHASE 2: Strategy Development (AngleStrategist using Claude Sonnet)`);
+      console.log(`\n[${ORCHESTRATOR_NAME}] 🎯 PHASE 2: Strategy Development (AngleStrategist using Gemini Flash)`);
 
       const phase2Start = Date.now();
 
@@ -356,15 +353,9 @@ let orchestratorInstance: NeuralEngineOrchestrator | null = null;
 
 /**
  * Get or create a NeuralEngineOrchestrator instance.
- * When apiKey is provided, creates a fresh instance for serverless reliability.
- * When no apiKey is provided, returns singleton (for backwards compatibility).
+ * v2.9.0: Simplified - no apiKey needed (all agents use Gemini with env vars)
  */
-export function getNeuralEngineOrchestrator(apiKey?: string): NeuralEngineOrchestrator {
-  // If apiKey is explicitly provided, create fresh instance for serverless reliability
-  if (apiKey) {
-    return new NeuralEngineOrchestrator(apiKey);
-  }
-  // Otherwise use singleton pattern with env var fallback
+export function getNeuralEngineOrchestrator(): NeuralEngineOrchestrator {
   if (!orchestratorInstance) {
     orchestratorInstance = new NeuralEngineOrchestrator();
   }
