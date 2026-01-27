@@ -144,8 +144,21 @@ export async function POST(request: Request) {
         },
       });
 
-      // If we already have the tracking link, proceed to process-campaign
-      if (trackingLink) {
+      // If we already have a VALID tracking link, proceed to process-campaign
+      // Validate: must be a real URL, not empty, not a placeholder
+      const isValidTrackingLink = trackingLink &&
+        trackingLink.length > 10 &&
+        (trackingLink.startsWith('http://') || trackingLink.startsWith('https://')) &&
+        !trackingLink.includes('pending') &&
+        !trackingLink.includes('generating') &&
+        !trackingLink.includes('placeholder');
+
+      if (isValidTrackingLink) {
+        logger.info('cloud-tasks', `[check-article] Valid tracking link found, skipping AWAITING_TRACKING`, {
+          campaignId,
+          trackingLink,
+        });
+
         // Skip poll-tracking, go directly to GENERATING_AI
         await prisma.campaign.update({
           where: { id: campaignId },
@@ -159,6 +172,12 @@ export async function POST(request: Request) {
           success: true,
           status: 'ARTICLE_APPROVED_WITH_LINK',
           nextStep: 'process-campaign',
+        });
+      } else if (trackingLink) {
+        // Invalid tracking link received, log and continue to poll-tracking
+        logger.warn('cloud-tasks', `[check-article] Invalid tracking link received, will poll for valid link`, {
+          campaignId,
+          receivedLink: trackingLink,
         });
       }
 

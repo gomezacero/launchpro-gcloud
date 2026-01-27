@@ -122,8 +122,16 @@ export async function POST(request: Request) {
       ? `https://${linkData.link}`
       : linkData.tracking_link || linkData.trackingUrl;
 
-    if (trackingLink && trackingLink.length > 0) {
-      logger.success('cloud-tasks', `[poll-tracking] Tracking link obtained`, {
+    // Validate tracking link: must be a real URL, not empty, not a placeholder
+    const isValidTrackingLink = trackingLink &&
+      trackingLink.length > 10 &&
+      (trackingLink.startsWith('http://') || trackingLink.startsWith('https://')) &&
+      !trackingLink.includes('pending') &&
+      !trackingLink.includes('generating') &&
+      !trackingLink.includes('placeholder');
+
+    if (isValidTrackingLink) {
+      logger.success('cloud-tasks', `[poll-tracking] Valid tracking link obtained`, {
         campaignId,
         trackingLink,
       });
@@ -145,7 +153,16 @@ export async function POST(request: Request) {
         nextStep: 'process-campaign',
       });
 
-    } else {
+    } else if (trackingLink) {
+      // Received something but it's not valid, log and continue polling
+      logger.warn('cloud-tasks', `[poll-tracking] Invalid tracking link received, continuing to poll`, {
+        campaignId,
+        receivedLink: trackingLink,
+      });
+    }
+
+    // No valid tracking link yet, continue polling
+    {
       const attemptCount = retryInfo.retryCount + 1;
 
       if (attemptCount >= MAX_TRACKING_CHECK_ATTEMPTS) {
