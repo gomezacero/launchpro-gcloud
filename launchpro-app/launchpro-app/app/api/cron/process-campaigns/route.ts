@@ -9,7 +9,7 @@ import { CampaignStatus, Prisma, Campaign, CampaignPlatform, Offer, Account } fr
 // DEPLOYMENT VERSION - Used to verify which code version is running
 // This helps identify if old Vercel instances are executing stale code
 // v2.9.0: Removed duplicate old code, all AI uses Gemini exclusively
-const CODE_VERSION = 'v2.9.0-NO-ANTHROPIC';
+const CODE_VERSION = 'v2.9.1-AUTO-FIX-TRACKING';
 
 // MODULE LOAD LOG - This executes when the module is imported
 console.log(`\n\n${'='.repeat(80)}`);

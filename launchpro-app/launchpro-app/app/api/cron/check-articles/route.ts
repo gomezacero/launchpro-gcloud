@@ -8,7 +8,7 @@ import { campaignAudit } from '@/services/campaign-audit.service';
 import { CampaignStatus } from '@prisma/client';
 
 // DEPLOYMENT VERSION - Used to verify which code version is running
-const CODE_VERSION = 'v2.2.0-audit-middleware-2026-01-25';
+const CODE_VERSION = 'v2.9.1-verify-tracking-update';
 
 /**
  * Cron Job: Check Article Approval Status
@@ -249,6 +249,7 @@ export async function GET(request: NextRequest) {
               // Update campaign with Tonic data and set status to AWAITING_TRACKING
               // The poll-tracking-links cron will check for tracking link availability
               // and move to ARTICLE_APPROVED when the tracking link is ready
+              const pollingStartedAt = new Date();
               await prisma.campaign.update({
                 where: { id: campaign.id },
                 data: {
@@ -257,9 +258,21 @@ export async function GET(request: NextRequest) {
                   tonicArticleId: articleStatus.headline_id,
                   tonicTrackingLink: trackingLink, // May be null initially, poll-tracking-links will update
                   tonicDirectLink: directLink,
-                  trackingLinkPollingStartedAt: new Date(), // Start polling timer
+                  trackingLinkPollingStartedAt: pollingStartedAt, // Start polling timer
                   trackingLinkPollingAttempts: 0,
                 },
+              });
+
+              // v2.9.1: Verify the update was successful (debug for 401 error investigation)
+              const verifyUpdate = await prisma.campaign.findUnique({
+                where: { id: campaign.id },
+                select: { status: true, trackingLinkPollingStartedAt: true }
+              });
+              logger.info('system', `📋 [CRON] Verified update for "${campaign.name}":`, {
+                status: verifyUpdate?.status,
+                trackingLinkPollingStartedAt: verifyUpdate?.trackingLinkPollingStartedAt?.toISOString(),
+                expectedPollingStartedAt: pollingStartedAt.toISOString(),
+                updateSuccessful: verifyUpdate?.trackingLinkPollingStartedAt !== null
               });
 
               logger.success('system', `✅ [CRON] Campaign "${campaign.name}" → Direct launch path: Article approved → Tonic campaign → AWAITING_TRACKING (poll-tracking-links will monitor)`);
