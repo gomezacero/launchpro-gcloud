@@ -62,8 +62,8 @@ export async function POST(request: NextRequest) {
       platform: input.platform,
     });
 
-    // Execute the Neural Engine - pass apiKey explicitly for serverless reliability
-    const orchestrator = getNeuralEngineOrchestrator(process.env.ANTHROPIC_API_KEY);
+    // Execute the Neural Engine (v2.9.0: all agents use Gemini, no apiKey needed)
+    const orchestrator = getNeuralEngineOrchestrator();
     const result = await orchestrator.execute(input);
 
     // Return result
@@ -125,7 +125,7 @@ export async function POST(request: NextRequest) {
  */
 export async function GET() {
   try {
-    const orchestrator = getNeuralEngineOrchestrator(process.env.ANTHROPIC_API_KEY);
+    const orchestrator = getNeuralEngineOrchestrator();
 
     // Sample cost estimate
     const sampleCost = orchestrator.estimateCost({

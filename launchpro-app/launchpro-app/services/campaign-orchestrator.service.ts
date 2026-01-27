@@ -61,8 +61,8 @@ async function generateWithNeuralEngine(params: {
       logger.info('ai', `[NeuralEngine] Using copyMaster for context: "${params.copyMaster}"`);
     }
 
-    // Pass apiKey explicitly for serverless reliability
-    const orchestrator = getNeuralEngineOrchestrator(process.env.ANTHROPIC_API_KEY);
+    // v2.9.0: All agents use Gemini, no apiKey needed
+    const orchestrator = getNeuralEngineOrchestrator();
 
     const input: NeuralEngineInput = {
       offer: {
