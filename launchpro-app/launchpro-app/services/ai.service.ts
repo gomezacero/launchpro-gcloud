@@ -676,9 +676,19 @@ class AIService {
   constructor() {
     console.log('[AIService] Constructor called - v2.8.0 GEMINI ONLY');
 
+    const apiKey = process.env.GOOGLE_AI_API_KEY || process.env.GEMINI_API_KEY || '';
+
+    // CRITICAL FIX: Check for misconfigured Anthropic keys
+    if (apiKey.startsWith('sk-ant')) {
+        const errorMsg = 'CRITICAL ERROR: GEMINI_API_KEY or GOOGLE_AI_API_KEY contains an Anthropic key (starts with sk-ant). Please update your .env file to use a valid Google Gemini API key.';
+        console.error(errorMsg);
+        logger.error('ai', errorMsg);
+        throw new Error(errorMsg);
+    }
+
     // Initialize Gemini client for image generation (Nano Banana Pro)
     this.geminiClient = new GoogleGenAI({
-      apiKey: process.env.GOOGLE_AI_API_KEY || process.env.GEMINI_API_KEY || '',
+      apiKey: apiKey,
     });
 
     // Initialize Google Cloud clients with proper credentials (for Veo video generation)

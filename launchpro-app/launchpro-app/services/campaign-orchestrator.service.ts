@@ -756,6 +756,12 @@ class CampaignOrchestratorService {
       campaignLogger.startStep(campaign.id, 'tracking_link', 'Esperando link de tracking (puede tomar hasta 12 min)...');
       logger.info('tonic', '🔍 Waiting for tracking link (BLOCKING - will poll up to 12 minutes)...');
 
+      // Update status to AWAITING_TRACKING to reflect current state
+      await prisma.campaign.update({
+        where: { id: campaign.id },
+        data: { status: CampaignStatus.AWAITING_TRACKING },
+      });
+
       // Import the polling utility
       const { waitForTrackingLink } = await import('@/lib/tracking-link-polling');
 
