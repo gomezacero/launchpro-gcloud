@@ -63,8 +63,13 @@ const envSchema = z.object({
   // ============================================================================
   // AI SERVICES
   // ============================================================================
-  // Anthropic Claude para generación de contenido
-  ANTHROPIC_API_KEY: z.string().min(1),
+  // v2.9.0: Anthropic is NO LONGER USED - all AI uses Gemini
+  // Keeping this as optional for backwards compatibility with env vars
+  ANTHROPIC_API_KEY: z.string().optional(),
+
+  // Gemini API Key (primary AI provider)
+  GEMINI_API_KEY: z.string().optional(),
+  GOOGLE_AI_API_KEY: z.string().optional(),
 
   // Google Cloud Platform - Vertex AI para generación de media
   GCP_PROJECT_ID: z.string().min(1),
