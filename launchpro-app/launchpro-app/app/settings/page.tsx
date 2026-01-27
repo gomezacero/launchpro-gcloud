@@ -7,7 +7,7 @@ import { useAuth } from '@/hooks/useAuth';
 
 interface Settings {
   notificationEmails: string;
-  hasAnthropicKey: boolean;
+  hasGeminiKey: boolean;
   hasGcpConfig: boolean;
   hasMetaConfig: boolean;
   hasTiktokConfig: boolean;
@@ -241,8 +241,8 @@ export default function SettingsPage() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-              <span className="font-medium text-gray-700">Anthropic (AI)</span>
-              {settings?.hasAnthropicKey ? (
+              <span className="font-medium text-gray-700">Gemini AI</span>
+              {settings?.hasGeminiKey ? (
                 <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-sm font-semibold">
                   Configured
                 </span>

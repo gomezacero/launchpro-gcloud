@@ -26,10 +26,6 @@ export const MODEL_COSTS = {
   'gpt-4o-mini': { input: 0.15, output: 0.60 },
   'gpt-4o': { input: 2.5, output: 10.0 },
 
-  // Anthropic - Best reasoning
-  'claude-3-5-haiku-20241022': { input: 0.80, output: 4.0 },
-  'claude-sonnet-4-20250514': { input: 3.0, output: 15.0 },
-
   // Embeddings
   'text-embedding-004': { input: 0.00001, output: 0 }, // Per character
   'text-embedding-3-small': { input: 0.02, output: 0 },

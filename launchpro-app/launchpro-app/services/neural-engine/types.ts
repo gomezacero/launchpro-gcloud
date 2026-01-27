@@ -326,7 +326,7 @@ export interface AgentConfig {
 }
 
 export interface ModelConfig {
-  provider: 'anthropic' | 'google' | 'openai' | 'deepseek';
+  provider: 'google' | 'openai' | 'deepseek';
   model: string;
   temperature: number;
   maxTokens: number;

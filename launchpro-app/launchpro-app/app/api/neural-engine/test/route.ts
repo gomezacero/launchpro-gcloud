@@ -142,7 +142,7 @@ export async function GET() {
       agents: [
         { name: 'GlobalScout', model: 'gemini-2.0-flash', purpose: 'Cultural research' },
         { name: 'AssetManager', model: 'text-embedding-004', purpose: 'RAG retrieval' },
-        { name: 'AngleStrategist', model: 'claude-3.5-sonnet', purpose: 'Creative strategy' },
+        { name: 'AngleStrategist', model: 'gemini-2.0-flash-exp', purpose: 'Creative strategy' },
         { name: 'VisualEngineer', model: 'gemini-2.0-flash', purpose: 'Prompt generation' },
         { name: 'ComplianceAssembler', model: 'imagen-3.0', purpose: 'Image generation' },
       ],

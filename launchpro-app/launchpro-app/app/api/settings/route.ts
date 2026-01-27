@@ -28,7 +28,7 @@ export async function GET() {
       success: true,
       data: {
         notificationEmails: settings.notificationEmails || '',
-        hasAnthropicKey: !!settings.anthropicApiKey,
+        hasGeminiKey: !!(process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY),
         hasGcpConfig: !!settings.gcpProjectId && !!settings.gcpServiceAccountKey,
         hasMetaConfig: !!settings.metaAccessToken,
         hasTiktokConfig: !!settings.tiktokAccessToken,
