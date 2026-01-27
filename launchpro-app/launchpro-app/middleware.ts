@@ -10,10 +10,11 @@ export async function middleware(req: NextRequest) {
   const isApiAuth = pathname.startsWith('/api/auth');
   const isPublicApi = pathname === '/api/health' || pathname === '/api/neural-engine/test' || pathname === '/api/diagnostic/version';
   const isCronApi = pathname.startsWith('/api/cron');
+  const isCloudTasksApi = pathname.startsWith('/api/tasks');  // Cloud Tasks tienen su propia validación
   const isApi = pathname.startsWith('/api/');
 
-  // Allow auth API routes, public APIs, and cron jobs
-  if (isApiAuth || isPublicApi || isCronApi) {
+  // Allow auth API routes, public APIs, cron jobs, and Cloud Tasks
+  if (isApiAuth || isPublicApi || isCronApi || isCloudTasksApi) {
     return NextResponse.next();
   }
 

@@ -1,0 +1,7 @@
+steps:
+  - name: 'gcr.io/kaniko-project/executor:latest'
+    args:
+      - '--dockerfile=Dockerfile'
+      - '--destination=us-central1-docker.pkg.dev/launchpro-v2/launchpro-repo/launchpro-app:v1.0.3'
+      - '--cache=true'
+timeout: '1200s'

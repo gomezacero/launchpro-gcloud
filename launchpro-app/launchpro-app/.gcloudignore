@@ -1,0 +1,52 @@
+# Explicitly include Dockerfile
+!Dockerfile
+
+# Dependencies
+node_modules/
+npm-debug.log*
+
+# Build outputs
+.next/
+out/
+dist/
+build/
+
+# Environment files
+.env
+.env.*
+
+# IDE
+.vscode/
+.idea/
+
+# Git
+.git/
+.gitignore
+
+# Testing
+coverage/
+__tests__/
+*.test.ts
+*.spec.ts
+
+# Logs
+logs/
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Development
+.claude/
+*.local.*
+tmp/
+temp/
+
+# Windows reserved names
+nul
+NUL
+con
+CON
+aux
+AUX

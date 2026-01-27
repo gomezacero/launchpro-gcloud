@@ -4,6 +4,7 @@
       "https://launchproquick.vercel.app",
       "https://launchproquick-git-testing-capital-quick.vercel.app",
       "https://launchproquick-git-main-capital-quick.vercel.app",
+      "https://launchpro-app-860385736854.us-central1.run.app",
       "http://localhost:3000"
     ],
     "method": ["GET", "PUT", "POST", "DELETE", "OPTIONS"],

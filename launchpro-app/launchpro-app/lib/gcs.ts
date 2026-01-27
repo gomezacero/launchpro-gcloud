@@ -7,11 +7,13 @@ import { Storage } from '@google-cloud/storage';
  * For local development: Falls back to GOOGLE_APPLICATION_CREDENTIALS file path
  */
 export function getStorageClient(): Storage {
-  const credentialsJson = process.env.GCP_SERVICE_ACCOUNT_KEY;
+  const credentialsJson = process.env.GCP_SERVICE_ACCOUNT_KEY || process.env.GOOGLE_CLOUD_CREDENTIALS_JSON;
 
   console.log('[GCS] Initializing Storage client...');
-  console.log('[GCS] GCP_SERVICE_ACCOUNT_KEY exists:', !!credentialsJson);
-  console.log('[GCS] GCP_SERVICE_ACCOUNT_KEY length:', credentialsJson?.length || 0);
+  console.log('[GCS] GCP_SERVICE_ACCOUNT_KEY exists:', !!process.env.GCP_SERVICE_ACCOUNT_KEY);
+  console.log('[GCS] GOOGLE_CLOUD_CREDENTIALS_JSON exists:', !!process.env.GOOGLE_CLOUD_CREDENTIALS_JSON);
+  console.log('[GCS] Using credentials:', credentialsJson ? 'yes' : 'no');
+  console.log('[GCS] Credentials length:', credentialsJson?.length || 0);
 
   if (credentialsJson) {
     try {
