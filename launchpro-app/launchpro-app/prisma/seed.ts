@@ -11,7 +11,7 @@ async function main() {
   console.log('📝 Creating global settings...');
 
   const globalSettingsData = {
-    anthropicApiKey: process.env.ANTHROPIC_API_KEY || '',
+    anthropicApiKey: '', // v2.9.0: No longer used - all AI uses Gemini
     gcpProjectId: process.env.GCP_PROJECT_ID || '',
     gcpStorageBucket: process.env.GCP_STORAGE_BUCKET || '',
     gcpLocation: process.env.GCP_LOCATION || 'us-central1',

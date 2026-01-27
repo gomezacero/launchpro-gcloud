@@ -210,7 +210,7 @@ async function processSingleCampaign(
   console.log(`[processSingleCampaign] Campaign: "${campaign.name}" (${campaign.id})`);
   console.log(`[processSingleCampaign] Status: ${campaign.status}`);
   console.log(`[processSingleCampaign] Tracking Link: ${campaign.tonicTrackingLink || 'NONE'}`);
-  console.log(`[processSingleCampaign] ANTHROPIC_API_KEY length: ${(process.env.ANTHROPIC_API_KEY || '').length}`);
+  console.log(`[processSingleCampaign] GEMINI_API_KEY exists: ${!!(process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY)}`);
   console.log(`[processSingleCampaign] ===========================\n`);
 
   const campaignStartTime = Date.now();
@@ -326,13 +326,11 @@ async function processSingleCampaign(
     );
     logger.info('system', `🔒 [CRON] Claimed campaign "${campaign.name}" for processing`);
 
-    // DEBUG: Log ANTHROPIC_API_KEY status before processing
-    const apiKey = (process.env.ANTHROPIC_API_KEY || '').trim();
-    console.log(`\n[processSingleCampaign] 🔑 API KEY CHECK:`);
-    console.log(`[processSingleCampaign]   - Length: ${apiKey.length}`);
-    console.log(`[processSingleCampaign]   - Starts with sk-ant-: ${apiKey.startsWith('sk-ant-')}`);
-    console.log(`[processSingleCampaign]   - Preview: ${apiKey.substring(0, 15)}...${apiKey.substring(apiKey.length - 6)}`);
-    logger.info('system', `🔑 [CRON] ANTHROPIC_API_KEY check BEFORE continueCampaignAfterArticle: length=${apiKey.length}, starts_with_sk-ant=${apiKey.startsWith('sk-ant-')}, preview=${apiKey.substring(0,15)}...${apiKey.substring(apiKey.length-6)}`);
+    // v2.9.0: All AI uses Gemini - no Anthropic keys needed
+    console.log(`\n[processSingleCampaign] 🔑 v2.9.0 API KEY CHECK:`);
+    console.log(`[processSingleCampaign]   - GEMINI_API_KEY exists: ${!!(process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY)}`);
+    console.log(`[processSingleCampaign]   - AI Provider: GEMINI-ONLY`);
+    logger.info('system', `🔑 [CRON] v2.9.0 - Using GEMINI for all AI (no Anthropic)`);
 
     // ============================================
     // PROCESS THE CAMPAIGN
@@ -341,7 +339,7 @@ async function processSingleCampaign(
     console.log(`[processSingleCampaign] CODE_VERSION: ${CODE_VERSION}`);
     console.log(`[processSingleCampaign] Campaign ID: ${campaign.id}`);
     console.log(`[processSingleCampaign] Timestamp: ${new Date().toISOString()}`);
-    console.log(`[processSingleCampaign] API Key Preview: ${apiKey.substring(0, 20)}...${apiKey.substring(apiKey.length - 6)}`);
+    console.log(`[processSingleCampaign] AI Provider: GEMINI-ONLY-v2.9.0`);
     logger.info('system', `🚀 [CRON] CALLING continueCampaignAfterArticle for "${campaign.name}" NOW... (${CODE_VERSION})`);
 
     // CRITICAL AUDIT LOG: Verify cron is running new code
@@ -352,8 +350,8 @@ async function processSingleCampaign(
       details: {
         version: CODE_VERSION,
         timestamp: new Date().toISOString(),
-        anthropicKeyLength: apiKey.length,
-        aiProvider: 'GEMINI (should NOT use Anthropic)',
+        geminiKeyExists: !!(process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY),
+        aiProvider: 'GEMINI-ONLY-v2.9.0',
       },
     });
 

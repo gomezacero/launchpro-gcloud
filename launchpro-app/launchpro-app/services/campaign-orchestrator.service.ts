@@ -567,7 +567,7 @@ class CampaignOrchestratorService {
             keywords: params.keywords || [],
             country: params.country,
             language: params.language,
-            apiKey: process.env.ANTHROPIC_API_KEY,
+            // v2.9.0: apiKey removed - all AI uses Gemini via env var
           });
           articleHeadline = articleContent.headline;
         } else {
@@ -579,7 +579,7 @@ class CampaignOrchestratorService {
             keywords: params.keywords || [],
             country: params.country,
             language: params.language,
-            apiKey: process.env.ANTHROPIC_API_KEY,
+            // v2.9.0: apiKey removed - all AI uses Gemini via env var
           });
           finalContentPhrases = articleContent.contentGenerationPhrases;
           articleHeadline = articleContent.headline;
@@ -819,7 +819,7 @@ class CampaignOrchestratorService {
           vertical: offer.vertical,
           country: params.country,
           language: params.language,
-          apiKey: process.env.ANTHROPIC_API_KEY,
+          // v2.9.0: apiKey removed - all AI uses Gemini via env var
         });
 
         await prisma.campaign.update({
@@ -840,7 +840,7 @@ class CampaignOrchestratorService {
           copyMaster: aiContentResult.copyMaster,
           count: 6,
           country: params.country,
-          apiKey: process.env.ANTHROPIC_API_KEY,
+          // v2.9.0: apiKey removed - all AI uses Gemini via env var
         });
 
         await prisma.campaign.update({
@@ -925,7 +925,7 @@ class CampaignOrchestratorService {
           adFormat: effectiveMediaType === 'VIDEO' ? 'VIDEO' : 'IMAGE',
           country: params.country,
           language: params.language,
-          apiKey: process.env.ANTHROPIC_API_KEY,
+          // v2.9.0: apiKey removed - all AI uses Gemini via env var
         });
 
         // ============================================
@@ -989,7 +989,7 @@ class CampaignOrchestratorService {
             copyMaster: aiContentResult.copyMaster, // Used for video text overlay
             offerName: offer.name, // Pass offer name for better vertical classification
             vertical: offer.vertical, // Pass vertical from Tonic for accurate template selection
-            apiKey: process.env.ANTHROPIC_API_KEY,
+            // v2.9.0: apiKey removed - all AI uses Gemini via env var
           });
         }
 
@@ -4551,26 +4551,16 @@ class CampaignOrchestratorService {
     // ============================================
     logger.info('ai', 'Generating AI content...');
 
-    // Debug: Check environment before calling AI service
-    // DETAILED DEBUG: Log environment info with clean key comparison
-    const rawKey = process.env.ANTHROPIC_API_KEY || '';
-    const cleanKey = rawKey.split('').filter(c => c.charCodeAt(0) >= 33 && c.charCodeAt(0) <= 126).join('');
+    // v2.9.0: Debug - All AI uses Gemini now
     const envDebug = {
-      anthropicKeyExists: !!rawKey,
-      rawKeyLength: rawKey.length,
-      cleanKeyLength: cleanKey.length,
-      keysMatch: rawKey === cleanKey,
-      rawKeyStart: rawKey.substring(0, 15),
-      cleanKeyStart: cleanKey.substring(0, 15),
-      rawKeyEnd: rawKey.substring(rawKey.length - 6),
-      cleanKeyEnd: cleanKey.substring(cleanKey.length - 6),
-      startsWithSkAnt: cleanKey.startsWith('sk-ant-'),
+      geminiKeyExists: !!(process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY),
+      aiProvider: 'GEMINI-ONLY-v2.9.0',
       nodeEnv: process.env.NODE_ENV,
       vercelEnv: process.env.VERCEL_ENV,
       timestamp: new Date().toISOString(),
     };
-    logger.info('ai', `[CampaignOrchestrator] Environment check before AI calls:`, envDebug);
-    console.log(`[CampaignOrchestrator] 🔍 DETAILED ENV CHECK for campaign ${campaignId}:`, JSON.stringify(envDebug));
+    logger.info('ai', `[CampaignOrchestrator] v2.9.0 - Using GEMINI for all AI:`, envDebug);
+    console.log(`[CampaignOrchestrator] 🔍 v2.9.0 ENV CHECK for campaign ${campaignId}:`, JSON.stringify(envDebug));
 
     const aiContentResult: any = {};
 
@@ -4808,7 +4798,7 @@ class CampaignOrchestratorService {
             copyMaster: aiContentResult.copyMaster,
             offerName: campaign.offer.name,
             vertical: campaign.offer.vertical,
-            apiKey: process.env.ANTHROPIC_API_KEY,
+            // v2.9.0: apiKey removed - all AI uses Gemini via env var
           });
         }
 
