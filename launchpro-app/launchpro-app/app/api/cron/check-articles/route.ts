@@ -317,28 +317,45 @@ export async function GET(request: NextRequest) {
                 action: `DesignFlow task creation failed: ${errorMessage}. Status: FAILED (requires manual intervention).`,
               });
             } else {
-              // No DesignFlow required → ARTICLE_APPROVED for retry via process-campaigns
+              // No DesignFlow required but error occurred → FAILED
+              // CRITICAL: Do NOT set to ARTICLE_APPROVED because:
+              // 1. The campaign never passed through AWAITING_TRACKING
+              // 2. trackingLinkPollingStartedAt is not set
+              // 3. process-campaigns will reject it anyway (requires trackingLinkPollingStartedAt)
+              // Mark as FAILED so the user knows to investigate
               await prisma.campaign.update({
                 where: { id: campaign.id },
                 data: {
-                  status: CampaignStatus.ARTICLE_APPROVED,
+                  status: CampaignStatus.FAILED,
                   tonicArticleId: articleStatus.headline_id,
-                  // CRITICAL FIX: Save tonicCampaignId if it was created before the error
-                  // This prevents "campaign name already in use" error on retry
+                  // Save tonicCampaignId if it was created before the error
                   tonicCampaignId: tonicCampaignId ? String(tonicCampaignId) : undefined,
                   errorDetails: {
-                    step: 'post-article-processing',
-                    message: errorMessage,
+                    step: 'awaiting-tracking-transition',
+                    message: `Failed to transition to AWAITING_TRACKING: ${errorMessage}. This may indicate a Prisma client issue - redeploy may be required.`,
                     timestamp: new Date().toISOString(),
+                    requiresRedeploy: true,
                   },
                 },
               });
 
+              // AUDIT LOG: Failed to transition to AWAITING_TRACKING
+              await campaignAudit.logStatusChange(
+                campaign.id,
+                'cron/check-articles',
+                'PENDING_ARTICLE',
+                'FAILED',
+                `Article approved but failed to enter AWAITING_TRACKING: ${errorMessage}`,
+                { tonicCampaignId, errorMessage }
+              );
+
+              logger.error('system', `❌ [CRON] Campaign "${campaign.name}" FAILED: Could not transition to AWAITING_TRACKING - possible Prisma client issue`);
+
               results.push({
                 campaignId: campaign.id,
                 campaignName: campaign.name,
-                status: 'partial',
-                action: `Article approved but processing failed: ${errorMessage}. Status: ARTICLE_APPROVED for retry.`,
+                status: 'failed',
+                action: `Article approved but AWAITING_TRACKING transition failed: ${errorMessage}. Status: FAILED (may require redeploy).`,
               });
             }
           }

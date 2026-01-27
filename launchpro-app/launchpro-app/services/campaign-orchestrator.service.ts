@@ -4346,6 +4346,25 @@ class CampaignOrchestratorService {
       throw new Error(`Campaign ${campaignId} missing Tonic credentials`);
     }
 
+    // CRITICAL VALIDATION: Ensure campaign passed through AWAITING_TRACKING state
+    // If trackingLinkPollingStartedAt is null, the campaign skipped the tracking link flow
+    // This should never happen if check-articles works correctly, but this is defense in depth
+    if (!campaign.trackingLinkPollingStartedAt) {
+      const errorMsg = `Campaign ${campaignId} has not passed through AWAITING_TRACKING state (trackingLinkPollingStartedAt is null). This indicates a flow error.`;
+      logger.error('system', errorMsg);
+      await campaignAudit.log(campaignId, {
+        event: 'FLOW_ERROR',
+        source: 'campaign-orchestrator.continueCampaignAfterArticle',
+        message: errorMsg,
+        details: {
+          status: campaign.status,
+          trackingLinkPollingStartedAt: campaign.trackingLinkPollingStartedAt,
+          tonicTrackingLink: campaign.tonicTrackingLink,
+        },
+      });
+      throw new Error(errorMsg);
+    }
+
     const credentials = {
       consumer_key: tonicAccount.tonicConsumerKey,
       consumer_secret: tonicAccount.tonicConsumerSecret,

@@ -91,6 +91,10 @@ export async function GET(request: NextRequest) {
         status: CampaignStatus.ARTICLE_APPROVED,
         // CRITICAL: Must have a real tracking link (not placeholder)
         tonicTrackingLink: { not: null },
+        // CRITICAL: Must have passed through AWAITING_TRACKING state
+        // This field is set when entering AWAITING_TRACKING and proves the campaign
+        // went through the correct flow (not skipped due to Prisma client issues)
+        trackingLinkPollingStartedAt: { not: null },
         AND: [
           {
             NOT: {
