@@ -4308,8 +4308,8 @@ class CampaignOrchestratorService {
   async continueCampaignAfterArticle(campaignId: string): Promise<LaunchResult> {
     // VERSION MARKER - Critical for debugging which code is running
     // BUILD_TIMESTAMP forces Vercel to invalidate cached serverless functions
-    const BUILD_TIMESTAMP = '2026-01-27T15:15:00Z';
-    const ORCHESTRATOR_VERSION = 'v2.9.3-GEMINI-ONLY-NO-ANTHROPIC';
+    const BUILD_TIMESTAMP = '2026-01-27T18:00:00Z';
+    const ORCHESTRATOR_VERSION = 'v2.9.4-enhanced-state-logging';
 
     console.log(`\n\n${'='.repeat(80)}`);
     console.log(`🔍 [continueCampaignAfterArticle] VERSION: ${ORCHESTRATOR_VERSION}`);
