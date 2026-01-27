@@ -4,13 +4,16 @@
  * This script fixes campaigns that are stuck in ARTICLE_APPROVED or FAILED status
  * because they are missing the trackingLinkPollingStartedAt field.
  *
- * The missing field causes continueCampaignAfterArticle() to fail, which
- * was the root cause of the 401 Anthropic errors.
+ * The missing field causes continueCampaignAfterArticle() to skip processing.
+ *
+ * NOTE: The 401 Anthropic errors were caused by OLD CACHED CODE, not this field.
+ * As of v2.9.3, all AI generation uses GEMINI exclusively.
  *
  * Usage:
  *   npx tsx scripts/fix-orphan-campaigns.ts
  *
- * v2.9.1: Created to resolve 401 error issue
+ * v2.9.1: Created to resolve orphan campaign issue
+ * v2.9.3: Updated comments - 401 issue was from old cached code, not this field
  */
 
 import { PrismaClient, CampaignStatus, Prisma } from '@prisma/client';

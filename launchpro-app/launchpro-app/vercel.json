@@ -1,5 +1,6 @@
 {
-  "crons": [
+  "_CRONS_DISABLED_FOR_LOCAL_DEBUGGING": "Re-enable after testing is complete",
+  "_crons_backup": [
     {
       "path": "/api/cron/check-articles",
       "schedule": "* * * * *"
@@ -33,6 +34,7 @@
       "schedule": "*/15 * * * *"
     }
   ],
+  "crons": [],
   "functions": {
     "app/api/campaigns/route.ts": {
       "maxDuration": 60

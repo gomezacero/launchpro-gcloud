@@ -187,8 +187,29 @@ class TikTokService {
       } catch (error: any) {
         lastError = error;
 
+        // DIAGNOSTIC: Log full error details to identify Anthropic-formatted errors
+        console.log('🔴 [TikTok API] Error caught:', {
+          message: error.message,
+          name: error.name,
+          code: error.code,
+          isAxiosError: error.isAxiosError,
+          status: error.response?.status,
+          statusText: error.response?.statusText,
+          responseData: error.response?.data ? JSON.stringify(error.response.data).substring(0, 500) : null,
+          requestUrl: error.config?.url,
+          requestMethod: error.config?.method,
+          containsAnthropicPattern: error.message?.includes('x-api-key') || error.response?.data?.type === 'error',
+        });
+
         // Don't retry on client errors (4xx) except rate limiting (429)
         if (error.response && error.response.status >= 400 && error.response.status < 500 && error.response.status !== 429) {
+          // Enhance error message with response data for debugging
+          if (error.response.data) {
+            const responseStr = typeof error.response.data === 'string'
+              ? error.response.data
+              : JSON.stringify(error.response.data);
+            error.message = `${error.response.status} ${responseStr}`;
+          }
           throw error;
         }
 

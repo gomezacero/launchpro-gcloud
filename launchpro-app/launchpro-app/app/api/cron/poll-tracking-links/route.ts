@@ -6,7 +6,8 @@ import { campaignAudit } from '@/services/campaign-audit.service';
 import { CampaignStatus } from '@prisma/client';
 
 // DEPLOYMENT VERSION - Used to verify which code version is running
-const CODE_VERSION = 'v2.2.0-audit-middleware-2026-01-25';
+const CODE_VERSION = 'v2.9.4-enhanced-state-logging';
+const BUILD_TIMESTAMP = '2026-01-27T18:00:00Z';
 
 /**
  * Cron Job: Poll Tracking Links
@@ -41,7 +42,8 @@ export async function GET(request: NextRequest) {
 
   try {
     console.log(`[poll-tracking-links] CODE_VERSION: ${CODE_VERSION}`);
-    logger.info('system', `🔗 [CRON] Starting poll-tracking-links job... (${CODE_VERSION})`);
+    console.log(`[poll-tracking-links] BUILD_TIMESTAMP: ${BUILD_TIMESTAMP}`);
+    logger.info('system', `🔗 [CRON] Starting poll-tracking-links job... (${CODE_VERSION} - ${BUILD_TIMESTAMP})`);
 
     // Find all campaigns waiting for tracking links
     const campaigns = await prisma.campaign.findMany({

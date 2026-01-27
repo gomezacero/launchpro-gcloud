@@ -8,7 +8,8 @@ import { campaignAudit } from '@/services/campaign-audit.service';
 import { CampaignStatus } from '@prisma/client';
 
 // DEPLOYMENT VERSION - Used to verify which code version is running
-const CODE_VERSION = 'v2.9.1-verify-tracking-update';
+const CODE_VERSION = 'v2.9.4-enhanced-state-logging';
+const BUILD_TIMESTAMP = '2026-01-27T18:00:00Z';
 
 /**
  * Cron Job: Check Article Approval Status
@@ -34,7 +35,8 @@ export async function GET(request: NextRequest) {
 
   try {
     console.log(`[check-articles] CODE_VERSION: ${CODE_VERSION}`);
-    logger.info('system', `🔄 [CRON] Starting check-articles job... (${CODE_VERSION})`);
+    console.log(`[check-articles] BUILD_TIMESTAMP: ${BUILD_TIMESTAMP}`);
+    logger.info('system', `🔄 [CRON] Starting check-articles job... (${CODE_VERSION} - ${BUILD_TIMESTAMP})`);
 
     // Find all campaigns waiting for article approval
     const pendingCampaigns = await prisma.campaign.findMany({

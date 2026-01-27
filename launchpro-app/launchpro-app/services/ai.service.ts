@@ -8,15 +8,16 @@ import { getStorage } from '@/lib/gcs';
 
 // VERSION MARKER - Used to verify which code version is deployed
 // BUILD_TIMESTAMP forces Vercel to create fresh serverless instances
-const BUILD_TIMESTAMP = '2026-01-27T14:50:00Z';
-const AI_SERVICE_VERSION = 'v2.9.2-GEMINI-ONLY-FORCE-REBUILD';
-console.log(`[AIService] ========== MODULE LOAD ==========`);
-console.log(`[AIService] VERSION: ${AI_SERVICE_VERSION}`);
-console.log(`[AIService] BUILD_TIMESTAMP: ${BUILD_TIMESTAMP}`);
-console.log(`[AIService] AI PROVIDER: GEMINI EXCLUSIVELY`);
-console.log(`[AIService] ANTHROPIC STATUS: COMPLETELY REMOVED - NO SDK, NO CALLS`);
-console.log(`[AIService] If you see Anthropic 401 errors, the error is from OLD CACHED CODE, not this version`);
-console.log(`[AIService] ================================`);
+const BUILD_TIMESTAMP = '2026-01-27T20:00:00Z';
+const AI_SERVICE_VERSION = 'v2.9.5-DIAGNOSTIC-ERROR-SOURCE';
+console.log(`\n\n${'='.repeat(80)}`);
+console.log(`[AIService] 🚀 MODULE LOAD - VERSION: ${AI_SERVICE_VERSION}`);
+console.log(`[AIService] 📅 BUILD_TIMESTAMP: ${BUILD_TIMESTAMP}`);
+console.log(`[AIService] ✅ AI PROVIDER: GEMINI EXCLUSIVELY`);
+console.log(`[AIService] ❌ ANTHROPIC: SDK NOT INSTALLED, NO IMPORTS, NO CALLS`);
+console.log(`[AIService] ⚠️  If you see Anthropic 401 errors, you are running OLD CACHED CODE`);
+console.log(`[AIService] 🔧 Solution: Delete .next folder, run 'npm run build', redeploy to Vercel`);
+console.log(`${'='.repeat(80)}\n\n`);
 
 /**
  * AI Service v2.8.0 - GEMINI ONLY
@@ -736,8 +737,11 @@ class AIService {
 
   constructor() {
     // Lazy initialization - all clients are created on first use
-    // This allows the module to load during build time without API keys
-    console.log('[AIService] Constructor called - v2.9.2 GEMINI ONLY (lazy init for Cloud Run)');
+    // This allows the module to load during build time without API keys (required for Cloud Run Docker build)
+    console.log(`[AIService] Constructor called - VERSION: ${AI_SERVICE_VERSION}`);
+    console.log(`[AIService] BUILD_TIMESTAMP: ${BUILD_TIMESTAMP}`);
+    console.log(`[AIService] ✅ Using LAZY INITIALIZATION for Cloud Run compatibility`);
+    console.log(`[AIService] ❌ ANTHROPIC: SDK NOT INSTALLED - If you see 401 Anthropic errors, you are running OLD CODE`);
   }
 
   // ============================================
@@ -1219,6 +1223,13 @@ Return ONLY valid JSON (no markdown, no code blocks):
 }`;
 
     try {
+      // 🔴 DIAGNOSTIC: Log before Gemini call
+      console.log('\n🔴🔴🔴 [AI Service] ABOUT TO CALL GEMINI for generateAdCopy');
+      console.log('🔴 Model:', model);
+      console.log('🔴 GEMINI_API_KEY prefix:', process.env.GEMINI_API_KEY?.substring(0, 10));
+      console.log('🔴 GOOGLE_AI_API_KEY prefix:', process.env.GOOGLE_AI_API_KEY?.substring(0, 10));
+      console.log('🔴🔴🔴\n');
+
       const response = await this.geminiClient.models.generateContent({
         model,
         contents: prompt,
@@ -1244,6 +1255,20 @@ Return ONLY valid JSON (no markdown, no code blocks):
 
       return adCopy;
     } catch (error: any) {
+      // 🔴 DIAGNOSTIC: Full error details
+      console.log('\n🔴🔴🔴 [AI Service] GEMINI CALL FAILED - FULL ERROR DIAGNOSTIC');
+      console.log('🔴 Error name:', error.name);
+      console.log('🔴 Error message:', error.message);
+      console.log('🔴 Error code:', error.code);
+      console.log('🔴 Is Axios error:', error.isAxiosError);
+      console.log('🔴 Response status:', error.response?.status);
+      console.log('🔴 Response data:', JSON.stringify(error.response?.data || {}).substring(0, 500));
+      console.log('🔴 Request URL:', error.config?.url);
+      console.log('🔴 Contains "x-api-key":', error.message?.includes('x-api-key'));
+      console.log('🔴 Contains "anthropic":', error.message?.includes('anthropic'));
+      console.log('🔴 Contains "req_":', error.message?.includes('req_'));
+      console.log('🔴🔴🔴\n');
+
       logger.error('ai', `[Gemini] Ad copy generation failed: ${error.message}`);
       throw error;
     }

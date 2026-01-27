@@ -2756,6 +2756,14 @@ class CampaignOrchestratorService {
 
     const adFormat = 'VIDEO'; // TikTok PLACEMENT_TIKTOK siempre requiere VIDEO
 
+    // 🔴🔴🔴 DIAGNOSTIC CHECKPOINT 1: Before AI call
+    console.log('\n🔴🔴🔴 DIAGNOSTIC CHECKPOINT 1: About to call aiService.generateAdCopy');
+    console.log('🔴 GEMINI_API_KEY exists:', !!process.env.GEMINI_API_KEY);
+    console.log('🔴 GEMINI_API_KEY prefix:', process.env.GEMINI_API_KEY?.substring(0, 10));
+    console.log('🔴 GOOGLE_AI_API_KEY exists:', !!process.env.GOOGLE_AI_API_KEY);
+    console.log('🔴 ANTHROPIC_API_KEY exists:', !!process.env.ANTHROPIC_API_KEY);
+    console.log('🔴🔴🔴\n');
+
     // Generate ad copy specific to TikTok
     // v2.6.0: Uses Gemini instead of Anthropic to avoid stale connection 401 errors
     const adCopy = await aiService.generateAdCopy({
@@ -2827,6 +2835,14 @@ class CampaignOrchestratorService {
     const budgetInDollars = parseInt(platformConfig.budget);
 
     logger.info('tiktok', `Campaign budget: $${budgetInDollars} USD`);
+
+    // 🔴🔴🔴 DIAGNOSTIC CHECKPOINT 2: Before TikTok API call
+    console.log('\n🔴🔴🔴 DIAGNOSTIC CHECKPOINT 2: About to call tiktokService.createCampaign');
+    console.log('🔴 TikTok Access Token prefix:', accessToken?.substring(0, 15));
+    console.log('🔴 TikTok Access Token length:', accessToken?.length);
+    console.log('🔴 Token looks like Anthropic key:', accessToken?.startsWith('sk-ant'));
+    console.log('🔴 Advertiser ID:', advertiserId);
+    console.log('🔴🔴🔴\n');
 
     const tiktokCampaign = await tiktokService.createCampaign({
       advertiser_id: advertiserId,
@@ -3617,6 +3633,32 @@ class CampaignOrchestratorService {
             platformResults.push(result);
           }
         } catch (error: any) {
+          // DIAGNOSTIC: Capture full error details to identify source of Anthropic-formatted errors
+          const errorDiagnostic = {
+            platform: platformConfig.platform,
+            errorName: error.name,
+            errorMessage: error.message,
+            errorCode: error.code,
+            // Axios-specific fields
+            isAxiosError: error.isAxiosError || false,
+            axiosStatus: error.response?.status,
+            axiosStatusText: error.response?.statusText,
+            axiosData: error.response?.data ? JSON.stringify(error.response.data).substring(0, 500) : null,
+            axiosUrl: error.config?.url,
+            axiosMethod: error.config?.method,
+            axiosHeaders: error.config?.headers ? Object.keys(error.config.headers) : null,
+            // Stack trace (first 500 chars)
+            stackPreview: error.stack?.substring(0, 500),
+            // Check if error contains Anthropic patterns
+            containsAnthropicPattern: error.message?.includes('x-api-key') ||
+                                       error.message?.includes('anthropic') ||
+                                       error.message?.includes('req_'),
+          };
+
+          logger.error('system', `🔴 DIAGNOSTIC: Error launching to ${platformConfig.platform}`, errorDiagnostic);
+          console.log('🔴🔴🔴 FULL ERROR DIAGNOSTIC:', JSON.stringify(errorDiagnostic, null, 2));
+
+          // Original logging
           logger.error('system', `Error launching to ${platformConfig.platform}: ${error.message} `, {
             platform: platformConfig.platform,
             error: error.message,
@@ -4308,14 +4350,15 @@ class CampaignOrchestratorService {
   async continueCampaignAfterArticle(campaignId: string): Promise<LaunchResult> {
     // VERSION MARKER - Critical for debugging which code is running
     // BUILD_TIMESTAMP forces Vercel to invalidate cached serverless functions
-    const BUILD_TIMESTAMP = '2026-01-27T14:50:00Z';
-    const ORCHESTRATOR_VERSION = 'v2.9.2-FORCE-REBUILD';
+    const BUILD_TIMESTAMP = '2026-01-27T20:00:00Z';
+    const ORCHESTRATOR_VERSION = 'v2.9.5-DIAGNOSTIC-ERROR-SOURCE';
 
     console.log(`\n\n${'='.repeat(80)}`);
     console.log(`🔍 [continueCampaignAfterArticle] VERSION: ${ORCHESTRATOR_VERSION}`);
     console.log(`🔍 [continueCampaignAfterArticle] BUILD_TIMESTAMP: ${BUILD_TIMESTAMP}`);
-    console.log(`🔍 [continueCampaignAfterArticle] AI PROVIDER: GEMINI ONLY - NO ANTHROPIC`);
-    console.log(`🔍 [continueCampaignAfterArticle] If you see 401 Anthropic errors, it's OLD CACHED CODE`);
+    console.log(`🔍 [continueCampaignAfterArticle] AI PROVIDER: GEMINI ONLY`);
+    console.log(`🔍 [continueCampaignAfterArticle] ANTHROPIC: SDK NOT INSTALLED - NO IMPORTS - NO CALLS`);
+    console.log(`🔍 [continueCampaignAfterArticle] If you see 401 Anthropic errors, DELETE .next AND REBUILD`);
     console.log(`${'='.repeat(80)}\n\n`);
 
     logger.info('system', `🔄 [Orchestrator] ENTERED continueCampaignAfterArticle for ${campaignId} - VERSION: ${ORCHESTRATOR_VERSION} - BUILD: ${BUILD_TIMESTAMP}`);
