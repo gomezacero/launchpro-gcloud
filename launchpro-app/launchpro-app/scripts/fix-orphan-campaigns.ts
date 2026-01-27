@@ -13,7 +13,7 @@
  * v2.9.1: Created to resolve 401 error issue
  */
 
-import { PrismaClient, CampaignStatus } from '@prisma/client';
+import { PrismaClient, CampaignStatus, Prisma } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
@@ -65,7 +65,7 @@ async function fixOrphanCampaigns() {
             ? CampaignStatus.ARTICLE_APPROVED
             : campaign.status,
           // Clear any error details from previous failures
-          errorDetails: null
+          errorDetails: Prisma.DbNull
         }
       });
 
