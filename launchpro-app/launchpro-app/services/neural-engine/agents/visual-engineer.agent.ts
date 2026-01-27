@@ -621,23 +621,33 @@ ${isBackgroundFocusedStyle ? `1. Create ABSTRACT/MINIMALIST backgrounds - NO peo
     const visualStyle = this.mapToVisualPromptStyle(input.visualStyle || strategyBrief.visualStyle);
 
     // Transform parsed prompts to VisualPrompt format
-    const visualPrompts: VisualPrompt[] = (parsed.prompts || []).map((p: any, i: number) => ({
-      prompt: p.prompt || this.getDefaultPrompt(input, strategyBrief),
-      negativePrompt: this.buildNegativePrompt(strategyBrief, input.offer.name),
-      aspectRatio: this.validateAspectRatio(p.aspectRatio),
-      style: visualStyle,
-      safetyLevel: 'strict' as const,
-      conceptId: `concept-${strategyBrief.primaryAngle}`,
-      variation: p.variation || i + 1,
-      includeTextOverlay: input.includeTextOverlay,
-      textOverlayContent: input.customTextOverlay,
-    }));
+    // v2.9.3: Fixed undefined values that cause Firestore errors
+    const visualPrompts: VisualPrompt[] = (parsed.prompts || []).map((p: any, i: number) => {
+      const prompt: VisualPrompt = {
+        prompt: p.prompt || this.getDefaultPrompt(input, strategyBrief),
+        negativePrompt: this.buildNegativePrompt(strategyBrief, input.offer.name),
+        aspectRatio: this.validateAspectRatio(p.aspectRatio),
+        style: visualStyle,
+        safetyLevel: 'strict' as const,
+        conceptId: `concept-${strategyBrief.primaryAngle}`,
+        variation: p.variation || i + 1,
+      };
+      // Only include optional fields if they have defined values (avoid undefined in Firestore)
+      if (input.includeTextOverlay !== undefined) {
+        prompt.includeTextOverlay = input.includeTextOverlay;
+      }
+      if (input.customTextOverlay !== undefined && input.customTextOverlay !== null) {
+        prompt.textOverlayContent = input.customTextOverlay;
+      }
+      return prompt;
+    });
 
     // Ensure we have at least one prompt per aspect ratio
+    // v2.9.3: Fixed undefined values that cause Firestore errors
     for (const aspect of aspects) {
       const hasAspect = visualPrompts.some((p) => p.aspectRatio === aspect.ratio);
       if (!hasAspect) {
-        visualPrompts.push({
+        const defaultPrompt: VisualPrompt = {
           prompt: this.getDefaultPrompt(input, strategyBrief),
           negativePrompt: this.buildNegativePrompt(strategyBrief, input.offer.name),
           aspectRatio: aspect.ratio,
@@ -645,9 +655,15 @@ ${isBackgroundFocusedStyle ? `1. Create ABSTRACT/MINIMALIST backgrounds - NO peo
           safetyLevel: 'strict',
           conceptId: `concept-${strategyBrief.primaryAngle}`,
           variation: 1,
-          includeTextOverlay: input.includeTextOverlay,
-          textOverlayContent: input.customTextOverlay,
-        });
+        };
+        // Only include optional fields if they have defined values
+        if (input.includeTextOverlay !== undefined) {
+          defaultPrompt.includeTextOverlay = input.includeTextOverlay;
+        }
+        if (input.customTextOverlay !== undefined && input.customTextOverlay !== null) {
+          defaultPrompt.textOverlayContent = input.customTextOverlay;
+        }
+        visualPrompts.push(defaultPrompt);
       }
     }
 

@@ -461,13 +461,15 @@ export class ComplianceAssembler {
         const startTime = Date.now();
 
         // Build Imagen 3 request
+        // v2.9.3: Changed safetyFilterLevel to 'block_only_high' for better UGC prompt acceptance
         const instance = helpers.toValue({
           prompt: enhancedPrompt,
           negativePrompt: prompt.negativePrompt,
           aspectRatio: prompt.aspectRatio,
           sampleCount: 1,
-          safetyFilterLevel: 'block_medium_and_above',
+          safetyFilterLevel: 'block_only_high', // Less restrictive - was 'block_medium_and_above'
           personGeneration: 'allow_adult',
+          includeRaiReason: true, // Request RAI filtering reason for debugging
         });
 
         const [response] = await client.predict({
@@ -477,18 +479,45 @@ export class ComplianceAssembler {
 
         const latencyMs = Date.now() - startTime;
 
-        // Extract image from response
+        // Extract image from response - v2.9.3: Improved error logging and RAI detection
         const predictions = response.predictions;
         if (!predictions || predictions.length === 0) {
-          console.warn(`[${AGENT_NAME}] No image generated for prompt ${i + 1}`);
+          console.warn(`[${AGENT_NAME}] ❌ No predictions in response for prompt ${i + 1}`);
+          console.warn(`[${AGENT_NAME}]   Response metadata:`, JSON.stringify(response.metadata || {}).substring(0, 300));
+          console.warn(`[${AGENT_NAME}]   Prompt preview: ${enhancedPrompt.substring(0, 150)}...`);
           continue;
         }
 
-        const imageData = (predictions[0] as any).structValue?.fields;
-        const base64Image = imageData?.bytesBase64Encoded?.stringValue;
+        // v2.9.3: Handle both protobuf and JSON response formats
+        const prediction = predictions[0] as any;
+        let base64Image: string | undefined;
+        let raiFilteredReason: string | undefined;
+
+        // Format 1: Protobuf response with structValue
+        if (prediction.structValue?.fields) {
+          const fields = prediction.structValue.fields;
+          base64Image = fields.bytesBase64Encoded?.stringValue;
+          raiFilteredReason = fields.raiFilteredReason?.stringValue;
+        }
+        // Format 2: Direct JSON response
+        else if (prediction.bytesBase64Encoded || prediction.raiFilteredReason) {
+          base64Image = prediction.bytesBase64Encoded;
+          raiFilteredReason = prediction.raiFilteredReason;
+        }
+
+        // Log RAI filtering reason if present
+        if (raiFilteredReason) {
+          console.warn(`[${AGENT_NAME}] ⚠️ Image ${i + 1} filtered by RAI: ${raiFilteredReason}`);
+          console.warn(`[${AGENT_NAME}]   Prompt: ${enhancedPrompt.substring(0, 150)}...`);
+          continue;
+        }
 
         if (!base64Image) {
-          console.warn(`[${AGENT_NAME}] No base64 image in response for prompt ${i + 1}`);
+          console.warn(`[${AGENT_NAME}] ❌ No base64 image in response for prompt ${i + 1}`);
+          console.warn(`[${AGENT_NAME}]   Response structure:`, JSON.stringify({
+            hasStructValue: !!prediction.structValue,
+            keys: Object.keys(prediction.structValue?.fields || prediction || {}),
+          }));
           continue;
         }
 
