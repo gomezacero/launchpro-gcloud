@@ -4,6 +4,7 @@ import { logger } from '@/lib/logger';
 import { designflowService } from '@/services/designflow.service';
 import { emailService } from '@/services/email.service';
 import { tonicService } from '@/services/tonic.service';
+import { campaignAudit } from '@/services/campaign-audit.service';
 import { CampaignStatus, Prisma } from '@prisma/client';
 
 /**
@@ -132,7 +133,7 @@ export async function GET(request: NextRequest) {
 
           updatedCount++;
 
-          // If task is Done, send notification email
+          // If task is Done, send notification email and transition to AWAITING_TRACKING
           if (externalStatus === 'Done') {
             logger.success('system', `✅ Design completed for campaign "${campaign.name}"`);
 
@@ -142,6 +143,54 @@ export async function GET(request: NextRequest) {
               logger.info('email', `Design complete email sent for campaign "${campaign.name}"`);
             } catch (emailError) {
               logger.error('email', `Failed to send design complete email: ${emailError}`);
+            }
+
+            // CRITICAL: Transition campaign to AWAITING_TRACKING
+            // Design is complete, now we need to wait for Tonic tracking link
+            try {
+              await prisma.campaign.update({
+                where: { id: campaign.id },
+                data: {
+                  status: CampaignStatus.AWAITING_TRACKING,
+                  trackingLinkPollingStartedAt: new Date(),
+                  trackingLinkPollingAttempts: 0,
+                },
+              });
+
+              await campaignAudit.logStatusChange(
+                campaign.id,
+                'cron/sync-designflow',
+                'AWAITING_DESIGN',
+                'AWAITING_TRACKING',
+                'Design completed, now waiting for Tonic tracking link',
+                { designFlowTaskId: campaign.designFlowTask.id, deliveryLink: externalTask.deliveryLink }
+              );
+
+              logger.info('system', `🔗 Campaign "${campaign.name}" design complete → AWAITING_TRACKING`);
+            } catch (transitionError: any) {
+              // If transition fails (e.g., Prisma client issue), mark as FAILED
+              logger.error('system', `❌ Failed to transition "${campaign.name}" to AWAITING_TRACKING: ${transitionError.message}`);
+
+              await prisma.campaign.update({
+                where: { id: campaign.id },
+                data: {
+                  status: CampaignStatus.FAILED,
+                  errorDetails: {
+                    step: 'design-complete-transition',
+                    message: `Design complete but failed to transition to AWAITING_TRACKING: ${transitionError.message}`,
+                    timestamp: new Date().toISOString(),
+                  },
+                },
+              });
+
+              await campaignAudit.logStatusChange(
+                campaign.id,
+                'cron/sync-designflow',
+                'AWAITING_DESIGN',
+                'FAILED',
+                `Design complete but AWAITING_TRACKING transition failed: ${transitionError.message}`,
+                { error: transitionError.message }
+              );
             }
           }
 
