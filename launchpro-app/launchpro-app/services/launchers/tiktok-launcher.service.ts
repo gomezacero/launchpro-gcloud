@@ -101,9 +101,9 @@ class TikTokLauncherService implements IPlatformLauncher {
           const imageToConvert = images[0];
           logger.info('tiktok-launcher', `Converting image to video: ${imageToConvert.fileName}`);
           
-          campaignLogger.info(
+          campaignLogger.startStep(
             campaign.id,
-            'video_conversion',
+            'tiktok_video',
             `Auto-converting image to video for TikTok: ${imageToConvert.fileName}`
           );
 
@@ -121,7 +121,7 @@ class TikTokLauncherService implements IPlatformLauncher {
                 url: convertedVideo.gcsUrl || '', // URL pública o firmada
                 fileName: convertedVideo.fileName,
                 mimeType: 'video/mp4',
-                size: 0, // Tamaño aproximado o desconocido
+                fileSize: 0, // Tamaño aproximado o desconocido (antes era 'size')
                 width: convertedVideo.width,
                 height: convertedVideo.height,
               },
@@ -133,9 +133,9 @@ class TikTokLauncherService implements IPlatformLauncher {
             // Actualizar la lista de videos
             videos = [newVideo];
             
-            campaignLogger.success(
+            campaignLogger.completeStep(
               campaign.id,
-              'video_conversion',
+              'tiktok_video',
               `Video created successfully: ${newVideo.fileName}`
             );
 
