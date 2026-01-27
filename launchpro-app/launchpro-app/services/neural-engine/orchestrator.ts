@@ -52,9 +52,9 @@ export class NeuralEngineOrchestrator {
   private complianceAssembler = getComplianceAssembler();
 
   constructor() {
-    // v2.9.3: All agents now use Gemini - no apiKey needed
-    // v2.9.3: Fixed RAI filtering logging and Firestore undefined values
-    console.log(`[${ORCHESTRATOR_NAME}] Initialized (v2.9.3 - Gemini-only, improved RAI handling)`);
+    // v2.9.4: All agents now use Gemini - no apiKey needed
+    // v2.9.4: Fixed language parameter not being respected in AngleStrategist
+    console.log(`[${ORCHESTRATOR_NAME}] Initialized (v2.9.4 - Language parameter fix)`);
   }
 
   /**

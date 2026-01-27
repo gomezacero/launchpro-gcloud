@@ -199,6 +199,12 @@ You have deep expertise in:
 
 You never use clickbait or deceptive tactics. Your strategies are honest, compelling, and effective.
 
+**CRITICAL LANGUAGE REQUIREMENT:**
+- You MUST generate ALL text content (copyMaster, keyMessage, emotionalHook, headline, primaryText, description, callToAction) in the language specified in the campaign context.
+- If the language is "es" (Spanish), write everything in Spanish.
+- If the language is "pt" (Portuguese), write everything in Portuguese.
+- The content must sound natural and native to speakers of that language.
+
 Always respond with valid JSON matching the requested schema.`;
   }
 
@@ -244,6 +250,8 @@ Create a complete advertising strategy with:
 2. Copy strategy with key message and emotional hook
 3. Visual concept and style direction
 4. Platform-specific copy adaptations
+
+**⚠️ IMPORTANT: Generate ALL text content in ${input.language.toUpperCase()} language. This includes copyMaster, keyMessage, emotionalHook, headline, primaryText, description, and callToAction.**
 
 RESPOND IN JSON FORMAT:
 {
@@ -405,24 +413,68 @@ Reference ${i + 1}:
 
   /**
    * Get default strategy when parsing fails
+   * v2.9.4: Now language-aware for proper fallback content
    */
   private getDefaultStrategy(input: NeuralEngineInput): any {
     const platformKey = input.platform.toLowerCase();
+    const lang = input.language?.toLowerCase() || 'en';
+
+    // Language-specific default content
+    const defaults: Record<string, {
+      copyMaster: string;
+      keyMessage: string;
+      emotionalHook: string;
+      headline: string;
+      primaryText: string;
+      description: string;
+      callToAction: string;
+    }> = {
+      es: {
+        copyMaster: `Descubre soluciones de ${input.offer.vertical} de calidad diseñadas para ti.`,
+        keyMessage: `La opción inteligente en ${input.offer.vertical}`,
+        emotionalHook: 'Empieza a tomar mejores decisiones hoy.',
+        headline: `Compara opciones de ${input.offer.vertical}`,
+        primaryText: `Encuentra las mejores soluciones de ${input.offer.name}. Compara y ahorra.`,
+        description: 'Ver opciones',
+        callToAction: 'Más información',
+      },
+      pt: {
+        copyMaster: `Descubra soluções de ${input.offer.vertical} de qualidade feitas para você.`,
+        keyMessage: `A escolha inteligente em ${input.offer.vertical}`,
+        emotionalHook: 'Comece a tomar decisões mais inteligentes hoje.',
+        headline: `Compare opções de ${input.offer.vertical}`,
+        primaryText: `Encontre as melhores soluções de ${input.offer.name}. Compare e economize.`,
+        description: 'Ver opções',
+        callToAction: 'Saiba mais',
+      },
+      en: {
+        copyMaster: `Discover quality ${input.offer.vertical} solutions tailored for you.`,
+        keyMessage: `The smart choice for ${input.offer.vertical}`,
+        emotionalHook: 'Start making smarter decisions today.',
+        headline: `Compare ${input.offer.vertical} Options`,
+        primaryText: `Find the best ${input.offer.name} solutions. Compare rates and save.`,
+        description: 'See your options',
+        callToAction: 'Learn More',
+      },
+    };
+
+    // Use language-specific defaults or fall back to English
+    const langDefaults = defaults[lang] || defaults['en'];
 
     return {
       primaryAngle: 'rational',
-      copyMaster: `Discover quality ${input.offer.vertical} solutions tailored for you.`,
-      keyMessage: `The smart choice for ${input.offer.vertical}`,
-      emotionalHook: 'Start making smarter decisions today.',
+      copyMaster: langDefaults.copyMaster,
+      keyMessage: langDefaults.keyMessage,
+      emotionalHook: langDefaults.emotionalHook,
       visualConcept: 'Clean, professional imagery with authentic people',
       visualStyle: 'native',
       colorPalette: ['#0066CC', '#4CAF50', '#FFFFFF'],
       platformAdaptations: {
         [platformKey]: {
-          headline: `Compare ${input.offer.vertical} Options`,
-          primaryText: `Find the best ${input.offer.name} solutions. Compare rates and save.`,
-          description: 'See your options',
-          callToAction: 'Learn More',
+          headline: langDefaults.headline,
+          primaryText: langDefaults.primaryText,
+          description: langDefaults.description,
+          callToAction: langDefaults.callToAction,
         },
       },
     };
