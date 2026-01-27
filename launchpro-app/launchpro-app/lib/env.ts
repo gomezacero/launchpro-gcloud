@@ -61,17 +61,17 @@ const envSchema = z.object({
   TABOOLA_ACCOUNT_ID: z.string().optional(),
 
   // ============================================================================
-  // AI SERVICES
+  // AI SERVICES (v2.9.0+ uses Gemini exclusively)
   // ============================================================================
-  // v2.9.0: Anthropic is NO LONGER USED - all AI uses Gemini
-  // Keeping this as optional for backwards compatibility with env vars
+  // Gemini API Key - Primary AI provider for all content generation
+  GEMINI_API_KEY: z.string().optional(),
+  GOOGLE_AI_API_KEY: z.string().optional(), // Alternative name for Gemini key
+
+  // DEPRECATED: Anthropic removed in v2.9.0 - All AI now uses Gemini
+  // Kept as optional for backwards compatibility with env files
   ANTHROPIC_API_KEY: z.string().optional(),
 
-  // Gemini API Key (primary AI provider)
-  GEMINI_API_KEY: z.string().optional(),
-  GOOGLE_AI_API_KEY: z.string().optional(),
-
-  // Google Cloud Platform - Vertex AI para generación de media
+  // Google Cloud Platform - Vertex AI for media generation (Imagen 3)
   GCP_PROJECT_ID: z.string().min(1),
   GCP_LOCATION: z.string().default('us-central1'),
   GCP_STORAGE_BUCKET: z.string().min(1),
