@@ -8,8 +8,8 @@ import { getStorage } from '@/lib/gcs';
 
 // VERSION MARKER - Used to verify which code version is deployed
 // BUILD_TIMESTAMP forces Vercel to create fresh serverless instances
-const BUILD_TIMESTAMP = '2026-01-27T15:15:00Z';
-const AI_SERVICE_VERSION = 'v2.9.3-GEMINI-ONLY-NO-ANTHROPIC';
+const BUILD_TIMESTAMP = '2026-01-27T20:00:00Z';
+const AI_SERVICE_VERSION = 'v2.9.5-DIAGNOSTIC-ERROR-SOURCE';
 console.log(`\n\n${'='.repeat(80)}`);
 console.log(`[AIService] 🚀 MODULE LOAD - VERSION: ${AI_SERVICE_VERSION}`);
 console.log(`[AIService] 📅 BUILD_TIMESTAMP: ${BUILD_TIMESTAMP}`);
@@ -1222,6 +1222,13 @@ Return ONLY valid JSON (no markdown, no code blocks):
 }`;
 
     try {
+      // 🔴 DIAGNOSTIC: Log before Gemini call
+      console.log('\n🔴🔴🔴 [AI Service] ABOUT TO CALL GEMINI for generateAdCopy');
+      console.log('🔴 Model:', model);
+      console.log('🔴 GEMINI_API_KEY prefix:', process.env.GEMINI_API_KEY?.substring(0, 10));
+      console.log('🔴 GOOGLE_AI_API_KEY prefix:', process.env.GOOGLE_AI_API_KEY?.substring(0, 10));
+      console.log('🔴🔴🔴\n');
+
       const response = await this.geminiClient.models.generateContent({
         model,
         contents: prompt,
@@ -1247,6 +1254,20 @@ Return ONLY valid JSON (no markdown, no code blocks):
 
       return adCopy;
     } catch (error: any) {
+      // 🔴 DIAGNOSTIC: Full error details
+      console.log('\n🔴🔴🔴 [AI Service] GEMINI CALL FAILED - FULL ERROR DIAGNOSTIC');
+      console.log('🔴 Error name:', error.name);
+      console.log('🔴 Error message:', error.message);
+      console.log('🔴 Error code:', error.code);
+      console.log('🔴 Is Axios error:', error.isAxiosError);
+      console.log('🔴 Response status:', error.response?.status);
+      console.log('🔴 Response data:', JSON.stringify(error.response?.data || {}).substring(0, 500));
+      console.log('🔴 Request URL:', error.config?.url);
+      console.log('🔴 Contains "x-api-key":', error.message?.includes('x-api-key'));
+      console.log('🔴 Contains "anthropic":', error.message?.includes('anthropic'));
+      console.log('🔴 Contains "req_":', error.message?.includes('req_'));
+      console.log('🔴🔴🔴\n');
+
       logger.error('ai', `[Gemini] Ad copy generation failed: ${error.message}`);
       throw error;
     }

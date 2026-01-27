@@ -12,8 +12,8 @@ import { CampaignStatus, Prisma, Campaign, CampaignPlatform, Offer, Account } fr
 // v2.9.3: Added detailed API key debugging to help identify issues
 // v2.9.4: Enhanced state logging for flow debugging
 // BUILD_TIMESTAMP forces Vercel to invalidate cached serverless functions
-const BUILD_TIMESTAMP = '2026-01-27T18:00:00Z';
-const CODE_VERSION = 'v2.9.4-enhanced-state-logging';
+const BUILD_TIMESTAMP = '2026-01-27T20:00:00Z';
+const CODE_VERSION = 'v2.9.5-DIAGNOSTIC-ERROR-SOURCE';
 
 // MODULE LOAD LOG - This executes when the module is imported
 console.log(`\n\n${'='.repeat(80)}`);

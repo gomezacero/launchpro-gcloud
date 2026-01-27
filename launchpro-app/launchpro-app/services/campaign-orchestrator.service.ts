@@ -2756,6 +2756,14 @@ class CampaignOrchestratorService {
 
     const adFormat = 'VIDEO'; // TikTok PLACEMENT_TIKTOK siempre requiere VIDEO
 
+    // 🔴🔴🔴 DIAGNOSTIC CHECKPOINT 1: Before AI call
+    console.log('\n🔴🔴🔴 DIAGNOSTIC CHECKPOINT 1: About to call aiService.generateAdCopy');
+    console.log('🔴 GEMINI_API_KEY exists:', !!process.env.GEMINI_API_KEY);
+    console.log('🔴 GEMINI_API_KEY prefix:', process.env.GEMINI_API_KEY?.substring(0, 10));
+    console.log('🔴 GOOGLE_AI_API_KEY exists:', !!process.env.GOOGLE_AI_API_KEY);
+    console.log('🔴 ANTHROPIC_API_KEY exists:', !!process.env.ANTHROPIC_API_KEY);
+    console.log('🔴🔴🔴\n');
+
     // Generate ad copy specific to TikTok
     // v2.6.0: Uses Gemini instead of Anthropic to avoid stale connection 401 errors
     const adCopy = await aiService.generateAdCopy({
@@ -2827,6 +2835,14 @@ class CampaignOrchestratorService {
     const budgetInDollars = parseInt(platformConfig.budget);
 
     logger.info('tiktok', `Campaign budget: $${budgetInDollars} USD`);
+
+    // 🔴🔴🔴 DIAGNOSTIC CHECKPOINT 2: Before TikTok API call
+    console.log('\n🔴🔴🔴 DIAGNOSTIC CHECKPOINT 2: About to call tiktokService.createCampaign');
+    console.log('🔴 TikTok Access Token prefix:', accessToken?.substring(0, 15));
+    console.log('🔴 TikTok Access Token length:', accessToken?.length);
+    console.log('🔴 Token looks like Anthropic key:', accessToken?.startsWith('sk-ant'));
+    console.log('🔴 Advertiser ID:', advertiserId);
+    console.log('🔴🔴🔴\n');
 
     const tiktokCampaign = await tiktokService.createCampaign({
       advertiser_id: advertiserId,
@@ -4334,8 +4350,8 @@ class CampaignOrchestratorService {
   async continueCampaignAfterArticle(campaignId: string): Promise<LaunchResult> {
     // VERSION MARKER - Critical for debugging which code is running
     // BUILD_TIMESTAMP forces Vercel to invalidate cached serverless functions
-    const BUILD_TIMESTAMP = '2026-01-27T18:00:00Z';
-    const ORCHESTRATOR_VERSION = 'v2.9.4-enhanced-state-logging';
+    const BUILD_TIMESTAMP = '2026-01-27T20:00:00Z';
+    const ORCHESTRATOR_VERSION = 'v2.9.5-DIAGNOSTIC-ERROR-SOURCE';
 
     console.log(`\n\n${'='.repeat(80)}`);
     console.log(`🔍 [continueCampaignAfterArticle] VERSION: ${ORCHESTRATOR_VERSION}`);
