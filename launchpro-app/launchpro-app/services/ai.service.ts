@@ -7,9 +7,16 @@ import { logger } from '@/lib/logger';
 import { getStorage } from '@/lib/gcs';
 
 // VERSION MARKER - Used to verify which code version is deployed
-const AI_SERVICE_VERSION = 'v2.8.0-GEMINI-ONLY';
-console.log(`[AIService] Module loaded - VERSION: ${AI_SERVICE_VERSION}`);
-console.log(`[AIService] All AI generation uses GEMINI exclusively`);
+// BUILD_TIMESTAMP forces Vercel to create fresh serverless instances
+const BUILD_TIMESTAMP = '2026-01-27T14:50:00Z';
+const AI_SERVICE_VERSION = 'v2.9.2-GEMINI-ONLY-FORCE-REBUILD';
+console.log(`[AIService] ========== MODULE LOAD ==========`);
+console.log(`[AIService] VERSION: ${AI_SERVICE_VERSION}`);
+console.log(`[AIService] BUILD_TIMESTAMP: ${BUILD_TIMESTAMP}`);
+console.log(`[AIService] AI PROVIDER: GEMINI EXCLUSIVELY`);
+console.log(`[AIService] ANTHROPIC STATUS: COMPLETELY REMOVED - NO SDK, NO CALLS`);
+console.log(`[AIService] If you see Anthropic 401 errors, the error is from OLD CACHED CODE, not this version`);
+console.log(`[AIService] ================================`);
 
 /**
  * AI Service v2.8.0 - GEMINI ONLY

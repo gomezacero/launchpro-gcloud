@@ -4307,21 +4307,25 @@ class CampaignOrchestratorService {
    */
   async continueCampaignAfterArticle(campaignId: string): Promise<LaunchResult> {
     // VERSION MARKER - Critical for debugging which code is running
-    // v2.8.0: All AI uses Gemini exclusively - no more Anthropic
-    const ORCHESTRATOR_VERSION = 'v2.9.1-AUTO-FIX-TRACKING';
+    // BUILD_TIMESTAMP forces Vercel to invalidate cached serverless functions
+    const BUILD_TIMESTAMP = '2026-01-27T14:50:00Z';
+    const ORCHESTRATOR_VERSION = 'v2.9.2-FORCE-REBUILD';
 
-    console.log(`\n\n🔍🔍🔍 [continueCampaignAfterArticle] VERSION: ${ORCHESTRATOR_VERSION} 🔍🔍🔍`);
-    console.log(`🔍🔍🔍 v2.8.0: All AI generation uses GEMINI 🔍🔍🔍\n\n`);
+    console.log(`\n\n${'='.repeat(80)}`);
+    console.log(`🔍 [continueCampaignAfterArticle] VERSION: ${ORCHESTRATOR_VERSION}`);
+    console.log(`🔍 [continueCampaignAfterArticle] BUILD_TIMESTAMP: ${BUILD_TIMESTAMP}`);
+    console.log(`🔍 [continueCampaignAfterArticle] AI PROVIDER: GEMINI ONLY - NO ANTHROPIC`);
+    console.log(`🔍 [continueCampaignAfterArticle] If you see 401 Anthropic errors, it's OLD CACHED CODE`);
+    console.log(`${'='.repeat(80)}\n\n`);
 
-    logger.info('system', `🔄 [Orchestrator] ENTERED continueCampaignAfterArticle for ${campaignId} - VERSION: ${ORCHESTRATOR_VERSION}`);
-    logger.info('system', `🔍 [Orchestrator] v2.8.0: Using Gemini for all AI generation`);
+    logger.info('system', `🔄 [Orchestrator] ENTERED continueCampaignAfterArticle for ${campaignId} - VERSION: ${ORCHESTRATOR_VERSION} - BUILD: ${BUILD_TIMESTAMP}`);
 
     // Log to DB for visibility
     await campaignAudit.log(campaignId, {
       event: 'CRON_PROCESS',
       source: 'campaign-orchestrator.continueCampaignAfterArticle',
-      message: `🚀 STARTED processing - VERSION: ${ORCHESTRATOR_VERSION} - Anthropic calls logged to DB`,
-      details: { version: ORCHESTRATOR_VERSION, aiProvider: 'GEMINI_EXPECTED', dbTracing: true },
+      message: `🚀 STARTED processing - VERSION: ${ORCHESTRATOR_VERSION} - BUILD: ${BUILD_TIMESTAMP} - GEMINI ONLY`,
+      details: { version: ORCHESTRATOR_VERSION, buildTimestamp: BUILD_TIMESTAMP, aiProvider: 'GEMINI_ONLY' },
     });
 
     // Get campaign with all related data
