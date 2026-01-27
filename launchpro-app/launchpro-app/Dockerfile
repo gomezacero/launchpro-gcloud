@@ -5,8 +5,8 @@
 
 FROM node:20-alpine AS base
 
-# Instalar dependencias del sistema necesarias para sharp y otros paquetes nativos
-RUN apk add --no-cache libc6-compat
+# Instalar dependencias del sistema necesarias para sharp, ffmpeg y otros paquetes nativos
+RUN apk add --no-cache libc6-compat ffmpeg
 
 # ============================================================================
 # Stage 1: Instalar dependencias
