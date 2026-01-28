@@ -752,7 +752,7 @@ class AIService {
    * Generate Copy Master - the main communication angle aligned with the offer
    */
   async generateCopyMaster(params: GenerateCopyMasterParams): Promise<string> {
-    const model = 'gemini-2.0-flash-exp';
+    const model = 'gemini-2.0-flash';
 
     // Determine the base language from the language parameter
     const lang = params.language.toLowerCase();
@@ -857,7 +857,7 @@ Return ONLY the copy master text, nothing else.`;
       await this.saveAIContent({
         contentType: 'copy_master',
         content: { copyMaster },
-        model: 'gemini-2.0-flash-exp',
+        model: 'gemini-2.0-flash',
         prompt: prompt,
       });
 
@@ -873,7 +873,7 @@ Return ONLY the copy master text, nothing else.`;
    * v2.8.0 - NOW USES GEMINI (no more Anthropic)
    */
   async generateKeywords(params: GenerateKeywordsParams): Promise<string[]> {
-    const model = 'gemini-2.0-flash-exp';
+    const model = 'gemini-2.0-flash';
 
     // Map country codes to full names and regional context
     const countryContext: Record<string, { name: string; language: string; regionalNotes: string }> = {
@@ -980,7 +980,7 @@ Example format: ["keyword 1", "keyword 2", "keyword 3", ...]`;
       await this.saveAIContent({
         contentType: 'keywords',
         content: { keywords },
-        model: 'gemini-2.0-flash-exp',
+        model: 'gemini-2.0-flash',
         prompt: prompt,
       });
 
@@ -1000,7 +1000,7 @@ Example format: ["keyword 1", "keyword 2", "keyword 3", ...]`;
     teaser: string;
     contentGenerationPhrases: string[];
   }> {
-    const model = 'gemini-2.0-flash-exp';
+    const model = 'gemini-2.0-flash';
 
     // Determine the base language from the language parameter
     const lang = params.language.toLowerCase();
@@ -1132,7 +1132,7 @@ Return ONLY valid JSON (no markdown, no code blocks):
       await this.saveAIContent({
         contentType: 'article',
         content: article,
-        model: 'gemini-2.0-flash-exp',
+        model: 'gemini-2.0-flash',
         prompt: prompt,
       });
 
@@ -1153,7 +1153,7 @@ Return ONLY valid JSON (no markdown, no code blocks):
     description: string;
     callToAction: string;
   }> {
-    const model = 'gemini-2.0-flash-exp';
+    const model = 'gemini-2.0-flash';
     const lang = params.language.toLowerCase();
 
     const { languageName, languageInstruction } = this.getLanguageInfo(lang, params.language);
@@ -1249,7 +1249,7 @@ Return ONLY valid JSON (no markdown, no code blocks):
       await this.saveAIContent({
         contentType: 'ad_copy',
         content: adCopy,
-        model: 'gemini-2.0-flash-exp',
+        model: 'gemini-2.0-flash',
         prompt: prompt,
       });
 
@@ -1306,7 +1306,7 @@ ${params.vertical ? `- VERTICAL: ${params.vertical}` : ''}
 Responde SOLO con un JSON array de exactamente 5 strings (cada uno 50-80 caracteres), sin explicaciones ni markdown:
 ["copy1", "copy2", "copy3", "copy4", "copy5"]`;
 
-    const model = 'gemini-2.0-flash-exp';
+    const model = 'gemini-2.0-flash';
     const prompt = `${systemPrompt}\n\n${userPrompt}`;
 
     const response = await this.geminiClient.models.generateContent({
@@ -1327,7 +1327,7 @@ Responde SOLO con un JSON array de exactamente 5 strings (cada uno 50-80 caracte
     await this.saveAIContent({
       contentType: 'copy_master_suggestions',
       content: { suggestions },
-      model: 'gemini-2.0-flash-exp',
+      model: 'gemini-2.0-flash',
       prompt: userPrompt,
     });
 
@@ -1381,7 +1381,7 @@ Responde SOLO con un JSON array de objetos con esta estructura exacta, sin expli
   {"keyword": "keyword aquí", "type": "urgency"}
 ]`;
 
-    const model = 'gemini-2.0-flash-exp';
+    const model = 'gemini-2.0-flash';
     const prompt = `${systemPrompt}\n\n${userPrompt}`;
 
     const response = await this.geminiClient.models.generateContent({
@@ -1402,7 +1402,7 @@ Responde SOLO con un JSON array de objetos con esta estructura exacta, sin expli
     await this.saveAIContent({
       contentType: 'keyword_suggestions',
       content: { suggestions },
-      model: 'gemini-2.0-flash-exp',
+      model: 'gemini-2.0-flash',
       prompt: userPrompt,
     });
 
@@ -1441,7 +1441,7 @@ INSTRUCCIONES DE CONTENIDO:
 Responde SOLO con un JSON array de exactamente 5 strings (cada uno máximo 80 caracteres), sin explicaciones ni markdown:
 ["titulo1", "titulo2", "titulo3", "titulo4", "titulo5"]`;
 
-    const model = 'gemini-2.0-flash-exp';
+    const model = 'gemini-2.0-flash';
     const prompt = `${systemPrompt}\n\n${userPrompt}`;
 
     const response = await this.geminiClient.models.generateContent({
@@ -1462,7 +1462,7 @@ Responde SOLO con un JSON array de exactamente 5 strings (cada uno máximo 80 ca
     await this.saveAIContent({
       contentType: 'ad_title_suggestions',
       content: { suggestions },
-      model: 'gemini-2.0-flash-exp',
+      model: 'gemini-2.0-flash',
       prompt: userPrompt,
     });
 
@@ -1505,7 +1505,7 @@ INSTRUCCIONES DE CONTENIDO:
 Responde SOLO con un JSON array de exactamente 5 strings (cada uno máximo 120 caracteres), sin explicaciones ni markdown:
 ["texto1", "texto2", "texto3", "texto4", "texto5"]`;
 
-    const model = 'gemini-2.0-flash-exp';
+    const model = 'gemini-2.0-flash';
     const prompt = `${systemPrompt}\n\n${userPrompt}`;
 
     const response = await this.geminiClient.models.generateContent({
@@ -1526,7 +1526,7 @@ Responde SOLO con un JSON array de exactamente 5 strings (cada uno máximo 120 c
     await this.saveAIContent({
       contentType: 'ad_primary_text_suggestions',
       content: { suggestions, selectedTitle: params.selectedTitle },
-      model: 'gemini-2.0-flash-exp',
+      model: 'gemini-2.0-flash',
       prompt: userPrompt,
     });
 
@@ -1568,7 +1568,7 @@ INSTRUCCIONES DE CONTENIDO:
 Responde SOLO con un JSON array de exactamente 5 strings (cada uno máximo 120 caracteres), sin explicaciones ni markdown:
 ["desc1", "desc2", "desc3", "desc4", "desc5"]`;
 
-    const model = 'gemini-2.0-flash-exp';
+    const model = 'gemini-2.0-flash';
     const prompt = `${systemPrompt}\n\n${userPrompt}`;
 
     const response = await this.geminiClient.models.generateContent({
@@ -1593,7 +1593,7 @@ Responde SOLO con un JSON array de exactamente 5 strings (cada uno máximo 120 c
         selectedTitle: params.selectedTitle,
         selectedPrimaryText: params.selectedPrimaryText
       },
-      model: 'gemini-2.0-flash-exp',
+      model: 'gemini-2.0-flash',
       prompt: userPrompt,
     });
 
@@ -1808,7 +1808,7 @@ Output ONLY a valid JSON array with no markdown, no explanations:
 ]`;
     }
 
-    const model = 'gemini-2.0-flash-exp';
+    const model = 'gemini-2.0-flash';
     const prompt = `${systemPrompt}\n\n${userPrompt}`;
 
     const response = await this.geminiClient.models.generateContent({
@@ -1823,7 +1823,7 @@ Output ONLY a valid JSON array with no markdown, no explanations:
     await this.saveAIContent({
       contentType: 'ad_copy_suggestions',
       content: { platform: params.platform, suggestions: cleanedResponse },
-      model: 'gemini-2.0-flash-exp',
+      model: 'gemini-2.0-flash',
       prompt: userPrompt,
     });
 
@@ -1857,7 +1857,7 @@ Output ONLY a valid JSON array with no markdown, no explanations:
     demographics: string;
   }> {
     // v2.8.0 - NOW USES GEMINI (no more Anthropic)
-    const model = 'gemini-2.0-flash-exp';
+    const model = 'gemini-2.0-flash';
 
     logger.info('ai', `[Gemini] Generating targeting suggestions for ${params.platform}`);
 
@@ -1903,13 +1903,13 @@ Return ONLY valid JSON (no markdown, no code blocks):
 
   /**
    * Generate image using Google Gemini (Nano Banana Pro)
-   * Uses gemini-2.0-flash-exp for high-quality image generation with excellent text rendering
+   * Uses gemini-2.0-flash for high-quality image generation with excellent text rendering
    */
   async generateImage(params: GenerateImageParams): Promise<{
     imageUrl: string;
     gcsPath: string;
   }> {
-    const model = 'gemini-2.0-flash-exp'; // Nano Banana Pro model
+    const model = 'gemini-2.0-flash'; // Nano Banana Pro model
 
     logger.info('ai', `Generating image with Gemini ${model}...`);
 

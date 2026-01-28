@@ -129,6 +129,41 @@ class TikTokService {
         'Content-Type': 'application/json',
       },
     });
+
+    // DEBUG INTERCEPTORS: Track all HTTP requests to identify source of Anthropic-formatted 401 errors
+    this.client.interceptors.request.use((config) => {
+      console.log('🌐 [TIKTOK HTTP OUT]', {
+        method: config.method?.toUpperCase(),
+        url: config.url,
+        baseURL: config.baseURL,
+        fullUrl: `${config.baseURL || ''}${config.url || ''}`,
+        headers: Object.keys(config.headers || {}),
+      });
+      return config;
+    });
+
+    this.client.interceptors.response.use(
+      (response) => {
+        console.log('🌐 [TIKTOK HTTP IN] Success:', {
+          url: response.config.url,
+          status: response.status,
+          tiktokCode: response.data?.code,
+        });
+        return response;
+      },
+      (error) => {
+        console.log('🌐 [TIKTOK HTTP ERR] Error:', {
+          url: error.config?.url,
+          baseURL: error.config?.baseURL,
+          status: error.response?.status,
+          statusText: error.response?.statusText,
+          data: JSON.stringify(error.response?.data || {}).substring(0, 500),
+          isAnthropicFormat: error.response?.data?.type === 'error' ||
+                            JSON.stringify(error.response?.data || {}).includes('x-api-key'),
+        });
+        return Promise.reject(error);
+      }
+    );
   }
 
   /**
@@ -140,13 +175,50 @@ class TikTokService {
       return this.client;
     }
 
-    return axios.create({
+    const client = axios.create({
       baseURL: 'https://business-api.tiktok.com/open_api/v1.3',
       headers: {
         'Access-Token': accessToken,
         'Content-Type': 'application/json',
       },
     });
+
+    // DEBUG INTERCEPTORS for custom token clients
+    client.interceptors.request.use((config) => {
+      console.log('🌐 [TIKTOK HTTP OUT] (custom token)', {
+        method: config.method?.toUpperCase(),
+        url: config.url,
+        baseURL: config.baseURL,
+        fullUrl: `${config.baseURL || ''}${config.url || ''}`,
+        headers: Object.keys(config.headers || {}),
+      });
+      return config;
+    });
+
+    client.interceptors.response.use(
+      (response) => {
+        console.log('🌐 [TIKTOK HTTP IN] (custom token) Success:', {
+          url: response.config.url,
+          status: response.status,
+          tiktokCode: response.data?.code,
+        });
+        return response;
+      },
+      (error) => {
+        console.log('🌐 [TIKTOK HTTP ERR] (custom token) Error:', {
+          url: error.config?.url,
+          baseURL: error.config?.baseURL,
+          status: error.response?.status,
+          statusText: error.response?.statusText,
+          data: JSON.stringify(error.response?.data || {}).substring(0, 500),
+          isAnthropicFormat: error.response?.data?.type === 'error' ||
+                            JSON.stringify(error.response?.data || {}).includes('x-api-key'),
+        });
+        return Promise.reject(error);
+      }
+    );
+
+    return client;
   }
 
   /**

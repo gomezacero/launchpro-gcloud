@@ -110,7 +110,7 @@ export const ANGLE_STRATEGIST_CONFIG: AgentConfig = {
   name: 'AngleStrategist',
   model: {
     provider: 'google',
-    model: 'gemini-2.0-flash-exp',
+    model: 'gemini-2.0-flash',
     temperature: 0.7, // Higher for creative strategy
     maxTokens: 3000,
   },

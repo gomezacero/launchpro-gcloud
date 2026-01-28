@@ -2714,6 +2714,14 @@ class CampaignOrchestratorService {
    * - Videos: MP4, MOV, MPEG, max 500MB, 5-60 sec, recommended 9:16 aspect ratio
    */
   private async launchToTikTok(campaign: any, platformConfig: any, aiContent: any, tonicCampaignId?: string) {
+    // 🔍 DEEP DEBUG: Track entry point and call stack to identify source of Anthropic-formatted 401 errors
+    console.log('\n🔍🔍🔍 [DEEP DEBUG] launchToTikTok STARTING 🔍🔍🔍');
+    console.log('🔍 [DEEP DEBUG] Campaign ID:', campaign.id);
+    console.log('🔍 [DEEP DEBUG] Platform:', platformConfig.platform);
+    console.log('🔍 [DEEP DEBUG] Tonic Campaign ID:', tonicCampaignId);
+    console.log('🔍 [DEEP DEBUG] Stack trace:\n', new Error('Stack trace for debugging').stack);
+    console.log('🔍🔍🔍\n');
+
     // Build campaign name with Tonic ID prefix (format: {tonicId}_{campaignName})
     const fullCampaignName = tonicCampaignId ? `${tonicCampaignId}_${campaign.name}` : campaign.name;
 

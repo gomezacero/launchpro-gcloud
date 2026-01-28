@@ -43,7 +43,7 @@ const { PredictionServiceClient } = v1;
 
 const AGENT_NAME = 'ComplianceAssembler';
 const IMAGE_MODEL = 'imagen-3.0-generate-001';
-const GEMINI_MODEL = 'gemini-2.0-flash-exp'; // Fallback for when Imagen quota exceeded
+const GEMINI_MODEL = 'gemini-2.0-flash'; // Fallback for when Imagen quota exceeded
 const GCS_FOLDER = 'neural-engine/creatives';
 
 // Load fonts for Satori text rendering
@@ -227,11 +227,11 @@ export class ComplianceAssembler {
 
         // Add warning if we used fallback
         if (usedFallback) {
-          warning = 'Imagen 3 quota exceeded - used Gemini fallback for image generation';
+          warning = 'Imagen 3 unavailable - used Gemini fallback for image generation';
           console.log(`[${AGENT_NAME}] ℹ️ ${warning}`);
         }
       } else if (quotaExceeded) {
-        warning = 'Image generation failed: Imagen 3 quota exceeded and Gemini fallback unavailable.';
+        warning = 'Image generation failed: Imagen 3 unavailable and Gemini fallback failed.';
         console.warn(`[${AGENT_NAME}] ${warning}`);
       }
 
@@ -283,15 +283,22 @@ export class ComplianceAssembler {
       const images = await this.generateImages(prompts, modelUsage);
       return { images, quotaExceeded: false, usedFallback: false };
     } catch (error: any) {
-      // Check if it's a quota error
+      // Check if it's a quota error or permission error (both should trigger fallback)
       const isQuotaError =
         error.message?.includes('RESOURCE_EXHAUSTED') ||
         error.message?.includes('Quota exceeded') ||
         error.code === 8 || // gRPC RESOURCE_EXHAUSTED code
         error.details?.includes('quota');
 
-      if (isQuotaError) {
-        console.warn(`[${AGENT_NAME}] ⚠️ Imagen 3 quota exceeded. Trying Gemini fallback...`);
+      const isPermissionError =
+        error.message?.includes('PERMISSION_DENIED') ||
+        error.message?.includes('has not been used in project') ||
+        error.message?.includes('is disabled') ||
+        error.code === 7; // gRPC PERMISSION_DENIED code
+
+      if (isQuotaError || isPermissionError) {
+        const reason = isPermissionError ? 'Vertex AI permission denied' : 'quota exceeded';
+        console.warn(`[${AGENT_NAME}] ⚠️ Imagen 3 ${reason}. Trying Gemini fallback...`);
 
         // Try Gemini fallback if available
         if (this.geminiClient) {

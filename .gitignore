@@ -48,3 +48,6 @@ gcp-service-account.json
 *.sql
 datos_export.sql
 .codex
+
+# Local documentation with sensitive info
+GOOGLE_CLOUD_GUIDE.md

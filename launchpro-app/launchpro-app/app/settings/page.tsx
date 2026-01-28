@@ -311,7 +311,7 @@ export default function SettingsPage() {
         </div>
 
         {/* Email Service Info */}
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
           <h3 className="font-semibold text-blue-900 mb-2">About Email Notifications</h3>
           <ul className="text-sm text-blue-800 space-y-1">
             <li>
@@ -330,6 +330,52 @@ export default function SettingsPage() {
               <strong>Resend API:</strong> Requires RESEND_API_KEY environment variable to be set in Vercel
             </li>
           </ul>
+        </div>
+
+        {/* Version Info Section */}
+        <div className="bg-white rounded-lg shadow p-6">
+          <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <span className="text-2xl">ℹ️</span>
+            Application Info
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="flex items-center justify-between p-3 bg-gradient-to-r from-violet-50 to-purple-50 rounded-lg border border-violet-200">
+              <div>
+                <span className="font-medium text-gray-700">Version</span>
+                <p className="text-xs text-gray-500 mt-1">Current application version</p>
+              </div>
+              <span className="px-3 py-1.5 bg-gradient-to-r from-violet-500 to-purple-600 text-white rounded-lg text-sm font-bold shadow-md">
+                v2.9.5
+              </span>
+            </div>
+            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+              <div>
+                <span className="font-medium text-gray-700">Environment</span>
+                <p className="text-xs text-gray-500 mt-1">Running environment</p>
+              </div>
+              <span className="px-2 py-1 bg-emerald-100 text-emerald-800 rounded text-sm font-semibold">
+                {process.env.NODE_ENV === 'production' ? 'Production' : 'Development'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+              <div>
+                <span className="font-medium text-gray-700">Platform</span>
+                <p className="text-xs text-gray-500 mt-1">Hosting platform</p>
+              </div>
+              <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-sm font-semibold">
+                Google Cloud Run
+              </span>
+            </div>
+            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+              <div>
+                <span className="font-medium text-gray-700">AI Provider</span>
+                <p className="text-xs text-gray-500 mt-1">Content generation engine</p>
+              </div>
+              <span className="px-2 py-1 bg-amber-100 text-amber-800 rounded text-sm font-semibold">
+                Google Gemini
+              </span>
+            </div>
+          </div>
         </div>
       </div>
     </div>

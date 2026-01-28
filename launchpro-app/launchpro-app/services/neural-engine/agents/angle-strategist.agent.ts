@@ -159,7 +159,7 @@ export class AngleStrategistAgent {
     console.log(`[${AGENT_NAME}] Calling Gemini for strategy development...`);
 
     const response = await this.gemini.models.generateContent({
-      model: 'gemini-2.0-flash-exp',
+      model: 'gemini-2.0-flash',
       contents: `${systemPrompt}\n\n${userPrompt}`,
       config: {
         temperature: ANGLE_STRATEGIST_CONFIG.model.temperature,
